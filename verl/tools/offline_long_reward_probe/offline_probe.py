@@ -129,19 +129,49 @@ def extract_ground_truth(row: Any, extractors: list[str], prompt_id: int) -> Any
     raise KeyError(f"Could not find ground truth for prompt_id={prompt_id}; columns={columns}; tried={extractors}")
 
 
+def normalize_extra_info(value: Any) -> Any:
+    if value is MISSING or is_missing_value(value):
+        return {}
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    return value
+
+
+def normalize_prompt_value(prompt: Any) -> Any:
+    if hasattr(prompt, "tolist"):
+        prompt = prompt.tolist()
+    elif hasattr(prompt, "as_py"):
+        prompt = prompt.as_py()
+    elif hasattr(prompt, "to_pylist"):
+        prompt = prompt.to_pylist()
+
+    if isinstance(prompt, str):
+        try:
+            parsed = json.loads(prompt)
+        except (TypeError, json.JSONDecodeError):
+            return prompt
+        if isinstance(parsed, list) and all(isinstance(item, dict) for item in parsed):
+            return parsed
+        return prompt
+
+    return prompt
+
+
 def render_prompt(row: Any, tokenizer: Any, prompt_key: str) -> str:
     row_dict = row_to_dict(row)
     if prompt_key not in row_dict:
         raise KeyError(f"Missing prompt key {prompt_key!r}; columns={sorted(row_dict.keys())}")
 
-    prompt = row_dict[prompt_key]
+    prompt = normalize_prompt_value(row_dict[prompt_key])
     if isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
         return tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
     if isinstance(prompt, str):
         return prompt
 
-    print(f"Warning: prompt at key {prompt_key!r} has unsupported type {type(prompt).__name__}; converting to str")
-    return str(prompt)
+    raise TypeError(
+        f"Unsupported prompt schema for key {prompt_key!r}: type={type(prompt).__name__}; "
+        f"columns={sorted(row_dict.keys())}"
+    )
 
 
 def tokenizer_encode(tokenizer: Any, text: str) -> list[int]:
@@ -193,6 +223,46 @@ def import_path_for(module_name: str) -> str | None:
     return getattr(module, "__file__", None)
 
 
+def torch_runtime_metadata() -> dict[str, Any]:
+    try:
+        import torch
+    except Exception:
+        return {
+            "torch_version": None,
+            "torch_cuda_version": None,
+            "torch_cuda_is_available": False,
+            "torch_cuda_device_count": 0,
+            "torch_cuda_device_names": [],
+        }
+
+    cuda = getattr(torch, "cuda", None)
+    try:
+        cuda_is_available = bool(cuda.is_available()) if cuda is not None else False
+    except Exception:
+        cuda_is_available = False
+
+    try:
+        cuda_device_count = int(cuda.device_count()) if cuda is not None else 0
+    except Exception:
+        cuda_device_count = 0
+
+    cuda_device_names = []
+    if cuda is not None:
+        for device_index in range(cuda_device_count):
+            try:
+                cuda_device_names.append(cuda.get_device_name(device_index))
+            except Exception as exc:
+                cuda_device_names.append(f"<error: {exc}>")
+
+    return {
+        "torch_version": getattr(torch, "__version__", None),
+        "torch_cuda_version": getattr(getattr(torch, "version", None), "cuda", None),
+        "torch_cuda_is_available": cuda_is_available,
+        "torch_cuda_device_count": cuda_device_count,
+        "torch_cuda_device_names": cuda_device_names,
+    }
+
+
 def jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -225,13 +295,6 @@ def metadata(
     step: int,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    try:
-        import torch
-
-        torch_version = torch.__version__
-    except Exception:
-        torch_version = None
-
     data = {
         "stage": stage,
         "step": step,
@@ -239,7 +302,6 @@ def metadata(
         "checkpoint_path": checkpoint_path,
         "tokenizer_path": tokenizer_path,
         "python_version": sys.version,
-        "torch_version": torch_version,
         "vllm_version": package_version("vllm"),
         "transformers_version": package_version("transformers"),
         "verl_import_path": import_path_for("verl"),
@@ -248,6 +310,7 @@ def metadata(
         "platform": platform.platform(),
         "time": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
+    data.update(torch_runtime_metadata())
     if extra:
         data.update(extra)
     return jsonable(data)
@@ -306,9 +369,17 @@ def reward_to_float(value: Any) -> float:
     return float(value)
 
 
-def call_reward_function(fn: Callable[..., Any], data_source: str, text: str, ground_truth: Any) -> float:
+def call_reward_function(
+    fn: Callable[..., Any],
+    data_source: str,
+    text: str,
+    ground_truth: Any,
+    extra_info: Any | None = None,
+) -> float:
+    extra_info = normalize_extra_info(extra_info)
     attempts = [
-        lambda: fn(data_source=data_source, solution_str=text, ground_truth=ground_truth, extra_info={}),
+        lambda: fn(data_source=data_source, solution_str=text, ground_truth=ground_truth, extra_info=extra_info),
+        lambda: fn(data_source, text, ground_truth, extra_info),
         lambda: fn(data_source, text, ground_truth),
         lambda: fn(text, ground_truth),
     ]
@@ -356,6 +427,30 @@ def validate_requested_prefixes(prefix_lengths: list[int]) -> None:
         raise ValueError(f"prefix_lengths must include 2048 and 10240; missing={missing}")
 
 
+def rollout_stop_flags(response_token_len: int, finish_reason: Any, max_tokens: int) -> dict[str, bool]:
+    hit_cap = finish_reason == "length" or response_token_len >= max_tokens
+    return {
+        "is_over_2048": response_token_len > 2048,
+        "is_over_4096": response_token_len > 4096,
+        "is_over_8192": response_token_len > 8192,
+        "hit_10240_cap": hit_cap,
+        "eos_or_stop_before_2048": response_token_len < 2048 and finish_reason == "stop",
+    }
+
+
+def stop_category(row: pd.Series) -> str:
+    response_token_len = int(row["response_token_len"])
+    finish_reason = row.get("finish_reason")
+    hit_10240_cap = bool(row.get("hit_10240_cap", row.get("hit_max_tokens", False)))
+    if hit_10240_cap:
+        return "hit_10240_cap"
+    if finish_reason == "stop" and response_token_len < 2048:
+        return "eos_or_stop_before_2048"
+    if finish_reason == "stop" and 2048 < response_token_len < 10240:
+        return "stop_after_2048_before_10240"
+    return "other_stop_reason"
+
+
 def score_dataframe(
     df: pd.DataFrame,
     tokenizer: Any,
@@ -373,6 +468,8 @@ def score_dataframe(
         token_ids = parse_token_ids(out.get("response_token_ids"))
         data_source = out.get("data_source")
         ground_truth = out.get("ground_truth")
+        extra_info = normalize_extra_info(out.get("extra_info", {}))
+        out["extra_info"] = extra_info
         first_positive_prefix_len = None
         prefix_texts: dict[int, str] = {}
 
@@ -380,7 +477,7 @@ def score_dataframe(
             prefix_ids = token_ids[:prefix_len]
             prefix_text = tokenizer.decode(prefix_ids, skip_special_tokens=decode_skip_special_tokens)
             prefix_texts[prefix_len] = prefix_text
-            reward = call_reward_function(reward_fn, data_source, prefix_text, ground_truth)
+            reward = call_reward_function(reward_fn, data_source, prefix_text, ground_truth, extra_info)
             out[f"reward_{prefix_len}"] = reward
             if first_positive_prefix_len is None and reward > positive_threshold:
                 first_positive_prefix_len = prefix_len
@@ -433,6 +530,21 @@ def build_analysis_tables(
     for column in ["reward_2048", "reward_10240", "reward_delta_10240_minus_2048", "response_token_len"]:
         df[column] = pd.to_numeric(df[column])
     df["hit_max_tokens"] = df.get("hit_max_tokens", False).astype(bool)
+    if "is_over_2048" not in df:
+        df["is_over_2048"] = df["response_token_len"] > 2048
+    if "is_over_4096" not in df:
+        df["is_over_4096"] = df["response_token_len"] > 4096
+    if "is_over_8192" not in df:
+        df["is_over_8192"] = df["response_token_len"] > 8192
+    if "hit_10240_cap" not in df:
+        df["hit_10240_cap"] = df["hit_max_tokens"]
+    if "finish_reason" not in df:
+        df["finish_reason"] = None
+    if "stop_reason" not in df:
+        df["stop_reason"] = None
+    if "eos_or_stop_before_2048" not in df:
+        df["eos_or_stop_before_2048"] = (df["response_token_len"] < 2048) & df["finish_reason"].eq("stop")
+    df["stop_category"] = df.apply(stop_category, axis=1)
     false_negative_default = df["reward_2048"].le(positive_threshold) & df["reward_10240"].gt(positive_threshold)
     answer_corruption_default = df["reward_2048"].gt(positive_threshold) & df["reward_10240"].le(positive_threshold)
     df["false_negative_2048_to_10240"] = df.get(
@@ -443,7 +555,7 @@ def build_analysis_tables(
     ).astype(bool)
 
     step = int(df["step"].iloc[0]) if len(df) else -1
-    over2048 = df["response_token_len"] > 2048
+    over2048 = df["is_over_2048"]
     p_false_negative_given_over2048 = (
         bool_mean(df.loc[over2048, "false_negative_2048_to_10240"]) if bool(over2048.any()) else 0.0
     )
@@ -458,7 +570,12 @@ def build_analysis_tables(
                 "p_len_gt_2048": bool_mean(df["response_token_len"] > 2048),
                 "p_len_gt_4096": bool_mean(df["response_token_len"] > 4096),
                 "p_len_gt_8192": bool_mean(df["response_token_len"] > 8192),
-                "p_hit_10240_cap": bool_mean(df["hit_max_tokens"]),
+                "p_hit_10240_cap": bool_mean(df["hit_10240_cap"]),
+                "p_eos_or_stop_before_2048": bool_mean(df["eos_or_stop_before_2048"]),
+                "p_stop_after_2048_before_10240": bool_mean(
+                    df["stop_category"].eq("stop_after_2048_before_10240")
+                ),
+                "p_other_stop_reason": bool_mean(df["stop_category"].eq("other_stop_reason")),
                 "mean_reward_2048": float(df["reward_2048"].mean()) if len(df) else 0.0,
                 "mean_reward_10240": float(df["reward_10240"].mean()) if len(df) else 0.0,
                 "p_reward_2048_pos": positive_rate(df["reward_2048"], positive_threshold),
@@ -538,6 +655,9 @@ def build_analysis_tables(
         adv_df = pd.DataFrame(adv_rows)
         neg_to_pos = (adv_df["a2048"] < 0) & (adv_df["a10240"] > 0)
         pos_to_neg = (adv_df["a2048"] > 0) & (adv_df["a10240"] < 0)
+        zero_to_pos = (adv_df["a2048"] == 0) & (adv_df["a10240"] > 0)
+        nonpos_to_pos = (adv_df["a2048"] <= 0) & (adv_df["a10240"] > 0)
+        pos_to_nonpos = (adv_df["a2048"] > 0) & (adv_df["a10240"] <= 0)
         sign_flip = neg_to_pos | pos_to_neg
         advantage_summary = pd.DataFrame(
             [
@@ -546,6 +666,12 @@ def build_analysis_tables(
                     "adv_sign_flip_rate": float(sign_flip.mean()),
                     "adv_neg_to_pos_rate": float(neg_to_pos.mean()),
                     "adv_pos_to_neg_rate": float(pos_to_neg.mean()),
+                    "adv_zero_to_pos_rate": float(zero_to_pos.mean()),
+                    "adv_nonpos_to_pos_rate": float(nonpos_to_pos.mean()),
+                    "adv_pos_to_nonpos_rate": float(pos_to_nonpos.mean()),
+                    "zero_to_pos_rate": float(zero_to_pos.mean()),
+                    "nonpos_to_pos_rate": float(nonpos_to_pos.mean()),
+                    "pos_to_nonpos_rate": float(pos_to_nonpos.mean()),
                     "mean_abs_adv_delta": float((adv_df["a10240"] - adv_df["a2048"]).abs().mean()),
                 }
             ]
@@ -558,9 +684,35 @@ def build_analysis_tables(
                     "adv_sign_flip_rate": 0.0,
                     "adv_neg_to_pos_rate": 0.0,
                     "adv_pos_to_neg_rate": 0.0,
+                    "adv_zero_to_pos_rate": 0.0,
+                    "adv_nonpos_to_pos_rate": 0.0,
+                    "adv_pos_to_nonpos_rate": 0.0,
+                    "zero_to_pos_rate": 0.0,
+                    "nonpos_to_pos_rate": 0.0,
+                    "pos_to_nonpos_rate": 0.0,
                     "mean_abs_adv_delta": 0.0,
                 }
             ]
+        )
+
+    if len(df):
+        stop_reason_summary = (
+            df.assign(
+                finish_reason=df["finish_reason"].fillna("<none>").astype(str),
+                stop_reason=df["stop_reason"].fillna("<none>").astype(str),
+            )
+            .groupby(["finish_reason", "stop_reason", "stop_category"], sort=True)
+            .size()
+            .reset_index(name="count")
+        )
+        stop_reason_summary["step"] = step
+        stop_reason_summary["ratio"] = stop_reason_summary["count"] / float(len(df))
+        stop_reason_summary = stop_reason_summary[
+            ["step", "finish_reason", "stop_reason", "stop_category", "count", "ratio"]
+        ]
+    else:
+        stop_reason_summary = pd.DataFrame(
+            columns=["step", "finish_reason", "stop_reason", "stop_category", "count", "ratio"]
         )
 
     return {
@@ -569,55 +721,133 @@ def build_analysis_tables(
         "group_summary": group_summary,
         "group_transitions": group_transitions,
         "advantage_summary": advantage_summary,
+        "stop_reason_summary": stop_reason_summary,
     }
 
 
-def prepare_rollout_inputs(config: dict[str, Any], tokenizer: Any) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def build_rollout_input_record(
+    row_dict: dict[str, Any],
+    original_index: Any,
+    prompt_id: int,
+    tokenizer: Any,
+    prompt_key: str,
+    data_source_key: str,
+    max_prompt_length: int,
+    extractors: list[str],
+) -> dict[str, Any] | None:
+    if data_source_key not in row_dict:
+        raise KeyError(f"Missing data_source key {data_source_key!r}; columns={sorted(row_dict.keys())}")
+
+    prompt_text = render_prompt(row_dict, tokenizer, prompt_key)
+    prompt_token_len = len(tokenizer_encode(tokenizer, prompt_text))
+    if prompt_token_len > max_prompt_length:
+        return None
+
+    return {
+        "prompt_id": prompt_id,
+        "original_index": int(original_index) if isinstance(original_index, int) else original_index,
+        "data_source": row_dict[data_source_key],
+        "ground_truth": extract_ground_truth(row_dict, extractors, prompt_id),
+        "extra_info": normalize_extra_info(row_dict.get("extra_info", {})),
+        "prompt_text": prompt_text,
+        "prompt_token_len": prompt_token_len,
+    }
+
+
+def prepare_rollout_inputs(config: dict[str, Any], tokenizer: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     data_config = config["data"]
     df = pd.read_parquet(config["paths"]["data_path"])
     prompt_start = int(data_config.get("prompt_start", 0))
     num_prompts = int(data_config.get("num_prompts", len(df)))
     end = None if num_prompts <= 0 else prompt_start + num_prompts
-    selected = df.iloc[prompt_start:end]
 
     prompt_key = data_config.get("prompt_key", "prompt")
     data_source_key = data_config.get("data_source_key", "data_source")
     max_prompt_length = int(data_config.get("max_prompt_length", 1024))
     extractors = list(data_config.get("ground_truth_extractors", []))
-
-    rows: list[dict[str, Any]] = []
+    filter_overlong_before_slice = bool(data_config.get("filter_overlong_before_slice", True))
     filtered_overlong = 0
-    for local_id, (original_index, row) in enumerate(selected.iterrows()):
-        row_dict = row.to_dict()
-        if data_source_key not in row_dict:
-            raise KeyError(f"Missing data_source key {data_source_key!r}; columns={sorted(row_dict.keys())}")
-        prompt_text = render_prompt(row_dict, tokenizer, prompt_key)
-        prompt_token_len = len(tokenizer_encode(tokenizer, prompt_text))
-        if prompt_token_len > max_prompt_length:
-            filtered_overlong += 1
-            continue
-        rows.append(
-            {
-                "prompt_id": local_id,
-                "original_index": int(original_index) if isinstance(original_index, int) else original_index,
-                "data_source": row_dict[data_source_key],
-                "ground_truth": extract_ground_truth(row_dict, extractors, local_id),
-                "prompt_text": prompt_text,
-                "prompt_token_len": prompt_token_len,
-            }
-        )
+
+    if filter_overlong_before_slice:
+        filtered_rows: list[dict[str, Any]] = []
+        for scan_id, (original_index, row) in enumerate(df.iterrows()):
+            record = build_rollout_input_record(
+                row.to_dict(),
+                original_index,
+                scan_id,
+                tokenizer,
+                prompt_key,
+                data_source_key,
+                max_prompt_length,
+                extractors,
+            )
+            if record is None:
+                filtered_overlong += 1
+                continue
+            filtered_rows.append(record)
+
+        rows = filtered_rows[prompt_start:end]
+        for prompt_id, row in enumerate(rows):
+            row["prompt_id"] = prompt_id
+            row["prompt_id_dense"] = prompt_id
+    else:
+        selected = df.iloc[prompt_start:end]
+        rows = []
+        for local_id, (original_index, row) in enumerate(selected.iterrows()):
+            record = build_rollout_input_record(
+                row.to_dict(),
+                original_index,
+                local_id,
+                tokenizer,
+                prompt_key,
+                data_source_key,
+                max_prompt_length,
+                extractors,
+            )
+            if record is None:
+                filtered_overlong += 1
+                continue
+            rows.append(record)
+        for dense_id, row in enumerate(rows):
+            row["prompt_id_dense"] = dense_id
 
     stats = {
         "dataset_rows": int(len(df)),
-        "selected_rows": int(len(selected)),
+        "selected_rows": int(len(rows) if filter_overlong_before_slice else len(df.iloc[prompt_start:end])),
         "filtered_overlong_prompts": int(filtered_overlong),
         "kept_prompts": int(len(rows)),
+        "filter_overlong_before_slice": filter_overlong_before_slice,
     }
     return rows, stats
 
 
+def build_vllm_kwargs(checkpoint_path: str, tokenizer_path: str, rollout_config: dict[str, Any]) -> dict[str, Any]:
+    kwargs = {
+        "model": checkpoint_path,
+        "tokenizer": tokenizer_path,
+        "trust_remote_code": bool(rollout_config.get("trust_remote_code", False)),
+        "dtype": rollout_config.get("dtype", "bfloat16"),
+        "tensor_parallel_size": int(rollout_config.get("tensor_parallel_size", 1)),
+        "gpu_memory_utilization": float(rollout_config.get("gpu_memory_utilization", 0.72)),
+        "max_model_len": int(rollout_config.get("max_model_len", 12288)),
+        "enforce_eager": bool(rollout_config.get("enforce_eager", False)),
+        "enable_prefix_caching": bool(rollout_config.get("enable_prefix_caching", True)),
+    }
+    if "max_num_seqs" in rollout_config and rollout_config["max_num_seqs"] is not None:
+        kwargs["max_num_seqs"] = int(rollout_config["max_num_seqs"])
+    if "max_num_batched_tokens" in rollout_config and rollout_config["max_num_batched_tokens"] is not None:
+        kwargs["max_num_batched_tokens"] = int(rollout_config["max_num_batched_tokens"])
+    return kwargs
+
+
+def validate_rollout_storage_config(config: dict[str, Any]) -> None:
+    if not bool(config.get("storage", {}).get("save_response_token_ids", True)):
+        raise ValueError("score mode requires response_token_ids; do not disable save_response_token_ids")
+
+
 def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | None) -> None:
     checkpoint_path = resolve_checkpoint_path(config, step, cli_checkpoint_path)
+    validate_rollout_storage_config(config)
     rollout_dir = stage_dir(config, "rollouts", step)
     output_path = rollout_dir / "rollouts.parquet"
     skip_existing = bool(config.get("storage", {}).get("skip_existing", False))
@@ -635,17 +865,7 @@ def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
     from vllm import LLM, SamplingParams
 
     rollout_config = config["rollout"]
-    llm = LLM(
-        model=checkpoint_path,
-        tokenizer=tokenizer_path,
-        trust_remote_code=bool(rollout_config.get("trust_remote_code", False)),
-        dtype=rollout_config.get("dtype", "bfloat16"),
-        tensor_parallel_size=int(rollout_config.get("tensor_parallel_size", 1)),
-        gpu_memory_utilization=float(rollout_config.get("gpu_memory_utilization", 0.72)),
-        max_model_len=int(rollout_config.get("max_model_len", 12288)),
-        enforce_eager=bool(rollout_config.get("enforce_eager", False)),
-        enable_prefix_caching=bool(rollout_config.get("enable_prefix_caching", True)),
-    )
+    llm = LLM(**build_vllm_kwargs(checkpoint_path, tokenizer_path, rollout_config))
     sampling_params = SamplingParams(
         n=int(rollout_config.get("n", 8)),
         max_tokens=int(rollout_config.get("max_tokens", 10240)),
@@ -670,22 +890,27 @@ def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
                 token_ids = list(getattr(completion, "token_ids", []) or [])
                 finish_reason = getattr(completion, "finish_reason", None)
                 stop_reason = getattr(completion, "stop_reason", None)
+                response_token_len = len(token_ids)
+                stop_flags = rollout_stop_flags(response_token_len, finish_reason, max_tokens)
                 records.append(
                     {
                         "step": step,
                         "prompt_id": item["prompt_id"],
+                        "prompt_id_dense": item.get("prompt_id_dense", item["prompt_id"]),
                         "original_index": item["original_index"],
                         "sample_id": sample_id,
                         "data_source": item["data_source"],
                         "ground_truth": item["ground_truth"],
+                        "extra_info": item["extra_info"],
                         "prompt_text": item["prompt_text"],
                         "prompt_token_len": item["prompt_token_len"],
                         "response_text": getattr(completion, "text", None) if save_response_text else None,
                         "response_token_ids": token_ids if save_response_token_ids else None,
-                        "response_token_len": len(token_ids),
+                        "response_token_len": response_token_len,
                         "finish_reason": finish_reason,
                         "stop_reason": stop_reason,
-                        "hit_max_tokens": finish_reason == "length" or len(token_ids) >= max_tokens,
+                        "hit_max_tokens": stop_flags["hit_10240_cap"],
+                        **stop_flags,
                     }
                 )
         print(f"Generated prompts {start + len(batch)}/{len(prompts)}")

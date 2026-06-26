@@ -14,6 +14,7 @@ data:
   prompt_key: prompt
   data_source_key: data_source
   max_prompt_length: 1024
+  filter_overlong_before_slice: true
   ground_truth_extractors:
     - reward_model.ground_truth
     - extra_info.answer
@@ -34,6 +35,8 @@ rollout:
   dtype: bfloat16
   tensor_parallel_size: 1
   gpu_memory_utilization: 0.72
+  max_num_seqs: 256
+  max_num_batched_tokens: 32768
   trust_remote_code: false
   enforce_eager: false
   enable_prefix_caching: true
