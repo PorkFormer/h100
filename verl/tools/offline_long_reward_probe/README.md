@@ -8,6 +8,8 @@ The standard runtime is the `verlai/verl:vllm018.dev1` container. Enter the cont
 
 Prompt selection defaults to filtering prompts longer than `data.max_prompt_length` before applying `prompt_start` and `num_prompts`. Set `data.filter_overlong_before_slice: false` only if you want the older behavior of slicing first and then dropping overlong prompts.
 
+For small pilot runs, `data.shuffle: true` samples from a deterministic seeded shuffle before filtering and slicing. `original_index` still records the source parquet row index for traceability.
+
 ## Sanity Checks
 
 Before launching long rollouts, you can check Python syntax and YAML parsing:

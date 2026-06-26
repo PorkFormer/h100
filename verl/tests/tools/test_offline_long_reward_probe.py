@@ -248,6 +248,43 @@ def test_prepare_rollout_inputs_can_filter_overlong_after_slice(monkeypatch):
     assert stats["kept_prompts"] == 1
 
 
+def test_prepare_rollout_inputs_can_shuffle_with_seed_before_slice(monkeypatch):
+    probe = load_probe_module()
+    tokenizer = DummyTokenizer()
+    df = pd.DataFrame(
+        [
+            {"prompt": f"p{i}", "data_source": "math", "reward_model": {"ground_truth": f"gt-{i}"}}
+            for i in range(5)
+        ]
+    )
+    monkeypatch.setattr(probe.pd, "read_parquet", lambda _: df)
+
+    rows, stats = probe.prepare_rollout_inputs(
+        {
+            "paths": {"data_path": "ignored.parquet"},
+            "data": {
+                "prompt_key": "prompt",
+                "data_source_key": "data_source",
+                "max_prompt_length": 1,
+                "ground_truth_extractors": ["reward_model.ground_truth"],
+                "num_prompts": 3,
+                "prompt_start": 0,
+                "shuffle": True,
+                "seed": 7,
+            },
+        },
+        tokenizer,
+    )
+
+    expected_original_indices = list(df.sample(frac=1.0, random_state=7).index[:3])
+    assert [row["original_index"] for row in rows] == expected_original_indices
+    assert [row["prompt_id"] for row in rows] == [0, 1, 2]
+    assert [row["prompt_id_dense"] for row in rows] == [0, 1, 2]
+    assert [row["prompt_text"] for row in rows] == [f"p{i}" for i in expected_original_indices]
+    assert stats["shuffle"] is True
+    assert stats["seed"] == 7
+
+
 def test_rollout_stop_flags_classify_response_lengths_and_stops():
     probe = load_probe_module()
 

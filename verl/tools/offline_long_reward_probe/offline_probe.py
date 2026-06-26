@@ -757,6 +757,12 @@ def build_rollout_input_record(
 def prepare_rollout_inputs(config: dict[str, Any], tokenizer: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     data_config = config["data"]
     df = pd.read_parquet(config["paths"]["data_path"])
+    shuffle = bool(data_config.get("shuffle", False))
+    seed = data_config.get("seed", 42)
+    if shuffle:
+        random_state = None if seed is None else int(seed)
+        df = df.sample(frac=1.0, random_state=random_state)
+
     prompt_start = int(data_config.get("prompt_start", 0))
     num_prompts = int(data_config.get("num_prompts", len(df)))
     end = None if num_prompts <= 0 else prompt_start + num_prompts
@@ -817,6 +823,8 @@ def prepare_rollout_inputs(config: dict[str, Any], tokenizer: Any) -> tuple[list
         "filtered_overlong_prompts": int(filtered_overlong),
         "kept_prompts": int(len(rows)),
         "filter_overlong_before_slice": filter_overlong_before_slice,
+        "shuffle": shuffle,
+        "seed": None if seed is None else int(seed),
     }
     return rows, stats
 
