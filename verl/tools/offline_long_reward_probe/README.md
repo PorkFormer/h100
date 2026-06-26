@@ -36,7 +36,8 @@ python tools/offline_long_reward_probe/offline_probe.py \
   --config tools/offline_long_reward_probe/probe_config.yaml \
   --step 400 \
   --mode all \
-  --num-prompts 8
+  --num-prompts 8 \
+  --force
 ```
 
 ## Pilot Run
@@ -46,8 +47,11 @@ python tools/offline_long_reward_probe/offline_probe.py \
   --config tools/offline_long_reward_probe/probe_config.yaml \
   --step 400 \
   --mode all \
-  --num-prompts 512
+  --num-prompts 512 \
+  --force
 ```
+
+`storage.skip_existing: true` is useful for resuming, but it can reuse stale parquet files after you change scoring, reward functions, prefix lengths, prompt filtering, or shuffle settings. Add `--force` when rerunning a stage after code or config changes.
 
 For 10240-token rollouts, start conservatively if you see OOMs. In `probe_config.yaml`, lower `rollout.batch_size_prompts` to `8` or `16` and set `rollout.max_num_seqs` around `64` before increasing throughput.
 
@@ -74,7 +78,8 @@ python tools/offline_long_reward_probe/offline_probe.py \
   --mode rollout \
   --num-prompts 8 \
   --output-dir /path/to/out \
-  --checkpoint-path /path/to/actor_hf
+  --checkpoint-path /path/to/actor_hf \
+  --force
 ```
 
 Outputs are written under `output_dir`:

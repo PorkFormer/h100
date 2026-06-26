@@ -352,6 +352,61 @@ def test_validate_rollout_storage_config_rejects_disabled_token_ids():
         probe.validate_rollout_storage_config({"storage": {"save_response_token_ids": False}})
 
 
+def test_should_skip_existing_output_respects_force(tmp_path):
+    probe = load_probe_module()
+    output_path = tmp_path / "rollouts.parquet"
+    output_path.write_text("old", encoding="utf-8")
+    config = {"storage": {"skip_existing": True}}
+
+    assert probe.should_skip_existing_output(config, output_path, force=False) is True
+    assert probe.should_skip_existing_output(config, output_path, force=True) is False
+    assert probe.should_skip_existing_output({"storage": {"skip_existing": False}}, output_path, force=False) is False
+
+
+def test_main_passes_force_to_all_stages(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config_path = tmp_path / "probe_config.yaml"
+    config_path.write_text("{}", encoding="utf-8")
+    calls = []
+
+    monkeypatch.setattr(probe, "load_config", lambda _: {"storage": {}})
+    monkeypatch.setattr(
+        probe,
+        "run_rollout",
+        lambda config, step, checkpoint_path, force=False: calls.append(("rollout", step, checkpoint_path, force)),
+    )
+    monkeypatch.setattr(
+        probe,
+        "run_score",
+        lambda config, step, checkpoint_path, force=False: calls.append(("score", step, checkpoint_path, force)),
+    )
+    monkeypatch.setattr(
+        probe,
+        "run_analyze",
+        lambda config, step, checkpoint_path, force=False: calls.append(("analyze", step, checkpoint_path, force)),
+    )
+
+    probe.main(
+        [
+            "--config",
+            str(config_path),
+            "--step",
+            "400",
+            "--mode",
+            "all",
+            "--checkpoint-path",
+            "/ckpt",
+            "--force",
+        ]
+    )
+
+    assert calls == [
+        ("rollout", 400, "/ckpt", True),
+        ("score", 400, "/ckpt", True),
+        ("analyze", 400, "/ckpt", True),
+    ]
+
+
 def test_score_dataframe_truncates_by_token_ids_and_computes_flags():
     probe = load_probe_module()
     tokenizer = DummyTokenizer()

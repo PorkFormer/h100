@@ -853,14 +853,24 @@ def validate_rollout_storage_config(config: dict[str, Any]) -> None:
         raise ValueError("score mode requires response_token_ids; do not disable save_response_token_ids")
 
 
-def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | None) -> None:
+def should_skip_existing_output(config: dict[str, Any], output_path: Path, force: bool = False) -> bool:
+    return bool(config.get("storage", {}).get("skip_existing", False)) and output_path.exists() and not force
+
+
+def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | None, force: bool = False) -> None:
     checkpoint_path = resolve_checkpoint_path(config, step, cli_checkpoint_path)
     validate_rollout_storage_config(config)
     rollout_dir = stage_dir(config, "rollouts", step)
     output_path = rollout_dir / "rollouts.parquet"
-    skip_existing = bool(config.get("storage", {}).get("skip_existing", False))
-    if skip_existing and output_path.exists():
-        write_metadata(config, checkpoint_path, None, "rollouts", step, {"skipped": True, "reason": "output exists"})
+    if should_skip_existing_output(config, output_path, force):
+        write_metadata(
+            config,
+            checkpoint_path,
+            None,
+            "rollouts",
+            step,
+            {"skipped": True, "reason": "output exists", "force": force},
+        )
         print(f"Skipping rollout because output exists: {output_path}")
         return
 
@@ -930,18 +940,30 @@ def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
         tokenizer_path,
         "rollouts",
         step,
-        {"skipped": False, "output_path": str(output_path), **prompt_stats, "num_trajectories": len(records)},
+        {
+            "skipped": False,
+            "force": force,
+            "output_path": str(output_path),
+            **prompt_stats,
+            "num_trajectories": len(records),
+        },
     )
     print(f"Wrote rollout parquet: {output_path}")
 
 
-def run_score(config: dict[str, Any], step: int, cli_checkpoint_path: str | None) -> None:
+def run_score(config: dict[str, Any], step: int, cli_checkpoint_path: str | None, force: bool = False) -> None:
     checkpoint_path = resolve_checkpoint_path(config, step, cli_checkpoint_path)
     scored_dir = stage_dir(config, "scored", step)
     output_path = scored_dir / "scored.parquet"
-    skip_existing = bool(config.get("storage", {}).get("skip_existing", False))
-    if skip_existing and output_path.exists():
-        write_metadata(config, checkpoint_path, None, "scored", step, {"skipped": True, "reason": "output exists"})
+    if should_skip_existing_output(config, output_path, force):
+        write_metadata(
+            config,
+            checkpoint_path,
+            None,
+            "scored",
+            step,
+            {"skipped": True, "reason": "output exists", "force": force},
+        )
         print(f"Skipping score because output exists: {output_path}")
         return
 
@@ -969,7 +991,13 @@ def run_score(config: dict[str, Any], step: int, cli_checkpoint_path: str | None
         tokenizer_path,
         "scored",
         step,
-        {"skipped": False, "input_path": str(rollout_path), "output_path": str(output_path), "num_rows": len(scored)},
+        {
+            "skipped": False,
+            "force": force,
+            "input_path": str(rollout_path),
+            "output_path": str(output_path),
+            "num_rows": len(scored),
+        },
     )
     print(f"Wrote scored parquet: {output_path}")
 
@@ -1004,13 +1032,19 @@ def example_rows(df: pd.DataFrame, mask: pd.Series) -> list[dict[str, Any]]:
     return rows
 
 
-def run_analyze(config: dict[str, Any], step: int, cli_checkpoint_path: str | None) -> None:
+def run_analyze(config: dict[str, Any], step: int, cli_checkpoint_path: str | None, force: bool = False) -> None:
     checkpoint_path = resolve_checkpoint_path(config, step, cli_checkpoint_path)
     analysis_dir = stage_dir(config, "analysis", step)
     summary_path = analysis_dir / "trajectory_summary.csv"
-    skip_existing = bool(config.get("storage", {}).get("skip_existing", False))
-    if skip_existing and summary_path.exists():
-        write_metadata(config, checkpoint_path, None, "analysis", step, {"skipped": True, "reason": "output exists"})
+    if should_skip_existing_output(config, summary_path, force):
+        write_metadata(
+            config,
+            checkpoint_path,
+            None,
+            "analysis",
+            step,
+            {"skipped": True, "reason": "output exists", "force": force},
+        )
         print(f"Skipping analysis because output exists: {summary_path}")
         return
 
@@ -1043,7 +1077,7 @@ def run_analyze(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
         None,
         "analysis",
         step,
-        {"skipped": False, "input_path": str(scored_path), "output_dir": str(analysis_dir)},
+        {"skipped": False, "force": force, "input_path": str(scored_path), "output_dir": str(analysis_dir)},
     )
     print(f"Wrote analysis outputs: {analysis_dir}")
 
@@ -1056,6 +1090,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-prompts", type=int, default=None, help="Override data.num_prompts")
     parser.add_argument("--output-dir", default=None, help="Override paths.output_dir")
     parser.add_argument("--checkpoint-path", default=None, help="Override checkpoint path")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite this stage even when storage.skip_existing is true",
+    )
     return parser
 
 
@@ -1064,11 +1103,11 @@ def main(argv: list[str] | None = None) -> None:
     config = apply_cli_overrides(load_config(args.config), args)
 
     if args.mode in {"rollout", "all"}:
-        run_rollout(config, args.step, args.checkpoint_path)
+        run_rollout(config, args.step, args.checkpoint_path, args.force)
     if args.mode in {"score", "all"}:
-        run_score(config, args.step, args.checkpoint_path)
+        run_score(config, args.step, args.checkpoint_path, args.force)
     if args.mode in {"analyze", "all"}:
-        run_analyze(config, args.step, args.checkpoint_path)
+        run_analyze(config, args.step, args.checkpoint_path, args.force)
 
 
 if __name__ == "__main__":
