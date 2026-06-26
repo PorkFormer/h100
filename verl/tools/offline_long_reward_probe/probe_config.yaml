@@ -1,0 +1,56 @@
+paths:
+  data_path: /local/clientG/data/dapo_math_17k_train.parquet
+  output_dir: /data/fs201130/jn20658/tenants/clientG/analysis/offline_long_reward_probe
+  checkpoint_root: /data/fs201130/jn20658/tenants/clientG/train_rl/qwen3_8b/dapo/runs/qwen3_8b_base_dapo_bsz256_mbsz16_v1/checkpoints
+  checkpoint_template: "{checkpoint_root}/global_step_{step}/actor_hf"
+  base_model_path: /local/clientG/models/Qwen3-8B-Base
+  tokenizer_path: null
+
+checkpoints:
+  steps: [0, 100, 200, 300, 400, 500]
+  explicit_paths: {}
+
+data:
+  prompt_key: prompt
+  data_source_key: data_source
+  max_prompt_length: 1024
+  ground_truth_extractors:
+    - reward_model.ground_truth
+    - extra_info.answer
+    - extra_info.ground_truth
+    - ground_truth
+    - answer
+  num_prompts: 512
+  prompt_start: 0
+
+rollout:
+  n: 8
+  max_tokens: 10240
+  max_model_len: 12288
+  temperature: 1.0
+  top_p: 1.0
+  top_k: -1
+  ignore_eos: false
+  dtype: bfloat16
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.72
+  trust_remote_code: false
+  enforce_eager: false
+  enable_prefix_caching: true
+  batch_size_prompts: 128
+
+scoring:
+  prefix_lengths: [1024, 2048, 3072, 4096, 6144, 8192, 10240]
+  reward_function:
+    mode: import
+    import_path: verl.utils.reward_score.default_compute_score
+    file_path: null
+    function_name: null
+  positive_threshold: 0.0
+  decode_skip_special_tokens: true
+
+storage:
+  save_response_text: true
+  save_response_token_ids: true
+  compression: zstd
+  skip_existing: true
