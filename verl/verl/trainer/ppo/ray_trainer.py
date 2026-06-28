@@ -40,7 +40,7 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.config import AlgoConfig
 from verl.trainer.distillation.losses import is_distillation_enabled
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss
+from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss, get_current_clip_ratios
 from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
     compute_throughout_metrics,
@@ -1312,6 +1312,9 @@ class RayPPOTrainer:
         ppo_epochs = self.config.actor_rollout_ref.actor.ppo_epochs
         seed = self.config.actor_rollout_ref.actor.data_loader_seed
         shuffle = self.config.actor_rollout_ref.actor.shuffle
+        clip_ratio_low, clip_ratio_high = get_current_clip_ratios(
+            self.config.actor_rollout_ref.actor, self.global_steps
+        )
         tu.assign_non_tensor(
             batch_td,
             calculate_entropy=calculate_entropy,
@@ -1322,6 +1325,8 @@ class RayPPOTrainer:
             seed=seed,
             dataloader_kwargs={"shuffle": shuffle},
             compute_loss=True,
+            clip_ratio_low=clip_ratio_low,
+            clip_ratio_high=clip_ratio_high,
         )
         actor_output = self.actor_rollout_wg.update_actor(batch_td)
         actor_output = tu.get(actor_output, "metrics")

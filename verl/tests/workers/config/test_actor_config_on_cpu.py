@@ -18,6 +18,7 @@ import unittest
 from verl.utils.config import omega_conf_to_dataclass
 from verl.workers.config import (
     ActorConfig,
+    ClipRatioScheduleConfig,
     FSDPActorConfig,
     McoreActorConfig,
     OptimizerConfig,
@@ -74,6 +75,36 @@ class TestActorConfig(unittest.TestCase):
 
         self.assertIsInstance(config, ActorConfig)
         self.assertEqual(config.strategy, "fsdp")
+        self.assertIsInstance(config.clip_ratio_schedule, ClipRatioScheduleConfig)
+        self.assertFalse(config.clip_ratio_schedule.enable)
+
+    def test_actor_config_clip_ratio_schedule_yaml_override(self):
+        """Test clip ratio schedule YAML overrides."""
+        from hydra import compose, initialize_config_dir
+
+        with initialize_config_dir(config_dir=os.path.abspath("verl/trainer/config/actor")):
+            cfg = compose(
+                config_name="actor",
+                overrides=[
+                    "strategy=fsdp",
+                    "ppo_micro_batch_size_per_gpu=128",
+                    "clip_ratio_schedule.enable=true",
+                    "clip_ratio_schedule.type=linear",
+                    "clip_ratio_schedule.clip_high_start=0.35",
+                    "clip_ratio_schedule.clip_high_end=0.2",
+                    "clip_ratio_schedule.schedule_steps=10",
+                    "clip_ratio_schedule.start_step=0",
+                ],
+            )
+
+        config = omega_conf_to_dataclass(cfg)
+
+        self.assertIsInstance(config.clip_ratio_schedule, ClipRatioScheduleConfig)
+        self.assertTrue(config.clip_ratio_schedule.enable)
+        self.assertEqual(config.clip_ratio_schedule.type, "linear")
+        self.assertEqual(config.clip_ratio_schedule.clip_high_start, 0.35)
+        self.assertEqual(config.clip_ratio_schedule.clip_high_end, 0.2)
+        self.assertEqual(config.clip_ratio_schedule.schedule_steps, 10)
 
     def test_fsdp_actor_config_from_yaml(self):
         """Test creating FSDPActorConfig from YAML file."""

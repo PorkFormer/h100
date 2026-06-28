@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 
 import torch
 from tensordict import TensorDict
 
-from verl.trainer.ppo.core_algos import agg_loss, compute_value_loss, get_policy_loss_fn, kl_penalty
+from verl.trainer.ppo.core_algos import (
+    agg_loss,
+    compute_value_loss,
+    get_clip_ratio_metrics,
+    get_policy_loss_fn,
+    kl_penalty,
+)
 from verl.utils import tensordict_utils as tu
 from verl.utils.dataset.dataset_utils import DatasetPadMode
 from verl.utils.metric import AggregationType, Metric
@@ -82,6 +89,24 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
 
     metrics = {}
 
+    runtime_clip_ratio_low = tu.get_non_tensor_data(data=data, key="clip_ratio_low", default=None)
+    runtime_clip_ratio_high = tu.get_non_tensor_data(data=data, key="clip_ratio_high", default=None)
+    clip_ratio_low = (
+        runtime_clip_ratio_low
+        if runtime_clip_ratio_low is not None
+        else (config.clip_ratio_low if config.clip_ratio_low is not None else config.clip_ratio)
+    )
+    clip_ratio_high = (
+        runtime_clip_ratio_high
+        if runtime_clip_ratio_high is not None
+        else (config.clip_ratio_high if config.clip_ratio_high is not None else config.clip_ratio)
+    )
+    loss_config = config
+    if runtime_clip_ratio_low is not None or runtime_clip_ratio_high is not None:
+        loss_config = copy.copy(config)
+        object.__setattr__(loss_config, "clip_ratio_low", clip_ratio_low)
+        object.__setattr__(loss_config, "clip_ratio_high", clip_ratio_high)
+
     # select fields and convert to padded tensor
     fields = ["response_mask", "old_log_probs", "advantages"]
     if "rollout_is_weights" in data:
@@ -107,7 +132,7 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
         advantages=advantages,
         response_mask=response_mask,
         loss_agg_mode=loss_agg_mode,
-        config=config,
+        config=loss_config,
         rollout_is_weights=rollout_is_weights,
     )
 
@@ -116,6 +141,9 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
     pg_metrics = Metric.from_dict(pg_metrics, aggregation=AggregationType.MEAN)
 
     metrics.update(pg_metrics)
+    metrics.update(
+        Metric.from_dict(get_clip_ratio_metrics(clip_ratio_low, clip_ratio_high), aggregation=AggregationType.MEAN)
+    )
     metrics["actor/pg_loss"] = Metric(value=pg_loss, aggregation=metric_aggregation)
     policy_loss = pg_loss
 

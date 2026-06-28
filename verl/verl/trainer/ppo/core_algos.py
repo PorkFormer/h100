@@ -18,7 +18,14 @@ The function implemented in this file should be used by trainer with different d
 implement PPO-like algorithms.
 """
 
-__all__ = ["register_adv_est", "get_adv_estimator_fn", "AdvantageEstimator"]
+__all__ = [
+    "register_adv_est",
+    "get_adv_estimator_fn",
+    "AdvantageEstimator",
+    "linear_schedule",
+    "get_current_clip_ratios",
+    "get_clip_ratio_metrics",
+]
 
 from collections import defaultdict
 from enum import Enum
@@ -48,6 +55,104 @@ PolicyLossFn = Callable[
 ]
 
 POLICY_LOSS_REGISTRY: dict[str, PolicyLossFn] = {}
+
+
+def _config_get(config: Any, key: str, default: Any = None) -> Any:
+    if config is None:
+        return default
+    if hasattr(config, "get"):
+        return config.get(key, default)
+    return getattr(config, key, default)
+
+
+def _validate_non_negative(name: str, value: float | int | None) -> None:
+    if value is not None and value < 0:
+        raise ValueError(f"clip_ratio_schedule.{name} must be >= 0, got {value}")
+
+
+def linear_schedule(
+    start: float,
+    end: float,
+    schedule_steps: int,
+    global_step: int,
+    start_step: int = 0,
+) -> float:
+    """Linearly interpolate from start to end using global step."""
+    _validate_non_negative("start", start)
+    _validate_non_negative("end", end)
+    if schedule_steps < 0:
+        raise ValueError(f"clip_ratio_schedule.schedule_steps must be >= 0, got {schedule_steps}")
+    if start_step < 0:
+        raise ValueError(f"clip_ratio_schedule.start_step must be >= 0, got {start_step}")
+
+    if schedule_steps == 0:
+        return float(end)
+
+    elapsed_steps = min(max(global_step - start_step, 0), schedule_steps)
+    progress = elapsed_steps / schedule_steps
+    return float(start + (end - start) * progress)
+
+
+def _get_static_clip_ratios(actor_config: ActorConfig | DictConfig) -> tuple[float, float]:
+    clip_ratio = _config_get(actor_config, "clip_ratio")
+    clip_ratio_low = _config_get(actor_config, "clip_ratio_low", None)
+    clip_ratio_high = _config_get(actor_config, "clip_ratio_high", None)
+    if clip_ratio_low is None:
+        clip_ratio_low = clip_ratio
+    if clip_ratio_high is None:
+        clip_ratio_high = clip_ratio
+    return float(clip_ratio_low), float(clip_ratio_high)
+
+
+def get_current_clip_ratios(actor_config: ActorConfig | DictConfig, global_step: int) -> tuple[float, float]:
+    """Resolve actor clip ratios for a global training step."""
+    static_low, static_high = _get_static_clip_ratios(actor_config)
+    schedule = _config_get(actor_config, "clip_ratio_schedule", None)
+    if schedule is None or not _config_get(schedule, "enable", False):
+        return static_low, static_high
+
+    schedule_type = _config_get(schedule, "type", "linear")
+    if schedule_type != "linear":
+        raise ValueError(f"Unsupported clip_ratio_schedule.type: {schedule_type}. Only 'linear' is supported.")
+
+    schedule_steps = _config_get(schedule, "schedule_steps", 0)
+    start_step = _config_get(schedule, "start_step", 0)
+    if schedule_steps < 0:
+        raise ValueError(f"clip_ratio_schedule.schedule_steps must be >= 0, got {schedule_steps}")
+    if start_step < 0:
+        raise ValueError(f"clip_ratio_schedule.start_step must be >= 0, got {start_step}")
+
+    clip_low_start = _config_get(schedule, "clip_low_start", None)
+    clip_low_end = _config_get(schedule, "clip_low_end", None)
+    clip_high_start = _config_get(schedule, "clip_high_start", None)
+    clip_high_end = _config_get(schedule, "clip_high_end", None)
+
+    for name, value in (
+        ("clip_low_start", clip_low_start),
+        ("clip_low_end", clip_low_end),
+        ("clip_high_start", clip_high_start),
+        ("clip_high_end", clip_high_end),
+    ):
+        _validate_non_negative(name, value)
+
+    clip_low_start = static_low if clip_low_start is None else clip_low_start
+    clip_low_end = static_low if clip_low_end is None else clip_low_end
+    clip_high_start = static_high if clip_high_start is None else clip_high_start
+    clip_high_end = static_high if clip_high_end is None else clip_high_end
+
+    return (
+        linear_schedule(clip_low_start, clip_low_end, schedule_steps, global_step, start_step),
+        linear_schedule(clip_high_start, clip_high_end, schedule_steps, global_step, start_step),
+    )
+
+
+def get_clip_ratio_metrics(clip_ratio_low: float, clip_ratio_high: float) -> dict[str, float]:
+    return {
+        "actor/clip_ratio_low": float(clip_ratio_low),
+        "actor/clip_ratio_high": float(clip_ratio_high),
+        "actor/clip_bound_lower": float(1 - clip_ratio_low),
+        "actor/clip_bound_upper": float(1 + clip_ratio_high),
+    }
 
 
 def register_policy_loss(name: str) -> Callable[[PolicyLossFn], PolicyLossFn]:

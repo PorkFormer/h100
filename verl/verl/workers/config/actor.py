@@ -33,6 +33,7 @@ from .model import HFModelConfig
 from .optimizer import OptimizerConfig
 
 __all__ = [
+    "ClipRatioScheduleConfig",
     "PolicyLossConfig",
     "RouterReplayConfig",
     "ActorConfig",
@@ -43,6 +44,35 @@ __all__ = [
     "TorchTitanActorConfig",
     "MindSpeedActorConfig",
 ]
+
+
+@dataclass
+class ClipRatioScheduleConfig(BaseConfig):
+    """Configuration for actor PPO clip ratio scheduling.
+
+    The schedule is disabled by default. When enabled, the trainer resolves the
+    current clip bounds once per global step and sends them to actor workers as
+    runtime metadata.
+
+    Args:
+        enable (bool): Whether to enable clip ratio scheduling.
+        type (str): Schedule type. Currently only 'linear' is supported.
+        clip_low_start (Optional[float]): Initial lower clip ratio. Falls back to actor.clip_ratio_low.
+        clip_low_end (Optional[float]): Final lower clip ratio. Falls back to actor.clip_ratio_low.
+        clip_high_start (Optional[float]): Initial upper clip ratio. Falls back to actor.clip_ratio_high.
+        clip_high_end (Optional[float]): Final upper clip ratio. Falls back to actor.clip_ratio_high.
+        schedule_steps (int): Number of global steps over which to interpolate.
+        start_step (int): Global step at which interpolation starts.
+    """
+
+    enable: bool = False
+    type: str = "linear"
+    clip_low_start: Optional[float] = None
+    clip_low_end: Optional[float] = None
+    clip_high_start: Optional[float] = None
+    clip_high_end: Optional[float] = None
+    schedule_steps: int = 0
+    start_step: int = 0
 
 
 @dataclass
@@ -116,6 +146,7 @@ class ActorConfig(BaseConfig):
         clip_ratio (float): PPO clipping ratio for policy loss.
         clip_ratio_low (float): Lower bound for PPO clipping ratio.
         clip_ratio_high (float): Upper bound for PPO clipping ratio.
+        clip_ratio_schedule (ClipRatioScheduleConfig): Runtime schedule for PPO clip ratio bounds.
         policy_loss (PolicyLossConfig): Configuration for policy loss computation.
         clip_ratio_c (float): Clipping ratio for critic loss.
         loss_agg_mode (str): Loss aggregation mode. Options: 'token-mean', 'sample-mean'.
@@ -157,6 +188,7 @@ class ActorConfig(BaseConfig):
     clip_ratio: float = 0.2
     clip_ratio_low: float = 0.2
     clip_ratio_high: float = 0.2
+    clip_ratio_schedule: ClipRatioScheduleConfig = field(default_factory=ClipRatioScheduleConfig)
     freeze_vision_tower: bool = False
     policy_loss: PolicyLossConfig = field(default_factory=PolicyLossConfig)
     clip_ratio_c: float = 3.0
