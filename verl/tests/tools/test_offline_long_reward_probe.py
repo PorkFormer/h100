@@ -623,3 +623,72 @@ def test_build_analysis_tables_counts_zero_to_positive_advantage():
     assert advantage["adv_zero_to_pos_rate"] == 0.5
     assert advantage["adv_nonpos_to_pos_rate"] == 0.5
     assert advantage["adv_pos_to_nonpos_rate"] == 0.0
+
+
+def test_run_rollout_saves_vllm_request_prompt_token_ids(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    captured = {}
+
+    class Completion:
+        text = "answer"
+        token_ids = [7, 8]
+        finish_reason = "stop"
+        stop_reason = None
+
+    class RequestOutput:
+        prompt_token_ids = [101, 102, 103]
+        outputs = [Completion()]
+
+    class LLM:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, sampling_params):
+            return [RequestOutput()]
+
+    class SamplingParams:
+        def __init__(self, **kwargs):
+            pass
+
+    fake_vllm = types.SimpleNamespace(LLM=LLM, SamplingParams=SamplingParams)
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+    monkeypatch.setattr(probe, "load_tokenizer", lambda config, path: (DummyTokenizer(), "/tokenizer"))
+    monkeypatch.setattr(
+        probe,
+        "prepare_rollout_inputs",
+        lambda config, tokenizer: (
+            [
+                {
+                    "prompt_id": 0,
+                    "prompt_id_dense": 0,
+                    "original_index": 5,
+                    "data_source": "math",
+                    "ground_truth": "42",
+                    "extra_info": {},
+                    "prompt_text": "question",
+                    "prompt_token_len": 3,
+                }
+            ],
+            {"kept_prompts": 1},
+        ),
+    )
+    monkeypatch.setattr(probe, "write_parquet", lambda frame, path, config: captured.setdefault("frame", frame))
+    monkeypatch.setattr(probe, "write_metadata", lambda *args, **kwargs: None)
+
+    config = {
+        "paths": {
+            "output_dir": str(tmp_path / "out"),
+            "checkpoint_root": str(tmp_path),
+            "checkpoint_template": str(checkpoint),
+        },
+        "rollout": {"n": 1, "max_tokens": 8, "batch_size_prompts": 1},
+        "storage": {"skip_existing": False, "save_response_text": True, "save_response_token_ids": True},
+    }
+    probe.run_rollout(config, 4, None)
+
+    row = captured["frame"].iloc[0]
+    assert row["prompt_token_ids"] == [101, 102, 103]
+    assert row["response_token_ids"] == [7, 8]
+    assert row["prompt_text"] == "question"

@@ -903,6 +903,7 @@ def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
         batch = prompts[start : start + batch_size]
         outputs = llm.generate([item["prompt_text"] for item in batch], sampling_params)
         for item, request_output in zip(batch, outputs, strict=False):
+            prompt_token_ids = list(getattr(request_output, "prompt_token_ids", []) or [])
             completions = getattr(request_output, "outputs", [])
             for sample_id, completion in enumerate(completions):
                 token_ids = list(getattr(completion, "token_ids", []) or [])
@@ -921,6 +922,7 @@ def run_rollout(config: dict[str, Any], step: int, cli_checkpoint_path: str | No
                         "ground_truth": item["ground_truth"],
                         "extra_info": item["extra_info"],
                         "prompt_text": item["prompt_text"],
+                        "prompt_token_ids": prompt_token_ids,
                         "prompt_token_len": item["prompt_token_len"],
                         "response_text": getattr(completion, "text", None) if save_response_text else None,
                         "response_token_ids": token_ids if save_response_token_ids else None,

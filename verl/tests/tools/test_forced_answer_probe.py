@@ -1,0 +1,682 @@
+import argparse
+import builtins
+import importlib.util
+import json
+import sys
+import types
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+MODULE_PATH = Path(__file__).resolve().parents[2] / "tools" / "offline_long_reward_probe" / "forced_answer_probe.py"
+
+
+def load_probe_module(name="forced_answer_probe_test"):
+    spec = importlib.util.spec_from_file_location(name, MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def make_config(tmp_path, **forced_overrides):
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir(exist_ok=True)
+    forced = {
+        "horizons": [0, 2, 4],
+        "tail_offsets": [1],
+        "cues": [{"name": "primary", "text": " cue"}],
+        "n": 2,
+        "max_tokens": 2,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": -1,
+        "ignore_eos": False,
+        "seed": 7,
+        "batch_size_requests": 8,
+        "stability_threshold": 0.5,
+        "eps": 1e-8,
+    }
+    forced.update(forced_overrides)
+    return {
+        "paths": {
+            "output_dir": str(tmp_path / "out"),
+            "checkpoint_root": str(tmp_path),
+            "checkpoint_template": str(checkpoint),
+        },
+        "rollout": {"max_model_len": 32, "enable_prefix_caching": True},
+        "scoring": {
+            "positive_threshold": 0.0,
+            "reward_function": {"import_path": "unused.reward"},
+        },
+        "storage": {
+            "skip_existing": True,
+            "save_response_text": True,
+            "save_response_token_ids": True,
+            "compression": None,
+        },
+        "forced_answer": forced,
+    }
+
+
+def source_frame(rows=None):
+    rows = rows or [
+        {
+            "step": 4,
+            "prompt_id": 0,
+            "sample_id": 0,
+            "original_index": 9,
+            "data_source": "math",
+            "ground_truth": "42",
+            "extra_info": {"difficulty": "easy"},
+            "prompt_text": "question",
+            "prompt_token_ids": [10, 11],
+            "response_text": "reasoning",
+            "response_token_ids": [20, 21, 22],
+            "response_token_len": 3,
+            "reward_10240": 1.0,
+        }
+    ]
+    return pd.DataFrame(rows)
+
+
+class DummyTokenizer:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, text, add_special_tokens=False, return_attention_mask=False):
+        self.calls.append(text)
+        return {"input_ids": [100 + index for index, _ in enumerate(text.split())]}
+
+
+class FakeCompletion:
+    def __init__(self, text="42", token_ids=None):
+        self.text = text
+        self.token_ids = token_ids or [90]
+        self.finish_reason = "stop"
+        self.stop_reason = None
+
+
+class FakeRequestOutput:
+    def __init__(self, outputs=None):
+        self.outputs = outputs if outputs is not None else [FakeCompletion(), FakeCompletion()]
+
+
+def install_fake_vllm(monkeypatch, llm_class):
+    class SamplingParams:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class TokensPrompt(dict):
+        def __init__(self, *, prompt_token_ids):
+            super().__init__(prompt_token_ids=prompt_token_ids)
+
+    package = types.ModuleType("vllm")
+    package.LLM = llm_class
+    package.SamplingParams = SamplingParams
+    inputs = types.ModuleType("vllm.inputs")
+    inputs.TokensPrompt = TokensPrompt
+    monkeypatch.setitem(sys.modules, "vllm", package)
+    monkeypatch.setitem(sys.modules, "vllm.inputs", inputs)
+
+
+def test_config_validation_normalizes_horizons_and_checks_cues(tmp_path):
+    probe = load_probe_module()
+    config = make_config(tmp_path, horizons=[4, 0, 2, 2], tail_offsets=[2, 1, 2])
+    normalized = probe.normalize_forced_answer_config(config)
+    assert normalized["forced_answer"]["horizons"] == [0, 2, 4]
+    assert normalized["forced_answer"]["tail_offsets"] == [1, 2]
+    bad = make_config(
+        tmp_path,
+        cues=[{"name": "same", "text": "a"}, {"name": "same", "text": "b"}],
+    )
+    with pytest.raises(ValueError, match="unique"):
+        probe.normalize_forced_answer_config(bad)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"n": 0}, "n must be positive"),
+        ({"max_tokens": 0}, "max_tokens must be positive"),
+        ({"batch_size_requests": 0}, "batch_size_requests must be positive"),
+        ({"stability_threshold": 1.1}, "stability_threshold"),
+        ({"tail_offsets": [0]}, "positive integers"),
+    ],
+)
+def test_config_validation_rejects_invalid_ranges(tmp_path, override, message):
+    probe = load_probe_module()
+    with pytest.raises(ValueError, match=message):
+        probe.normalize_forced_answer_config(make_config(tmp_path, **override))
+
+
+def test_source_validation_reports_all_missing_columns():
+    probe = load_probe_module()
+    with pytest.raises(KeyError) as exc_info:
+        probe.validate_source_dataframe(pd.DataFrame({"step": [4]}), 4)
+    message = str(exc_info.value)
+    assert "prompt_id" in message
+    assert "response_token_ids" in message
+    assert "reward_10240" in message
+
+
+def test_source_validation_rejects_cli_step_mismatch():
+    probe = load_probe_module()
+    with pytest.raises(ValueError, match="CLI step 5"):
+        probe.validate_source_dataframe(source_frame(), 5)
+
+
+def test_build_probe_points_deduplicates_fixed_and_adds_one_terminal():
+    probe = load_probe_module()
+    points = probe.build_probe_points(3, [0, 2, 3, 4], [1, 2])
+    assert points == [
+        {"horizon": 0, "kind": "fixed", "is_carry_forward": False},
+        {"horizon": 1, "kind": "preterminal", "is_carry_forward": False},
+        {"horizon": 2, "kind": "fixed", "is_carry_forward": False},
+        {"horizon": 3, "kind": "terminal", "is_carry_forward": True},
+    ]
+
+
+def test_probe_token_ids_are_concatenated_without_retokenization():
+    probe = load_probe_module()
+    assert probe.build_probe_token_ids([1, 2], [3, 4, 5], 2, [6, 7]) == [1, 2, 3, 4, 6, 7]
+
+
+def test_aggregate_excludes_errors_and_overflow_from_value_denominator():
+    probe = load_probe_module()
+    raw = pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": 0,
+                "horizon": 2,
+                "kind": "fixed",
+                "cue": "a",
+                "status": "generated",
+                "probe_success": 1.0,
+                "probe_reward": 2.0,
+            },
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": 1,
+                "horizon": 2,
+                "kind": "fixed",
+                "cue": "a",
+                "status": "scoring_error",
+                "probe_success": None,
+                "probe_reward": None,
+            },
+            {
+                "step": 4,
+                "prompt_id": 1,
+                "sample_id": 0,
+                "horizon": 2,
+                "kind": "fixed",
+                "cue": "a",
+                "status": "context_overflow",
+                "probe_success": None,
+                "probe_reward": None,
+            },
+        ]
+    )
+    row = probe.aggregate_probe_values(raw, [2], ["a"]).iloc[0]
+    assert row["value"] == 1.0
+    assert row["num_valid_branches"] == 1
+    assert row["num_trajectory_opportunities"] == 3
+    assert row["trajectory_error_rate"] == pytest.approx(1 / 3)
+    assert row["trajectory_overflow_rate"] == pytest.approx(1 / 3)
+
+
+def test_carry_forward_populates_fixed_grid_for_every_cue():
+    probe = load_probe_module()
+    raw = pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": 0,
+                "horizon": 3,
+                "kind": "terminal",
+                "cue": "<terminal>",
+                "status": "generated",
+                "probe_success": 1.0,
+                "probe_reward": 1.0,
+                "response_token_len": 3,
+                "is_carry_forward": True,
+            }
+        ]
+    )
+    curve = probe.aggregate_probe_values(raw, [2, 4, 8], ["a", "b"])
+    assert set(zip(curve["horizon"], curve["cue"], strict=True)) == {(4, "a"), (4, "b"), (8, "a"), (8, "b")}
+    assert curve["value"].eq(1.0).all()
+
+
+def test_prompt_cluster_standard_error_averages_rollouts_first():
+    probe = load_probe_module()
+    raw = pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": prompt,
+                "sample_id": sample,
+                "horizon": 2,
+                "kind": "fixed",
+                "cue": "a",
+                "status": "generated",
+                "probe_success": value,
+                "probe_reward": value,
+            }
+            for prompt, values in [(0, [0.0, 1.0]), (1, [1.0, 1.0])]
+            for sample, value in enumerate(values)
+        ]
+    )
+    row = probe.aggregate_probe_values(raw, [2], ["a"]).iloc[0]
+    assert row["value"] == 0.75
+    assert row["v_se_prompt_cluster"] == pytest.approx(0.25)
+
+
+def _taxonomy_inputs(probe, tmp_path):
+    config = probe.normalize_forced_answer_config(
+        make_config(tmp_path, horizons=[0, 2048, 4096, 8192], tail_offsets=[1], n=1)
+    )
+    source = source_frame(
+        [
+            {**source_frame().iloc[0].to_dict(), "prompt_id": 0, "response_token_len": 9000, "reward_10240": 1.0},
+            {**source_frame().iloc[0].to_dict(), "prompt_id": 1, "response_token_len": 9000, "reward_10240": -1.0},
+        ]
+    )
+    rows = []
+    curves = {0: [0.0, 0.0, 1.0, 1.0], 1: [0.0, 1.0, 1.0, 1.0]}
+    for prompt_id, curve in curves.items():
+        for horizon, value in zip(config["forced_answer"]["horizons"], curve, strict=True):
+            rows.append(
+                {
+                    "step": 4,
+                    "prompt_id": prompt_id,
+                    "sample_id": 0,
+                    "horizon": horizon,
+                    "kind": "fixed",
+                    "cue": "primary",
+                    "value": value,
+                }
+            )
+        rows.append(
+            {
+                "step": 4,
+                "prompt_id": prompt_id,
+                "sample_id": 0,
+                "horizon": 8999,
+                "kind": "preterminal",
+                "cue": "primary",
+                "value": 0.0,
+            }
+        )
+    return config, source, pd.DataFrame(rows)
+
+
+def test_taxonomy_delayed_solve_and_terminal_wrong(tmp_path):
+    probe = load_probe_module()
+    config, source, values = _taxonomy_inputs(probe, tmp_path)
+    taxonomy = probe.build_taxonomy(source, values, config).set_index("prompt_id")
+    assert bool(taxonomy.loc[0, "delayed_solve_candidate"]) is True
+    assert bool(taxonomy.loc[1, "early_recoverable_but_terminal_wrong"]) is True
+    assert bool(taxonomy.loc[0, "terminal_only_candidate"]) is False
+
+
+def test_taxonomy_marks_missing_key_points_unknown(tmp_path):
+    probe = load_probe_module()
+    config, source, values = _taxonomy_inputs(probe, tmp_path)
+    values = values.loc[~((values["prompt_id"] == 0) & (values["horizon"] == 2048))]
+    taxonomy = probe.build_taxonomy(source.iloc[:1], values, config).iloc[0]
+    assert pd.isna(taxonomy["early_recoverable"])
+    assert pd.isna(taxonomy["delayed_solve_candidate"])
+
+
+def test_taxonomy_summary_counts_nullable_booleans(tmp_path):
+    probe = load_probe_module()
+    config, source, values = _taxonomy_inputs(probe, tmp_path)
+    taxonomy = probe.build_taxonomy(source, values, config)
+    taxonomy.loc[0, "unstable_diagnostic"] = pd.NA
+    row = probe.taxonomy_summary(taxonomy).set_index("label").loc["unstable_diagnostic"]
+    assert row["true_count"] + row["false_count"] + row["unknown_count"] == 2
+    assert row["unknown_count"] == 1
+
+
+def test_hc_advantage_uses_population_std_and_zero_sign_disagrees(tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path, horizons=[0, 2], n=1))
+    source = source_frame(
+        [
+            {**source_frame().iloc[0].to_dict(), "sample_id": 0, "response_token_len": 3, "reward_10240": -1.0},
+            {**source_frame().iloc[0].to_dict(), "sample_id": 1, "response_token_len": 3, "reward_10240": 1.0},
+        ]
+    )
+    values = pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": sample,
+                "horizon": horizon,
+                "kind": "fixed",
+                "cue": "primary",
+                "value": value,
+            }
+            for sample, curve in [(0, [0.0, 0.0]), (1, [0.0, 1.0])]
+            for horizon, value in zip([0, 2], curve, strict=True)
+        ]
+    )
+    taxonomy = pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": sample,
+                "stable_horizon": None,
+                **{label: False for label in probe.TAXONOMY_LABELS},
+            }
+            for sample in [0, 1]
+        ]
+    )
+    advantage = probe.build_counterfactual_advantage(source, values, taxonomy, config).sort_values("sample_id")
+    assert advantage["hc_advantage"].tolist() == [-1.0, 1.0]
+    assert advantage["terminal_advantage"].tolist() == [-1.0, 1.0]
+    # Degenerate HC groups are assigned exactly zero; zero versus nonzero is a disagreement.
+    values.loc[values["horizon"] == 2, "value"] = 0.0
+    degenerate = probe.build_counterfactual_advantage(source, values, taxonomy, config)
+    assert degenerate["hc_degenerate"].all()
+    assert degenerate["hc_sign"].eq(0).all()
+    assert degenerate["sign_disagreement"].all()
+
+
+def test_generate_uses_exact_tokens_and_completion_only_verifier(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path))
+    source_path = probe.source_scored_path(config, 4)
+    source_path.parent.mkdir(parents=True)
+    source_frame().to_parquet(source_path, index=False)
+    tokenizer = DummyTokenizer()
+    verifier_inputs = []
+
+    class LLM:
+        instances = []
+
+        def __init__(self, **kwargs):
+            self.calls = []
+            self.__class__.instances.append(self)
+
+        def generate(self, prompts, params):
+            self.calls.extend(prompts)
+            return [FakeRequestOutput() for _ in prompts]
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (tokenizer, "/tok"))
+    monkeypatch.setattr(
+        probe.offline_probe,
+        "load_reward_function",
+        lambda config: lambda **kwargs: verifier_inputs.append(kwargs["solution_str"]) or 1.0,
+    )
+    probe.run_generate(config, 4, force=True)
+
+    prompt_ids = [call["prompt_token_ids"] for call in LLM.instances[0].calls]
+    assert [10, 11, 20, 21, 100] in prompt_ids
+    assert verifier_inputs and set(verifier_inputs) == {"42"}
+    raw = pd.read_parquet(probe.raw_dir(config, 4) / "raw.parquet")
+    assert len(raw.loc[raw["is_carry_forward"]]) == 1
+
+
+def test_generate_fallback_encoding_is_cached_by_prompt(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path, horizons=[0], n=1))
+    rows = []
+    for sample_id in [0, 1]:
+        row = source_frame().iloc[0].to_dict()
+        row.update({"sample_id": sample_id, "prompt_token_ids": None})
+        rows.append(row)
+    path = probe.source_scored_path(config, 4)
+    path.parent.mkdir(parents=True)
+    source_frame(rows).to_parquet(path, index=False)
+    tokenizer = DummyTokenizer()
+
+    class LLM:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, params):
+            return [FakeRequestOutput([FakeCompletion()]) for _ in prompts]
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (tokenizer, "/tok"))
+    monkeypatch.setattr(probe.offline_probe, "load_reward_function", lambda config: lambda **kwargs: 1.0)
+    probe.run_generate(config, 4, force=True)
+    metadata = json.loads((probe.raw_dir(config, 4) / "metadata.json").read_text())
+    assert metadata["prompt_token_fallback_trajectories"] == 2
+    assert metadata["prompt_token_fallback_unique_texts"] == 1
+    assert tokenizer.calls.count("question") == 1
+
+
+def test_generate_multiple_cues_are_separate_batches(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(
+        make_config(
+            tmp_path,
+            horizons=[0],
+            n=1,
+            cues=[{"name": "a", "text": " one"}, {"name": "b", "text": " two"}],
+        )
+    )
+    path = probe.source_scored_path(config, 4)
+    path.parent.mkdir(parents=True)
+    source_frame().to_parquet(path, index=False)
+
+    class LLM:
+        calls = []
+
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, params):
+            self.__class__.calls.append(prompts)
+            return [FakeRequestOutput([FakeCompletion()]) for _ in prompts]
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (DummyTokenizer(), "/tok"))
+    monkeypatch.setattr(probe.offline_probe, "load_reward_function", lambda config: lambda **kwargs: 1.0)
+    probe.run_generate(config, 4, force=True)
+    assert len(LLM.calls) == 2
+    raw = pd.read_parquet(probe.raw_dir(config, 4) / "raw.parquet")
+    assert set(raw["cue"]) == {"a", "b"}
+
+
+def test_failed_batch_retries_each_request_to_isolate_error():
+    probe = load_probe_module()
+    requests = [
+        {"tokens_prompt": {"prompt_token_ids": [1]}},
+        {"tokens_prompt": {"prompt_token_ids": [2]}},
+    ]
+
+    class LLM:
+        def generate(self, prompts, params):
+            if len(prompts) > 1:
+                raise RuntimeError("batch failed")
+            if prompts[0]["prompt_token_ids"] == [2]:
+                raise RuntimeError("bad request")
+            return [FakeRequestOutput()]
+
+    results = list(probe._generate_batches(LLM(), requests, object(), batch_size=2))
+    assert results[0][1] is not None and results[0][2] is None
+    assert results[1][1] is None and "bad request" in str(results[1][2])
+
+
+def test_scoring_error_keeps_completion_and_is_written_before_failure(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path, horizons=[0], n=1))
+    path = probe.source_scored_path(config, 4)
+    path.parent.mkdir(parents=True)
+    source_frame().to_parquet(path, index=False)
+
+    class LLM:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, params):
+            return [FakeRequestOutput([FakeCompletion(text="kept completion")]) for _ in prompts]
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (DummyTokenizer(), "/tok"))
+
+    def broken_reward(**kwargs):
+        raise ValueError("verifier failed")
+
+    monkeypatch.setattr(probe.offline_probe, "load_reward_function", lambda config: broken_reward)
+    with pytest.raises(RuntimeError, match="error rate"):
+        probe.run_generate(config, 4, force=True)
+    raw = pd.read_parquet(probe.raw_dir(config, 4) / "raw.parquet")
+    assert raw.loc[0, "completion_text"] == "kept completion"
+    assert raw.loc[0, "status"] == "scoring_error"
+    metadata = json.loads((probe.raw_dir(config, 4) / "metadata.json").read_text())
+    assert metadata["stage_error_rate"] == 1.0
+
+
+def test_context_overflow_is_not_an_error_opportunity(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = make_config(tmp_path, horizons=[0], n=1)
+    config["rollout"]["max_model_len"] = 2
+    config = probe.normalize_forced_answer_config(config)
+    path = probe.source_scored_path(config, 4)
+    path.parent.mkdir(parents=True)
+    source_frame().to_parquet(path, index=False)
+
+    class LLM:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, params):
+            pytest.fail("overflow request reached vLLM")
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (DummyTokenizer(), "/tok"))
+    monkeypatch.setattr(probe.offline_probe, "load_reward_function", lambda config: lambda **kwargs: 1.0)
+    probe.run_generate(config, 4, force=True)
+    raw = pd.read_parquet(probe.raw_dir(config, 4) / "raw.parquet")
+    assert raw.loc[0, "status"] == "context_overflow"
+    assert raw.loc[0, "probe_branch_id"] == -1
+    metadata = json.loads((probe.raw_dir(config, 4) / "metadata.json").read_text())
+    assert metadata["equivalent_branch_opportunities"] == 0
+    assert metadata["stage_error_rate"] == 0.0
+
+
+def test_max_trajectories_keeps_original_source_order(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path, horizons=[0], n=1, max_trajectories=1))
+    first = source_frame().iloc[0].to_dict()
+    second = {**first, "prompt_id": 1, "prompt_token_ids": [99]}
+    path = probe.source_scored_path(config, 4)
+    path.parent.mkdir(parents=True)
+    source_frame([first, second]).to_parquet(path, index=False)
+
+    class LLM:
+        prompts = []
+
+        def __init__(self, **kwargs):
+            pass
+
+        def generate(self, prompts, params):
+            self.__class__.prompts.extend(prompts)
+            return [FakeRequestOutput([FakeCompletion()]) for _ in prompts]
+
+    install_fake_vllm(monkeypatch, LLM)
+    monkeypatch.setattr(probe.offline_probe, "load_tokenizer", lambda config, checkpoint: (DummyTokenizer(), "/tok"))
+    monkeypatch.setattr(probe.offline_probe, "load_reward_function", lambda config: lambda **kwargs: 1.0)
+    probe.run_generate(config, 4, force=True)
+    assert len(LLM.prompts) == 2
+    assert all(prompt["prompt_token_ids"][:2] == [10, 11] for prompt in LLM.prompts)
+    assert all(99 not in prompt["prompt_token_ids"] for prompt in LLM.prompts)
+
+
+def test_skip_existing_does_not_load_tokenizer_or_vllm(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path))
+    output = probe.raw_dir(config, 4) / "raw.parquet"
+    output.parent.mkdir(parents=True)
+    output.write_text("existing", encoding="utf-8")
+    monkeypatch.setattr(
+        probe.offline_probe,
+        "load_tokenizer",
+        lambda *args: pytest.fail("skip path loaded tokenizer"),
+    )
+    sys.modules.pop("vllm", None)
+    probe.run_generate(config, 4, force=False)
+    assert "vllm" not in sys.modules
+    metadata = json.loads((output.parent / "metadata.json").read_text())
+    assert metadata["skipped"] is True
+
+
+def test_analyze_is_lazy_and_writes_outputs_without_model_imports(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config = probe.normalize_forced_answer_config(make_config(tmp_path, horizons=[4], n=1))
+    source_path = probe.source_scored_path(config, 4)
+    source_path.parent.mkdir(parents=True)
+    source_frame().to_parquet(source_path, index=False)
+    raw_path = probe.raw_dir(config, 4) / "raw.parquet"
+    raw_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "step": 4,
+                "prompt_id": 0,
+                "sample_id": 0,
+                "horizon": 3,
+                "kind": "terminal",
+                "cue": "<terminal>",
+                "status": "generated",
+                "probe_success": 1.0,
+                "probe_reward": 1.0,
+                "response_token_len": 3,
+                "is_carry_forward": True,
+            }
+        ]
+    ).to_parquet(raw_path, index=False)
+    real_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "vllm" or name.startswith("transformers"):
+            raise AssertionError(f"analysis imported {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    probe.run_analyze(config, 4, force=True)
+    assert (probe.analysis_dir(config, 4) / "probe_curve.csv").exists()
+    assert (probe.analysis_dir(config, 4) / "counterfactual_advantage.parquet").exists()
+
+
+def test_main_all_calls_generate_before_analyze(monkeypatch, tmp_path):
+    probe = load_probe_module()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("forced_answer: {}", encoding="utf-8")
+    calls = []
+    config = make_config(tmp_path)
+    monkeypatch.setattr(probe.offline_probe, "load_config", lambda path: config)
+    monkeypatch.setattr(probe, "run_generate", lambda *args: calls.append("generate"))
+    monkeypatch.setattr(probe, "run_analyze", lambda *args: calls.append("analyze"))
+    probe.main(["--config", str(config_path), "--step", "4", "--mode", "all"])
+    assert calls == ["generate", "analyze"]
+
+
+def test_cli_overrides_are_written_into_final_config(tmp_path):
+    probe = load_probe_module()
+    args = argparse.Namespace(
+        output_dir="/override",
+        source_scored="/source.parquet",
+        max_trajectories=3,
+        probe_n=5,
+        checkpoint_path="/checkpoint",
+    )
+    config, overrides = probe.apply_cli_overrides(make_config(tmp_path), args)
+    assert config["paths"]["output_dir"] == "/override"
+    assert config["forced_answer"]["source_scored"] == "/source.parquet"
+    assert config["forced_answer"]["max_trajectories"] == 3
+    assert config["forced_answer"]["n"] == 5
+    assert set(overrides) == {"output_dir", "source_scored", "max_trajectories", "probe_n", "checkpoint_path"}
