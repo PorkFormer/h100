@@ -180,6 +180,13 @@ def normalize_forced_answer_config(config: dict[str, Any]) -> dict[str, Any]:
         max_trajectories = int(max_trajectories)
         if max_trajectories <= 0:
             raise ValueError("forced_answer.max_trajectories must be positive when set")
+    max_prompts = _config_value(section, "max_prompts")
+    if max_prompts is not None:
+        max_prompts = int(max_prompts)
+        if max_prompts <= 0:
+            raise ValueError("forced_answer.max_prompts must be positive when set")
+    if max_trajectories is not None and max_prompts is not None:
+        raise ValueError("forced_answer.max_trajectories and forced_answer.max_prompts are mutually exclusive")
 
     canonical = dict(section)
     canonical.update(
@@ -198,6 +205,7 @@ def normalize_forced_answer_config(config: dict[str, Any]) -> dict[str, Any]:
             "stability_threshold": stability_threshold,
             "eps": float(_config_value(section, "eps", 1e-8)),
             "max_trajectories": max_trajectories,
+            "max_prompts": max_prompts,
         }
     )
     if canonical["eps"] <= 0:
@@ -209,19 +217,22 @@ def normalize_forced_answer_config(config: dict[str, Any]) -> dict[str, Any]:
 def apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
     config = copy.deepcopy(config)
     overrides: dict[str, Any] = {}
-    if args.output_dir is not None:
+    if getattr(args, "output_dir", None) is not None:
         config.setdefault("paths", {})["output_dir"] = args.output_dir
         overrides["output_dir"] = args.output_dir
-    if args.source_scored is not None:
+    if getattr(args, "source_scored", None) is not None:
         config.setdefault("forced_answer", {})["source_scored"] = args.source_scored
         overrides["source_scored"] = args.source_scored
-    if args.max_trajectories is not None:
+    if getattr(args, "max_trajectories", None) is not None:
         config.setdefault("forced_answer", {})["max_trajectories"] = args.max_trajectories
         overrides["max_trajectories"] = args.max_trajectories
-    if args.probe_n is not None:
+    if getattr(args, "max_prompts", None) is not None:
+        config.setdefault("forced_answer", {})["max_prompts"] = args.max_prompts
+        overrides["max_prompts"] = args.max_prompts
+    if getattr(args, "probe_n", None) is not None:
         config.setdefault("forced_answer", {})["n"] = args.probe_n
         overrides["probe_n"] = args.probe_n
-    if args.checkpoint_path is not None:
+    if getattr(args, "checkpoint_path", None) is not None:
         config.setdefault("forced_answer", {})["checkpoint_path"] = args.checkpoint_path
         overrides["checkpoint_path"] = args.checkpoint_path
     return normalize_forced_answer_config(config), overrides
@@ -285,6 +296,41 @@ def validate_source_dataframe(source: pd.DataFrame, step: int) -> None:
     if bool(duplicates.any()):
         keys = source.loc[duplicates, ["step", "prompt_id", "sample_id"]].head(10).to_dict("records")
         raise ValueError(f"source contains duplicate trajectory keys: {keys}")
+    for _, row in source.iterrows():
+        declared_len = int(row["response_token_len"])
+        parsed_len = len(offline_probe.parse_token_ids(row["response_token_ids"]))
+        if declared_len != parsed_len:
+            key = ", ".join(f"{name}={row[name]}" for name in TRAJECTORY_KEYS)
+            raise ValueError(
+                f"source response token length mismatch for {key}: "
+                f"response_token_len={declared_len}, parsed_response_token_ids={parsed_len}"
+            )
+
+
+def select_source_dataframe(
+    source: pd.DataFrame, forced: dict[str, Any]
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Apply one source limit while preserving complete prompt rollout groups and row order."""
+
+    max_trajectories = forced.get("max_trajectories")
+    max_prompts = forced.get("max_prompts")
+    if max_trajectories is not None and max_prompts is not None:
+        raise ValueError("forced_answer.max_trajectories and forced_answer.max_prompts are mutually exclusive")
+
+    if max_prompts is not None:
+        prompt_ids = list(pd.unique(source["prompt_id"]))[: int(max_prompts)]
+        selected = source.loc[source["prompt_id"].isin(prompt_ids)].copy()
+    elif max_trajectories is not None:
+        selected = source.iloc[: int(max_trajectories)].copy()
+    else:
+        selected = source.copy()
+    stats = {
+        "source_trajectories": int(len(source)),
+        "source_prompts": int(source["prompt_id"].nunique()),
+        "selected_trajectories": int(len(selected)),
+        "selected_prompts": int(selected["prompt_id"].nunique()),
+    }
+    return selected, stats
 
 
 def validate_raw_dataframe(raw: pd.DataFrame, step: int) -> None:
@@ -403,6 +449,31 @@ def _records_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
     return frame[RAW_COLUMNS]
 
 
+def _raw_probe_diagnostics(raw: pd.DataFrame) -> dict[str, int]:
+    carry = (
+        raw["is_carry_forward"].fillna(False).astype(bool)
+        if "is_carry_forward" in raw
+        else pd.Series(False, index=raw.index)
+    )
+    status = raw.get("status", pd.Series(index=raw.index, dtype=object))
+    success = raw.get("probe_success", pd.Series(index=raw.index, dtype=float))
+    return {
+        "valid_generated_probes": int((status.eq("generated") & success.notna() & ~carry).sum()),
+        "context_overflow_probes": int(status.eq("context_overflow").sum()),
+        "generation_error_probes": int(status.eq("generation_error").sum()),
+        "scoring_error_probes": int(status.eq("scoring_error").sum()),
+    }
+
+
+def _no_valid_probes_error(stage: str, diagnostics: dict[str, int]) -> RuntimeError:
+    return RuntimeError(
+        f"forced-answer {stage} produced no valid generated probes: "
+        f"overflow={diagnostics['context_overflow_probes']}, "
+        f"generation={diagnostics['generation_error_probes']}, "
+        f"scoring={diagnostics['scoring_error_probes']}"
+    )
+
+
 def _sampling_params(forced: dict[str, Any], sampling_params_class: Any) -> Any:
     return sampling_params_class(
         n=int(forced["n"]),
@@ -475,9 +546,7 @@ def run_generate(
 
     source = pd.read_parquet(source_path)
     validate_source_dataframe(source, step)
-    input_rows = len(source)
-    if forced.get("max_trajectories") is not None:
-        source = source.iloc[: int(forced["max_trajectories"])].copy()
+    source, selection_stats = select_source_dataframe(source, forced)
     if not Path(checkpoint_path).exists():
         raise FileNotFoundError(f"Checkpoint path does not exist: {checkpoint_path}")
 
@@ -593,7 +662,8 @@ def run_generate(
             if generation_error is not None or request_output is None:
                 generation_error_requests += 1
                 message = str(generation_error or "missing RequestOutput")
-                records.append(_error_record(request, "generation_error", message))
+                for branch_id in range(int(forced["n"])):
+                    records.append(_error_record(request, "generation_error", message, branch_id=branch_id))
                 continue
             completions = list(getattr(request_output, "outputs", []) or [])
             if len(completions) < int(forced["n"]):
@@ -644,8 +714,10 @@ def run_generate(
 
     raw = _records_frame(records)
     offline_probe.write_parquet(raw, output_path, config)
-    denominator = generated_requests * int(forced["n"])
-    numerator = generation_error_requests * int(forced["n"]) + scoring_errors
+    diagnostics = _raw_probe_diagnostics(raw)
+    carry = raw["is_carry_forward"].fillna(False).astype(bool)
+    denominator = int((~carry & ~raw["status"].eq("context_overflow")).sum())
+    numerator = diagnostics["generation_error_probes"] + diagnostics["scoring_error_probes"]
     error_rate = float(numerator / denominator) if denominator else 0.0
     _write_metadata(
         directory,
@@ -658,8 +730,7 @@ def run_generate(
             **metadata_common,
             "skipped": False,
             "output_path": str(output_path),
-            "input_trajectories": input_rows,
-            "selected_trajectories": len(source),
+            **selection_stats,
             "prompt_token_fallback_trajectories": fallback_trajectories,
             "prompt_token_fallback_unique_texts": len(encode_cache),
             "total_tokenized_requests": request_id,
@@ -672,13 +743,16 @@ def run_generate(
             "equivalent_branch_errors": numerator,
             "stage_error_rate": error_rate,
             "num_raw_rows": len(raw),
+            **diagnostics,
         },
     )
-    print(f"Wrote forced-answer raw parquet: {output_path}")
+    if diagnostics["valid_generated_probes"] == 0:
+        raise _no_valid_probes_error("generate", diagnostics)
     if error_rate > ERROR_RATE_THRESHOLD:
         raise RuntimeError(
             f"forced-answer stage error rate {error_rate:.2%} exceeds fixed {ERROR_RATE_THRESHOLD:.0%} threshold"
         )
+    print(f"Wrote forced-answer raw parquet: {output_path}")
 
 
 def _expand_carry_forward(raw: pd.DataFrame, horizons: list[int], cue_names: list[str]) -> pd.DataFrame:
@@ -738,14 +812,18 @@ def aggregate_probe_values(
             valid["probe_success"] = pd.to_numeric(valid["probe_success"])
             valid["probe_reward"] = pd.to_numeric(valid["probe_reward"], errors="coerce")
             trajectory_values = (
-                valid.groupby(TRAJECTORY_KEYS, sort=False, dropna=False)["probe_success"].mean().reset_index()
+                valid.groupby(TRAJECTORY_KEYS, sort=False, dropna=False)
+                .agg(probe_success=("probe_success", "mean"), probe_reward=("probe_reward", "mean"))
+                .reset_index()
             )
-            prompt_values = trajectory_values.groupby("prompt_id", sort=False)["probe_success"].mean()
-            v_mean = float(valid["probe_success"].mean())
-            reward_mean = float(valid["probe_reward"].mean())
-            reward_std = float(valid["probe_reward"].std(ddof=0))
-            se = _cluster_se(prompt_values)
-            num_prompts = int(prompt_values.size)
+            prompt_values = trajectory_values.groupby("prompt_id", sort=False).agg(
+                probe_success=("probe_success", "mean"), probe_reward=("probe_reward", "mean")
+            )
+            v_mean = float(prompt_values["probe_success"].mean())
+            reward_mean = float(prompt_values["probe_reward"].mean())
+            reward_std = float(prompt_values["probe_reward"].std(ddof=0))
+            se = _cluster_se(prompt_values["probe_success"])
+            num_prompts = int(len(prompt_values))
             num_trajectories = int(len(trajectory_values))
         rows.append(
             {
@@ -793,6 +871,7 @@ def _trajectory_probe_values(raw: pd.DataFrame, config: dict[str, Any]) -> pd.Da
                 if complete
                 else math.nan,
                 "complete": complete,
+                "value_source": "terminal_carry" if carry else "generated",
                 "had_overflow": bool(group["status"].eq("context_overflow").any()),
                 "had_error": bool(group["status"].isin(["generation_error", "scoring_error"]).any()),
             }
@@ -825,18 +904,36 @@ def build_taxonomy(
         source_dict = source_row.to_dict()
         key = (source_dict["step"], source_dict["prompt_id"], source_dict["sample_id"])
         group = value_groups.get(key, primary.iloc[:0])
-        values = {
-            (int(row["horizon"]), row["kind"]): float(row["value"])
-            for _, row in group.iterrows()
-            if not pd.isna(row["value"])
-        }
-        fixed_map = {horizon: values.get((horizon, "fixed")) for horizon in forced["horizons"]}
         response_len = int(source_dict["response_token_len"])
+        points = build_probe_points(response_len, forced["horizons"], forced["tail_offsets"])
+        expected_points = [
+            (int(point["horizon"]), point["kind"]) for point in points if not point["is_carry_forward"]
+        ]
+        expected_fixed = [horizon for horizon, kind in expected_points if kind == "fixed"]
+
+        generated_values: dict[tuple[int, str], float] = {}
+        for _, value_row in group.iterrows():
+            value_source = value_row.get("value_source", "generated")
+            complete = value_row.get("complete", True)
+            if value_source != "generated" or not bool(complete) or pd.isna(value_row["value"]):
+                continue
+            generated_values[(int(value_row["horizon"]), value_row["kind"])] = float(value_row["value"])
+        fixed_map = {horizon: generated_values.get((horizon, "fixed")) for horizon in expected_fixed}
+
         terminal_reward = pd.to_numeric(pd.Series([source_dict["reward_10240"]]), errors="coerce").iloc[0]
         terminal_correct = None if pd.isna(terminal_reward) else bool(terminal_reward > positive_threshold)
 
         v2048 = fixed_map.get(2048)
         early = None if v2048 is None else v2048 >= threshold
+
+        fixed_complete = bool(expected_fixed) and all(fixed_map.get(horizon) is not None for horizon in expected_fixed)
+        stable_horizon = None
+        if fixed_complete:
+            fixed_curve = [fixed_map[horizon] for horizon in expected_fixed]
+            for index, horizon in enumerate(expected_fixed):
+                if all(value >= threshold for value in fixed_curve[index:]):
+                    stable_horizon = horizon
+                    break
 
         if terminal_correct is False:
             delayed: bool | None = False
@@ -845,37 +942,24 @@ def build_taxonomy(
         elif v2048 >= threshold:
             delayed = False
         else:
-            later_horizons = [h for h in forced["horizons"] if h > 2048]
+            later_horizons = [horizon for horizon in expected_fixed if horizon > 2048]
             later_values = [fixed_map.get(h) for h in later_horizons]
-            if not later_values or any(value is None for value in later_values):
+            if any(value is None for value in later_values):
                 delayed = None
             else:
-                stable_indices = [index for index, value in enumerate(later_values) if value >= threshold]
-                delayed = bool(stable_indices) and all(
-                    value >= threshold for value in later_values[stable_indices[0] :]
-                )
+                delayed = stable_horizon is not None and stable_horizon > 2048
 
-        fixed_before = [h for h in forced["horizons"] if h < response_len]
-        tail_targets = sorted(
-            {
-                response_len - int(offset)
-                for offset in forced["tail_offsets"]
-                if 0 <= response_len - int(offset) < response_len
-            }
-        )
+        all_actual_values = [generated_values.get(point) for point in expected_points]
         if terminal_correct is False:
             terminal_only: bool | None = False
-        elif terminal_correct is None or not fixed_before or not tail_targets:
+        elif terminal_correct is None or not expected_points:
+            terminal_only = None
+        elif any(value is None for value in all_actual_values):
             terminal_only = None
         else:
-            last_fixed = fixed_map.get(max(fixed_before))
-            last_tail_horizon = max(tail_targets)
-            last_tail = values.get((last_tail_horizon, "preterminal"), values.get((last_tail_horizon, "fixed")))
-            terminal_only = (
-                None if last_fixed is None or last_tail is None else last_fixed < threshold and last_tail < threshold
-            )
+            terminal_only = all(value < threshold for value in all_actual_values)
 
-        curve_values = [fixed_map.get(horizon) for horizon in forced["horizons"]]
+        curve_values = [fixed_map.get(horizon) for horizon in expected_fixed]
         if len(curve_values) < 3 or any(value is None for value in curve_values):
             unstable: bool | None = None
         else:
@@ -888,21 +972,14 @@ def build_taxonomy(
 
         if terminal_correct is True:
             early_wrong: bool | None = False
-        elif terminal_correct is None or not fixed_before:
+        elif terminal_correct is None or not expected_fixed:
             early_wrong = None
         else:
-            before_values = [fixed_map.get(horizon) for horizon in fixed_before]
+            before_values = [fixed_map.get(horizon) for horizon in expected_fixed]
             if any(value is None for value in before_values):
                 early_wrong = None
             else:
                 early_wrong = any(value >= threshold for value in before_values)
-
-        stable_horizon = None
-        for index, horizon in enumerate(forced["horizons"]):
-            tail = curve_values[index:]
-            if tail and all(value is not None and value >= threshold for value in tail):
-                stable_horizon = horizon
-                break
         rows.append(
             {
                 "step": source_dict["step"],
@@ -1299,11 +1376,29 @@ def run_analyze(
     source = pd.read_parquet(source_path)
     validate_raw_dataframe(raw, step)
     validate_source_dataframe(source, step)
-    if forced.get("max_trajectories") is not None:
-        source = source.iloc[: int(forced["max_trajectories"])].copy()
-        selected_keys = pd.MultiIndex.from_frame(source[TRAJECTORY_KEYS])
-        raw_keys = pd.MultiIndex.from_frame(raw[TRAJECTORY_KEYS])
-        raw = raw.loc[raw_keys.isin(selected_keys)].copy()
+    source, selection_stats = select_source_dataframe(source, forced)
+    selected_keys = pd.MultiIndex.from_frame(source[TRAJECTORY_KEYS])
+    raw_keys = pd.MultiIndex.from_frame(raw[TRAJECTORY_KEYS])
+    raw = raw.loc[raw_keys.isin(selected_keys)].copy()
+
+    diagnostics = _raw_probe_diagnostics(raw)
+    if diagnostics["valid_generated_probes"] == 0:
+        _write_metadata(
+            directory,
+            config,
+            checkpoint_path,
+            None,
+            "forced_answer_analyze",
+            step,
+            {
+                **metadata_common,
+                "skipped": False,
+                **selection_stats,
+                "num_raw_rows": len(raw),
+                **diagnostics,
+            },
+        )
+        raise _no_valid_probes_error("analyze", diagnostics)
 
     curve = aggregate_probe_values(raw, forced["horizons"], forced["cues"])
     trajectory_values = _trajectory_probe_values(raw, config)
@@ -1340,10 +1435,12 @@ def run_analyze(
             "output_dir": str(directory),
             "examples_dir": str(review_directory),
             "num_source_trajectories": len(source),
+            **selection_stats,
             "num_raw_rows": len(raw),
             "num_curve_rows": len(curve),
             "num_advantage_rows": len(advantage),
             "source_rows_missing_response_text": missing_response_text,
+            **diagnostics,
         },
     )
     print(f"Wrote forced-answer analysis outputs: {directory}")
@@ -1357,7 +1454,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-path", default=None, help="Override fixed checkpoint path")
     parser.add_argument("--source-scored", default=None, help="Override source scored.parquet")
     parser.add_argument("--output-dir", default=None, help="Override paths.output_dir")
-    parser.add_argument("--max-trajectories", type=int, default=None, help="Use the first N source rows")
+    limit_group = parser.add_mutually_exclusive_group()
+    limit_group.add_argument("--max-trajectories", type=int, default=None, help="Use the first N source rows")
+    limit_group.add_argument(
+        "--max-prompts",
+        type=int,
+        default=None,
+        help="Use all rollouts for the first N unique prompt_id values",
+    )
     parser.add_argument("--probe-n", type=int, default=None, help="Override forced_answer.n")
     parser.add_argument("--force", action="store_true", help="Overwrite existing stage outputs")
     return parser

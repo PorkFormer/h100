@@ -130,7 +130,25 @@ reward, ground truth, extra info, and reward-function configuration.
 The `forced_answer` block in `probe_config.yaml` defines fixed horizons,
 preterminal tail offsets, ordered cues, sampling parameters, and the stability
 threshold used by taxonomy. The first cue is the primary cue for taxonomy and
-counterfactual-credit (HC) analysis. Cue names and texts must be unique.
+counterfactual-credit (HC) analysis. Cue names and texts must be unique. The
+default primary cue explicitly requires `Answer: <final answer>` because the
+math verifier receives only the short completion and extracts that exact answer
+prefix. A bare completion such as `42` is not equivalent to `Answer: 42`.
+
+The default short probe uses 128 output tokens, four sampled branches per
+request, `top_p: 0.95`, a fixed seed of 42, and a 0.75 stability threshold.
+The 128-token cap is enough for the required final-answer format without paying
+for another reasoning rollout. Four branches estimate per-trajectory answer
+stability, while the 0.75 threshold requires at least three successful branches
+when all four are present.
+
+The first fixed grid stops at 6144 tokens. It deliberately omits 8192 and 10240:
+long fixed prefixes add substantial cost, a 10240-token prefix plus prompt and
+completion is close to the model-context limit, and shorter source rollouts
+would contribute only terminal carry rows at those horizons. The preterminal
+offsets (1024, 512, and 256 tokens before the endpoint) retain near-terminal
+coverage across variable response lengths. Add longer fixed horizons only in a
+separate experiment with an explicit overflow and cost budget.
 
 For a response shorter than a fixed horizon, the terminal reward is carried
 forward without a model call. Preterminal points are always strictly before the
@@ -144,47 +162,87 @@ The approximate number of short completions is:
 selected trajectories × non-terminal probe points × cues × forced_answer.n
 ```
 
-This can still be expensive for 512 trajectories. Start with the smoke command,
-then increase `--max-trajectories` and `--probe-n`. `rollout` capacity settings,
-including tensor parallelism, memory utilization, maximum batched tokens, and
-prefix caching, are reused. Generation requests are additionally limited by
-`forced_answer.batch_size_requests`.
+The standard source has 512 prompts and eight rollouts per prompt, or 4096
+trajectories. `--max-prompts 512` preserves all eight rollouts for every selected
+prompt; `--max-trajectories 64` instead selects the first 64 rows. These limits
+are mutually exclusive. Start with the 64-trajectory smoke command and
+`--probe-n 1`, then use prompt-level selection and the default four branches for
+formal runs. `rollout` capacity settings, including tensor parallelism, memory
+utilization, maximum batched tokens, and prefix caching, are reused. Generation
+requests are additionally limited by `forced_answer.batch_size_requests`.
 
-### VIE smoke and 512-trajectory runs
+### H100×4 VIE smoke and 512-prompt runs
 
 Run these inside the same `verlai/verl:vllm018.dev1` VIE environment used by the
-base probe, from the VERL repository root. Supply the fixed checkpoint and the
-already-produced scored parquet explicitly when they are not at the config
-defaults:
+base probe, from the VERL repository root. `probe_config_vie.yaml` keeps the real
+data, model, checkpoint-root, and output paths from the base configuration, and
+sets tensor parallelism to 4, GPU memory utilization to 0.72, maximum sequences
+to 64, maximum batched tokens to 32768, prefix caching on, and Forced-Answer
+request batches to 64.
+
+Export the real checkpoint, scored-parquet, and output paths in the VIE shell.
+The output variables below must all resolve to different directories; in
+particular, do not reuse the smoke directory for a formal run.
+
+The exact 64-trajectory smoke for r2048 step 100 is:
 
 ```bash
 python tools/offline_long_reward_probe/forced_answer_probe.py \
-  --config tools/offline_long_reward_probe/probe_config.yaml \
-  --step 400 \
+  --config tools/offline_long_reward_probe/probe_config_vie.yaml \
+  --step 100 \
   --mode all \
-  --checkpoint-path /path/to/global_step_400/actor_hf \
-  --source-scored /path/to/scored/step_0400/scored.parquet \
-  --max-trajectories 8 \
+  --checkpoint-path "${R2048_STEP100_CHECKPOINT}" \
+  --source-scored "${R2048_STEP100_SCORED}" \
+  --output-dir "${R2048_STEP100_SMOKE_OUTPUT}" \
+  --max-trajectories 64 \
   --probe-n 1 \
   --force
 ```
 
-After that succeeds, run the 512-trajectory probe:
+After the smoke succeeds on H100×4, run the three 512-prompt experiments with
+the default `n=4`.
+
+r2048 step 100:
 
 ```bash
 python tools/offline_long_reward_probe/forced_answer_probe.py \
-  --config tools/offline_long_reward_probe/probe_config.yaml \
-  --step 400 \
+  --config tools/offline_long_reward_probe/probe_config_vie.yaml \
+  --step 100 \
   --mode all \
-  --checkpoint-path /path/to/global_step_400/actor_hf \
-  --source-scored /path/to/scored/step_0400/scored.parquet \
-  --max-trajectories 512 \
+  --checkpoint-path "${R2048_STEP100_CHECKPOINT}" \
+  --source-scored "${R2048_STEP100_SCORED}" \
+  --output-dir "${R2048_STEP100_OUTPUT}" \
+  --max-prompts 512 \
   --force
 ```
 
-There is intentionally no `probe_config_vie.yaml` in this tree. Use the real
-paths for the VIE host through the CLI instead of copying an assumed machine
-configuration into the repository.
+r2048 step 500:
+
+```bash
+python tools/offline_long_reward_probe/forced_answer_probe.py \
+  --config tools/offline_long_reward_probe/probe_config_vie.yaml \
+  --step 500 \
+  --mode all \
+  --checkpoint-path "${R2048_STEP500_CHECKPOINT}" \
+  --source-scored "${R2048_STEP500_SCORED}" \
+  --output-dir "${R2048_STEP500_OUTPUT}" \
+  --max-prompts 512 \
+  --force
+```
+
+r10240 step 100:
+
+```bash
+python tools/offline_long_reward_probe/forced_answer_probe.py \
+  --config tools/offline_long_reward_probe/probe_config_vie.yaml \
+  --step 100 \
+  --mode all \
+  --checkpoint-path "${R10240_STEP100_CHECKPOINT}" \
+  --source-scored "${R10240_STEP100_SCORED}" \
+  --output-dir "${R10240_STEP100_OUTPUT}" \
+  --max-prompts 512 \
+  --force
+```
 
 ### Stages, resume, and outputs
 
@@ -204,8 +262,13 @@ python tools/offline_long_reward_probe/forced_answer_probe.py \
 tokenizer or model. Use `--force` after changing cues, horizons, sampling,
 scoring, source data, or code. Generate writes raw parquet and metadata before
 raising if its equivalent-branch error rate exceeds the fixed 5% threshold, so
-failures remain inspectable. Analyze is CPU-only and does not import vLLM or
-Transformers or load a checkpoint.
+failures remain inspectable. That rate counts actual generation-error and
+scoring-error branch rows over non-carry, non-overflow branch opportunities;
+a partially returned request therefore counts only its missing branches.
+Generate and analyze also fail closed when the selected data contains no valid,
+actually generated non-carry probe; overflow, generation-error, and
+scoring-error counts remain in metadata. Analyze is CPU-only and does not import
+vLLM or Transformers or load a checkpoint.
 
 Forced-answer outputs are written under `output_dir/forced_answer`:
 
@@ -226,16 +289,24 @@ Analysis never loads a tokenizer just to reconstruct missing text.
 
 `probe_curve.csv` reports binary `V(h)`, reward mean/std, valid denominators,
 prompt-cluster standard error, and trajectory-level overflow/error rates for
-each horizon, point kind, and cue. For an apples-to-apples r2048/r10240
-comparison, keep the same checkpoint, primary cue, `forced_answer.seed`,
-sampling parameters, source parquet, and selected row order, then compare the
-`fixed` rows where `horizon` is 2048 and 10240. Do not compare runs with changed
-cues or seeds as if the difference came only from horizon.
+each horizon, point kind, and cue. Branches are averaged within trajectories,
+trajectories within prompts, and then prompts receive equal weight. Reward
+standard deviation is computed from prompt-level reward values. For an
+apples-to-apples r2048/r10240 comparison, keep prompt identities, primary cue,
+seed, horizons, sampling parameters, and verifier identical across runs. The
+checkpoint and scored input are supplied separately for each named run. Do not
+attribute differences to response horizon if those comparison controls changed.
 
 Taxonomy labels are nullable diagnostics, not ground-truth causal labels.
 Missing points, overflow, or generation/scoring errors make labels unknown when
 the required evidence is unavailable. In particular,
-`terminal_only_candidate` is a candidate and `unstable_diagnostic` is a curve
+`terminal_only_candidate` requires a positive terminal reward while every
+actual generated fixed or preterminal probe remains below threshold.
+`delayed_solve_candidate` instead requires a low generated `V(2048)` followed by
+a generated stable crossing, so the two labels are mutually exclusive. Terminal
+carry rows are identified by `value_source=terminal_carry` in
+`trajectory_probe_values.parquet`; they remain available for plots and HC
+outputs but cannot create a taxonomy crossing. `unstable_diagnostic` is a curve
 diagnostic. `taxonomy_summary.csv` therefore reports true, false, and unknown
 counts as well as the rate among known cases.
 
