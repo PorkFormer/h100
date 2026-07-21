@@ -396,6 +396,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 return
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
         self.global_steps += 1
+        last_val_metrics = None
         self.max_steps_duration = 0
         retained_batch: DataProto | None = None
         retained_prompts = 0
@@ -407,6 +408,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         total_kept_prompt_count = 0
         total_filtered_prompt_count = 0
         total_generated_response_tokens = 0
+        reward_extra_info_keys: set[str] = set()
 
         for epoch in range(current_epoch, self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -449,6 +451,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         reward_tensor, reward_extra_infos = extract_reward(candidate)
                         candidate.batch["token_level_scores"] = reward_tensor
                         if reward_extra_infos:
+                            reward_extra_info_keys.update(reward_extra_infos)
                             candidate.non_tensor_batch.update(
                                 {key: np.asarray(value) for key, value in reward_extra_infos.items()}
                             )
@@ -511,6 +514,11 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     batch, actor_output = self._compute_advantage_and_actor_update(batch, metrics, timing_raw)
                     metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
                     step_rollout_policy_version = self._rollout_policy_version
+                    retained_reward_extra_infos = {
+                        key: batch.non_tensor_batch[key]
+                        for key in reward_extra_info_keys
+                        if key in batch.non_tensor_batch
+                    }
                     esi_close = should_save_ckpt_esi(
                         max_steps_duration=self.max_steps_duration,
                         redundant_time=self.config.trainer.esi_redundant_time,
@@ -518,9 +526,27 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     if self.config.trainer.save_freq > 0 and (
                         is_last_step or self.global_steps % self.config.trainer.save_freq == 0 or esi_close
                     ):
-                        self._save_checkpoint()
+                        with marked_timer("save_checkpoint", timing_raw, color="green"):
+                            self._save_checkpoint()
                     with marked_timer("update_weights", timing_raw, color="red"):
                         self._publish_rollout_policy_version(self.global_steps)
+                    rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
+                    if rollout_data_dir:
+                        self._log_rollout_data(
+                            batch,
+                            retained_reward_extra_infos,
+                            timing_raw,
+                            rollout_data_dir,
+                        )
+
+                if self.config.trainer.test_freq > 0 and (
+                    is_last_step or self.global_steps % self.config.trainer.test_freq == 0
+                ):
+                    with marked_timer("testing", timing_raw, color="green"):
+                        val_metrics = self._validate()
+                        if is_last_step:
+                            last_val_metrics = val_metrics
+                    metrics.update(val_metrics)
 
                 metrics["train/num_gen_batches"] = num_gen_batches
                 metrics["train/generated_prompt_groups"] = total_generated_prompt_count
@@ -557,9 +583,16 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 total_kept_prompt_count = 0
                 total_filtered_prompt_count = 0
                 total_generated_response_tokens = 0
+                reward_extra_info_keys = set()
                 self.global_steps += 1
                 if is_last_step:
+                    actor_rollout_wg = getattr(self, "actor_rollout_wg", None)
+                    if hasattr(actor_rollout_wg, "async_calls_finalize_fn_exec"):
+                        actor_rollout_wg.async_calls_finalize_fn_exec(blocking=True)
                     self._shutdown_dump_executor()
                     progress_bar.close()
                     return
+                train_dataset = getattr(self, "train_dataset", None)
+                if hasattr(train_dataset, "on_batch_end"):
+                    train_dataset.on_batch_end(batch=batch)
         self._shutdown_dump_executor()
