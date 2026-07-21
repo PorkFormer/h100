@@ -68,13 +68,13 @@ Probe generation is never invoked while Dynamic Sampling is accumulating batches
 
 ## Deterministic Probe Randomness
 
-Probe sampling uses a separate deterministic seed namespace. Each logical branch seed is derived from:
+Probe sampling uses a separate deterministic seed namespace. Each logical prefix request receives one grouped-request seed derived from:
 
 ```text
-(global_step, uid, trajectory_id, relative_position, branch_id)
+(global_step, uid, trajectory_id, relative_position, ordered_branch_ids)
 ```
 
-The derivation uses a stable hash, not Python's process-randomized `hash()`. For the prompt-level `h=0` request, `trajectory_id` is a documented prompt-level sentinel. Because vLLM grouped sampling exposes one request seed rather than a public seed per output, the runtime derives every logical branch seed first, combines the ordered branch-seed vector into one stable grouped-request seed, and assigns vLLM output index `b` to logical branch `b`. Thus the effective branch substream is determined by the grouped seed and branch index. Probe generation must not draw from or mutate the normal rollout's shared Python, NumPy, Torch, vLLM, or backend RNG streams. Reordering requests therefore does not change the logical branch seed vector, grouped request seed, branch mapping, or aggregation result.
+The derivation uses a stable hash, not Python's process-randomized `hash()`. For the prompt-level `h=0` request, `trajectory_id` is a documented prompt-level sentinel. vLLM grouped `n=4` sampling accepts one request seed, so the four outputs are reproducible samples from one isolated request RNG stream; they are not four independently seeded requests. Stable vLLM output index `b` maps to logical branch ID `b`. Probe generation must not draw from or mutate the normal rollout's shared Python, NumPy, Torch, vLLM, or backend RNG streams. Reordering prefix requests therefore does not change a grouped-request seed, branch mapping, or aggregation result.
 
 ## Immediate Answer Prefix Probe Protocol
 
@@ -97,7 +97,7 @@ max_tokens=64
 stop=["\n"]
 ```
 
-EOS and native stop behavior remain enabled. The vLLM adapter uses one prefix request with grouped `n=4` sampling, rather than four duplicate prefix-prefill requests. Each logical branch still receives its deterministic derived seed.
+EOS and native stop behavior remain enabled. The vLLM adapter uses one prefix request with grouped `n=4` sampling, rather than four duplicate prefix-prefill requests. The grouped request has one independently derived seed, and stable output indices identify its four logical branches.
 
 The candidate is the first non-empty generated line. The verifier input is `Answer: {candidate}` and the configured math verifier determines binary correctness. Any context overflow, missing output, invalid branch, scoring exception, or incomplete branch set raises in default `strict=true` mode. Prefixes are never silently truncated and missing values never become zero recoverability.
 
@@ -142,7 +142,9 @@ For each prompt group and segment, the group-relative Probe advantage is:
 A^P_{i,k} = \frac{G^P_{i,k}-\mu_{g,k}}{\sigma_{g,k}+\epsilon}
 ```
 
-when `norm_probe_by_std=true`, and `G^P_{i,k}-\mu_{g,k}` otherwise. A group-segment with group size at most one or standard deviation at most `epsilon` contributes exactly zero.
+when `norm_probe_by_std=true`, and `G^P_{i,k}-\mu_{g,k}` otherwise. Mean and standard deviation must use the exact convention already used by GRPO in this repository. The implementation calls `verl.utils.group_mean_std` (or the same public helper used by the active GRPO path), including its Bessel-corrected sample standard deviation, rather than introducing a population-standard-deviation convention. A group-segment with group size at most one or standard deviation at most `epsilon` contributes exactly zero. Numerical parity tests cover group sizes 2 and 8 and a degenerate group.
+
+The prompt-shared `V(0)` term commonly cancels during group centering because every retained trajectory in that prompt receives the same value. The first version nevertheless keeps `probe_zero_position=true` by default for complete recoverability monitoring and protocol consistency. A later experiment may disable it as an efficiency optimization, provided the resulting credit definition and monitoring difference are explicit.
 
 ## Token Mapping and Zero-Mean Redistribution
 
@@ -172,7 +174,7 @@ The centered segment correction is:
 \widetilde A^P_{i,k}=A^P_{i,k}-\bar A_i^P.
 ```
 
-Before use, the trainer verifies for every trajectory that the response-mask-weighted token sum of the Probe correction is zero within numerical tolerance. Response padding and the 90%-100% tail must be exactly zero, not merely close to zero.
+Before use, the trainer verifies for every trajectory that `sum(response_mask * probe_correction) == 0` within numerical tolerance. Response padding and the 90%-100% tail must be exactly zero, not merely close to zero. This is **raw masked advantage-mass conservation**: it also preserves the unweighted sum of token advantages before the policy-loss transformation. It does not claim that PPO importance ratios, clipping, token weighting, minibatching, or configured loss aggregation preserve the final policy-gradient contribution or optimized objective exactly.
 
 ## Final Advantage Semantics
 
@@ -255,7 +257,7 @@ The required invariants are:
 4. Probe RNG is isolated from normal rollout RNG.
 5. Probe requests exist only for complete final retained groups.
 6. Probe failures cannot silently become zero rewards.
-7. Probe correction is trajectory-internal and zero-sum over response tokens.
+7. Probe correction provides raw masked advantage-mass conservation within each trajectory; it makes no claim of invariant post-ratio, post-clipping, or post-aggregation gradients.
 8. Padding and the 90%-100% tail have exact zero correction.
 9. Probe finishes before any actor update for the batch.
 10. Enabling Probe does not change retained prompt or trajectory identities.
