@@ -396,7 +396,6 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 return
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
         self.global_steps += 1
-        last_val_metrics = None
         self.max_steps_duration = 0
         retained_batch: DataProto | None = None
         retained_prompts = 0
@@ -544,8 +543,6 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 ):
                     with marked_timer("testing", timing_raw, color="green"):
                         val_metrics = self._validate()
-                        if is_last_step:
-                            last_val_metrics = val_metrics
                     metrics.update(val_metrics)
 
                 metrics["train/num_gen_batches"] = num_gen_batches

@@ -375,7 +375,11 @@ def test_fit_two_generation_batches_preserves_order_versions_metrics_and_disable
             self.records.append((dict(data), step))
 
     monkeypatch.setattr(dapo_trainer_module, "tqdm", lambda **kwargs: FakeProgress(**kwargs))
-    monkeypatch.setattr(dapo_trainer_module, "compute_response_mask", lambda batch: batch.batch["attention_mask"][:, -10:])
+    monkeypatch.setattr(
+        dapo_trainer_module,
+        "compute_response_mask",
+        lambda batch: batch.batch["attention_mask"][:, -10:],
+    )
     monkeypatch.setattr(dapo_trainer_module, "compute_data_metrics", lambda **_kwargs: {})
     monkeypatch.setattr(dapo_trainer_module, "compute_throughout_metrics", lambda **_kwargs: {})
     monkeypatch.setattr(
@@ -622,7 +626,10 @@ def test_fit_two_generation_batches_preserves_order_versions_metrics_and_disable
     assert len(enabled.rollout_logs) == 1
     assert enabled.rollout_logs[0][0] == expected_ids
     assert enabled.rollout_logs[0][1]["source_generation_batch"] == [1] * 4 + [2] * 4
-    assert torch.equal(enabled.actor_batch.batch["token_level_rewards"], disabled.actor_batch.batch["token_level_rewards"])
+    assert torch.equal(
+        enabled.actor_batch.batch["token_level_rewards"],
+        disabled.actor_batch.batch["token_level_rewards"],
+    )
     assert torch.equal(enabled.actor_batch.batch["terminal_advantages"], disabled.actor_batch.batch["advantages"])
     torch.testing.assert_close(
         (enabled.actor_batch.batch["probe_correction"] * enabled.actor_batch.batch["response_mask"]).sum(-1),
