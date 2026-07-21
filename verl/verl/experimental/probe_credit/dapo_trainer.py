@@ -80,14 +80,49 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         if probe.enable and probe.coef <= 0:
             raise ValueError("Enabled Probe credit requires a positive coefficient")
 
+    def _publish_rollout_policy_version(self, version: int) -> None:
+        """Publish weights and record the version only after every replica updated."""
+        version = int(version)
+        self.checkpoint_manager.update_weights(version)
+        self._rollout_policy_version = version
+
+    def _capture_actual_rollout_policy_version(self, batch: DataProto) -> int:
+        """Copy the version emitted by rollout servers into retained metadata."""
+        actual_versions = batch.non_tensor_batch.get("global_steps")
+        if actual_versions is None:
+            raise ValueError("normal rollout is missing actual server global_steps")
+        batch.non_tensor_batch["rollout_policy_version"] = np.asarray(actual_versions, dtype=object).copy()
+        return self._validate_rollout_policy_version(batch)
+
+    def _validate_rollout_policy_version(self, batch: DataProto) -> int:
+        versions = batch.non_tensor_batch.get("rollout_policy_version")
+        if versions is None or len(versions) != len(batch):
+            raise ValueError("retained batch is missing actual rollout policy version")
+        normalized: list[int] = []
+        for version in np.asarray(versions, dtype=object).tolist():
+            if version is None:
+                raise ValueError("retained batch is missing actual rollout policy version")
+            try:
+                normalized.append(int(version))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid actual rollout policy version: {version!r}") from exc
+        unique_versions = set(normalized)
+        if len(unique_versions) != 1:
+            raise ValueError(f"mixed rollout policy versions: {sorted(unique_versions)}")
+        actual_version = next(iter(unique_versions))
+        expected_version = getattr(self, "_rollout_policy_version", None)
+        if expected_version is None:
+            raise ValueError("rollout policy version has not been published")
+        if actual_version != int(expected_version):
+            raise ValueError(
+                f"actual rollout policy version {actual_version} does not match published version {expected_version}"
+            )
+        return actual_version
+
     def _prepare_final_retained_batch(
         self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
     ) -> DataProto:
-        versions = np.asarray(batch.non_tensor_batch.get("policy_version", []))
-        if len(versions) != len(batch) or np.any(versions != self.global_steps):
-            raise ValueError(
-                f"retained rollout policy version must equal pre-update global step {self.global_steps}"
-            )
+        self._validate_rollout_policy_version(batch)
         if self._probe_config().enable:
             batch = self._probe_final_retained_batch(batch, metrics, timing_raw)
         self.checkpoint_manager.sleep_replicas()
@@ -97,6 +132,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
     ) -> DataProto:
         probe = self._probe_config()
+        rollout_policy_version = self._validate_rollout_policy_version(batch)
         positions = tuple(float(position) for position in probe.relative_positions)
         response_mask = batch.batch["response_mask"]
         prompt_width = batch.batch["prompts"].shape[-1]
@@ -120,7 +156,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         max_model_len = rollout.max_model_len or rollout.prompt_length + rollout.response_length
         requests = build_probe_requests(
             trajectories,
-            policy_version=self.global_steps,
+            policy_version=rollout_policy_version,
             relative_positions=positions,
             answer_prefix_token_ids=prefix_ids,
             n=probe.n,
@@ -150,6 +186,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             position_count=len(positions),
             n=probe.n,
             strict=probe.strict,
+            expected_policy_version=rollout_policy_version,
         )
         device = batch.batch["responses"].device
         batch.batch["probe_values"] = torch.tensor(aggregate.values, dtype=torch.float32, device=device)
@@ -285,7 +322,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         )
         self.global_steps = 0
         self._load_checkpoint()
-        self.checkpoint_manager.update_weights(self.global_steps)
+        self._publish_rollout_policy_version(self.global_steps)
         current_epoch = self.global_steps // len(self.train_dataloader)
         if self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
@@ -323,7 +360,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         timing_raw.update(gen_output.meta_info.get("timing", {}))
                         gen_output.meta_info.pop("timing", None)
                     candidate = candidate.repeat(repeat_times=rollout_n, interleave=True).union(gen_output)
-                    candidate.non_tensor_batch["policy_version"] = np.full(len(candidate), self.global_steps)
+                    self._capture_actual_rollout_policy_version(candidate)
                     ordinals: dict[str, int] = {}
                     trajectory_ids = []
                     for uid in candidate.non_tensor_batch["uid"]:
@@ -398,6 +435,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         metrics.update(correction_metrics)
                     batch, actor_output = self._compute_advantage_and_actor_update(batch, metrics, timing_raw)
                     metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
+                    step_rollout_policy_version = self._rollout_policy_version
                     esi_close = should_save_ckpt_esi(
                         max_steps_duration=self.max_steps_duration,
                         redundant_time=self.config.trainer.esi_redundant_time,
@@ -406,9 +444,11 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         is_last_step or self.global_steps % self.config.trainer.save_freq == 0 or esi_close
                     ):
                         self._save_checkpoint()
-                    self.checkpoint_manager.update_weights(self.global_steps)
+                    self._publish_rollout_policy_version(self.global_steps)
 
                 metrics["train/num_gen_batches"] = num_gen_batches
+                metrics["training/global_step"] = self.global_steps
+                metrics["training/rollout_policy_version"] = step_rollout_policy_version
                 metrics.update(compute_data_metrics(batch=batch, use_critic=False))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
                 metrics.update(

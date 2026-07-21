@@ -135,7 +135,7 @@ def test_aggregate_results_uses_ids_not_return_order_and_broadcasts_deduped_valu
     for request_index, request in enumerate(reversed(requests)):
         success = float(request_index % 2)
         for branch_id in (3, 1, 0, 2):
-            results.append(ProbeBranchResult(request.request_id, branch_id, success))
+            results.append(ProbeBranchResult(request.request_id, branch_id, success, actual_policy_version=9))
 
     aggregate = aggregate_probe_results(requests, reversed(results), trajectory_count=2, position_count=5, n=4)
 
@@ -208,7 +208,10 @@ def test_probe_generator_uses_one_grouped_call_per_prefix_and_stable_branch_mapp
         async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
             self.calls.append((request_id, prompt_ids, sampling_params))
             return [
-                TokenOutput(token_ids=[branch], extra_fields={"text": f"\n {branch} \n", "branch_id": branch})
+                TokenOutput(
+                    token_ids=[branch],
+                    extra_fields={"text": f"\n {branch} \n", "branch_id": branch, "global_steps": 4},
+                )
                 for branch in (3, 1, 0, 2)
             ]
 
@@ -237,3 +240,74 @@ def test_probe_generator_uses_one_grouped_call_per_prefix_and_stable_branch_mapp
     assert client.calls[0][2]["seed"] == request.grouped_seed
     assert "n" not in base_sampling and "seed" not in base_sampling
     assert [(result.branch_id, result.success) for result in results] == [(3, True), (1, True), (0, False), (2, False)]
+
+
+def test_probe_generator_preserves_actual_server_policy_version():
+    class FakeClient:
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+            return [
+                TokenOutput(
+                    token_ids=[branch],
+                    extra_fields={
+                        "text": str(branch),
+                        "branch_id": branch,
+                        "global_steps": 10,
+                    },
+                )
+                for branch in range(4)
+            ]
+
+    request = build_probe_requests(
+        [ProbeTrajectory("p", "a", (1,), (2, 3, 4, 5))],
+        policy_version=10,
+        relative_positions=[0.5],
+        answer_prefix_token_ids=(9,),
+        n=4,
+        max_tokens=8,
+        max_model_len=32,
+        probe_zero_position=False,
+    )[0]
+
+    results = generate_grouped_probe_results(
+        FakeClient(),
+        [request],
+        sampling_params={"max_tokens": 8},
+        score_candidate=lambda *_args: True,
+    )
+
+    assert {result.actual_policy_version for result in results} == {10}
+
+
+@pytest.mark.parametrize(
+    ("versions", "message"),
+    [
+        ((10, 10, 10, None), "missing actual policy version"),
+        ((10, 10, 10, 11), "mixed actual policy versions"),
+        ((11, 11, 11, 11), "does not match retained rollout policy version 10"),
+    ],
+)
+def test_probe_aggregation_rejects_missing_mixed_or_mismatched_server_versions(versions, message):
+    request = build_probe_requests(
+        [ProbeTrajectory("p", "a", (1,), (2, 3, 4, 5))],
+        policy_version=10,
+        relative_positions=[0.5],
+        answer_prefix_token_ids=(9,),
+        n=4,
+        max_tokens=8,
+        max_model_len=32,
+        probe_zero_position=False,
+    )[0]
+    results = [
+        ProbeBranchResult(request.request_id, branch, True, actual_policy_version=version)
+        for branch, version in enumerate(versions)
+    ]
+
+    with pytest.raises(ValueError, match=message):
+        aggregate_probe_results(
+            [request],
+            results,
+            trajectory_count=1,
+            position_count=1,
+            n=4,
+            expected_policy_version=10,
+        )

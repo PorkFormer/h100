@@ -51,7 +51,7 @@ def _batch(ids=("keep-a", "keep-b"), versions=(3, 3)):
         tensors={"dummy": torch.zeros(len(ids), 1)},
         non_tensors={
             "trajectory_id": np.asarray(ids, dtype=object),
-            "policy_version": np.asarray(versions),
+            "rollout_policy_version": np.asarray(versions, dtype=object),
         },
     )
 
@@ -92,7 +92,8 @@ def test_validation_instantiates_hydra_probe_node_as_typed_config():
 def test_final_retained_batch_probes_before_sleep_and_preserves_ids():
     trainer = object.__new__(RayDAPOProbeCreditTrainer)
     trainer.config = _config(enable=True)
-    trainer.global_steps = 3
+    trainer.global_steps = 4
+    trainer._rollout_policy_version = 3
     events = []
     trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
 
@@ -112,7 +113,8 @@ def test_final_retained_batch_probes_before_sleep_and_preserves_ids():
 def test_feature_disabled_skips_probe_and_matches_baseline_ids():
     trainer = object.__new__(RayDAPOProbeCreditTrainer)
     trainer.config = _config(enable=False, coef=0.0)
-    trainer.global_steps = 3
+    trainer.global_steps = 4
+    trainer._rollout_policy_version = 3
     events = []
     trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
     trainer._probe_final_retained_batch = MethodType(
@@ -128,13 +130,99 @@ def test_feature_disabled_skips_probe_and_matches_baseline_ids():
 def test_policy_version_mismatch_fails_before_probe_or_sleep():
     trainer = object.__new__(RayDAPOProbeCreditTrainer)
     trainer.config = _config(enable=True)
-    trainer.global_steps = 3
+    trainer.global_steps = 11
+    trainer._rollout_policy_version = 10
     trainer.checkpoint_manager = SimpleNamespace(
         sleep_replicas=lambda: (_ for _ in ()).throw(AssertionError("must fail first"))
     )
 
     with pytest.raises(ValueError, match="policy version"):
-        trainer._prepare_final_retained_batch(_batch(versions=(3, 2)), {}, {})
+        trainer._prepare_final_retained_batch(_batch(versions=(10, 11)), {}, {})
+
+
+def test_fresh_start_accepts_server_version_zero_at_training_step_one():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=False, coef=0.0)
+    trainer.global_steps = 1
+    trainer._rollout_policy_version = 0
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: None)
+
+    result = trainer._prepare_final_retained_batch(_batch(versions=(0, 0)), {}, {})
+
+    assert result.non_tensor_batch["rollout_policy_version"].tolist() == [0, 0]
+
+
+def test_resume_accepts_checkpoint_version_at_next_training_step():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=False, coef=0.0)
+    trainer.global_steps = 101
+    trainer._rollout_policy_version = 100
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: None)
+
+    trainer._prepare_final_retained_batch(_batch(versions=(100, 100)), {}, {})
+
+
+def test_multiple_generation_batches_require_one_actual_policy_version():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer._rollout_policy_version = 10
+
+    first = trainer._validate_rollout_policy_version(_batch(versions=(10, 10)))
+    second = trainer._validate_rollout_policy_version(_batch(versions=(10, 10)))
+
+    assert first == second == 10
+
+
+def test_actual_server_global_steps_is_captured_as_rollout_policy_version():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer._rollout_policy_version = 10
+    batch = _batch(versions=(0, 0))
+    batch.non_tensor_batch.pop("rollout_policy_version")
+    batch.non_tensor_batch["global_steps"] = np.asarray([10, 10], dtype=object)
+
+    actual = trainer._capture_actual_rollout_policy_version(batch)
+
+    assert actual == 10
+    assert batch.non_tensor_batch["rollout_policy_version"].tolist() == [10, 10]
+
+
+def test_mixed_generation_batch_versions_fail_before_probe():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer._rollout_policy_version = 10
+
+    with pytest.raises(ValueError, match="mixed rollout policy versions"):
+        trainer._validate_rollout_policy_version(_batch(versions=(10, 11)))
+
+
+def test_missing_actual_rollout_version_has_no_manual_fallback():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.global_steps = 10
+    trainer._rollout_policy_version = 10
+    batch = _batch()
+    batch.non_tensor_batch.pop("rollout_policy_version")
+
+    with pytest.raises(ValueError, match="missing actual rollout policy version"):
+        trainer._validate_rollout_policy_version(batch)
+
+
+def test_policy_version_changes_only_after_successful_weight_update():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer._rollout_policy_version = 10
+    updates = []
+
+    def fail(version):
+        updates.append(version)
+        raise RuntimeError("sync failed")
+
+    trainer.checkpoint_manager = SimpleNamespace(update_weights=fail)
+    with pytest.raises(RuntimeError, match="sync failed"):
+        trainer._publish_rollout_policy_version(11)
+    assert trainer._rollout_policy_version == 10
+
+    trainer.checkpoint_manager = SimpleNamespace(update_weights=lambda version: updates.append(version))
+    trainer._publish_rollout_policy_version(11)
+
+    assert updates == [11, 11]
+    assert trainer._rollout_policy_version == 11
 
 
 def test_mock_update_event_order_places_probe_and_redistribution_before_actor(monkeypatch):
@@ -145,7 +233,8 @@ def test_mock_update_event_order_places_probe_and_redistribution_before_actor(mo
     trainer.config.algorithm.norm_adv_by_std_in_grpo = True
     trainer.config.algorithm.get = lambda name, default=None: getattr(trainer.config.algorithm, name, default)
     trainer.config.actor_rollout_ref.rollout.n = 4
-    trainer.global_steps = 3
+    trainer.global_steps = 4
+    trainer._rollout_policy_version = 3
     events = ["terminal_reward", "filter", "final_selection"]
     trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
     trainer._probe_final_retained_batch = MethodType(

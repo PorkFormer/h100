@@ -48,6 +48,7 @@ class ProbeBranchResult:
     request_id: str
     branch_id: int
     success: float | bool | None
+    actual_policy_version: int | None = None
     error: str | None = None
 
 
@@ -246,10 +247,12 @@ def aggregate_probe_results(
     position_count: int,
     n: int,
     strict: bool = True,
+    expected_policy_version: int | None = None,
 ) -> ProbeAggregation:
     """Aggregate arbitrarily ordered results by explicit request and branch IDs."""
     request_by_id = {request.request_id: request for request in requests}
     by_request: dict[str, dict[int, float | bool | None]] = {}
+    versions_by_request: dict[str, set[int]] = {}
     for result in results:
         if result.request_id not in request_by_id:
             if strict:
@@ -257,10 +260,37 @@ def aggregate_probe_results(
             continue
         if result.error is not None and strict:
             raise ValueError(f"Probe request {result.request_id} failed: {result.error}")
+        if result.actual_policy_version is None:
+            raise ValueError(f"Probe request {result.request_id} is missing actual policy version")
+        versions_by_request.setdefault(result.request_id, set()).add(int(result.actual_policy_version))
         branches = by_request.setdefault(result.request_id, {})
         if result.branch_id in branches and strict:
             raise ValueError(f"duplicate Probe branch {result.branch_id} for {result.request_id}")
         branches[result.branch_id] = result.success
+
+    actual_versions: set[int] = set()
+    for request in requests:
+        request_versions = versions_by_request.get(request.request_id, set())
+        if len(request_versions) > 1:
+            raise ValueError(f"Probe request {request.request_id} has mixed actual policy versions")
+        actual_versions.update(request_versions)
+    if len(actual_versions) > 1:
+        raise ValueError("Probe requests have mixed actual policy versions")
+    if requests and not actual_versions:
+        raise ValueError("Probe results are missing actual policy version")
+    actual_policy_version = next(iter(actual_versions), None)
+    retained_policy_version = (
+        int(expected_policy_version)
+        if expected_policy_version is not None
+        else int(requests[0].policy_version) if requests else None
+    )
+    if actual_policy_version != retained_policy_version:
+        raise ValueError(
+            f"Probe actual policy version {actual_policy_version} does not match retained rollout policy version "
+            f"{retained_policy_version}"
+        )
+    if any(int(request.policy_version) != retained_policy_version for request in requests):
+        raise ValueError("Probe requests have mixed requested policy versions")
 
     values = [[0.0] * position_count for _ in range(trajectory_count)]
     valid_mask = [[False] * position_count for _ in range(trajectory_count)]
@@ -297,7 +327,17 @@ async def generate_grouped_probe_results(
             branch_id = int(extra_fields.get("branch_id", fallback_index))
             candidate = first_nonempty_line(str(extra_fields.get("text", "")))
             success = score_candidate(request, immediate_verifier_text(candidate))
-            results.append(ProbeBranchResult(request.request_id, branch_id, success))
+            actual_policy_version = extra_fields.get("global_steps")
+            results.append(
+                ProbeBranchResult(
+                    request.request_id,
+                    branch_id,
+                    success,
+                    actual_policy_version=(
+                        int(actual_policy_version) if actual_policy_version is not None else None
+                    ),
+                )
+            )
         return results
 
     grouped = await asyncio.gather(*(generate_one(request) for request in requests))
