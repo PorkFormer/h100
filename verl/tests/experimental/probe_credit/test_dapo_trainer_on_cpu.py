@@ -1,0 +1,156 @@
+import sys
+import types
+from types import MethodType, SimpleNamespace
+
+import numpy as np
+import pytest
+import torch
+
+if "cachetools" not in sys.modules:
+    cachetools = types.ModuleType("cachetools")
+
+    class _LRUCache(dict):
+        def __init__(self, maxsize):
+            super().__init__()
+            self.maxsize = maxsize
+
+    cachetools.LRUCache = _LRUCache
+    sys.modules["cachetools"] = cachetools
+
+rollout_utils = types.ModuleType("verl.workers.rollout.utils")
+rollout_utils.update_prometheus_config = lambda *_args, **_kwargs: None
+sys.modules.setdefault("verl.workers.rollout.utils", rollout_utils)
+
+checkpoint_package = types.ModuleType("verl.utils.checkpoint")
+checkpoint_package.__path__ = []
+checkpoint_manager = types.ModuleType("verl.utils.checkpoint.checkpoint_manager")
+checkpoint_manager.find_latest_ckpt_path = lambda *_args, **_kwargs: None
+checkpoint_manager.should_save_ckpt_esi = lambda *_args, **_kwargs: False
+sys.modules.setdefault("verl.utils.checkpoint", checkpoint_package)
+sys.modules.setdefault("verl.utils.checkpoint.checkpoint_manager", checkpoint_manager)
+
+from verl import DataProto  # noqa: E402
+from verl.experimental.probe_credit import dapo_trainer as dapo_trainer_module  # noqa: E402
+from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer  # noqa: E402
+from verl.trainer.config import ProbeCreditConfig  # noqa: E402
+
+
+def _config(*, enable=True, coef=0.5, adv_estimator="grpo", rollout_name="vllm"):
+    return SimpleNamespace(
+        algorithm=SimpleNamespace(
+            adv_estimator=adv_estimator,
+            probe_credit=ProbeCreditConfig(enable=enable, coef=coef),
+        ),
+        actor_rollout_ref=SimpleNamespace(rollout=SimpleNamespace(name=rollout_name)),
+    )
+
+
+def _batch(ids=("keep-a", "keep-b"), versions=(3, 3)):
+    return DataProto.from_dict(
+        tensors={"dummy": torch.zeros(len(ids), 1)},
+        non_tensors={
+            "trajectory_id": np.asarray(ids, dtype=object),
+            "policy_version": np.asarray(versions),
+        },
+    )
+
+
+def test_validation_rejects_non_grpo_non_vllm_and_silent_zero_coefficient():
+    for config, message in [
+        (_config(adv_estimator="gae"), "GRPO"),
+        (_config(rollout_name="sglang"), "vLLM"),
+        (_config(enable=True, coef=0.0), "positive"),
+    ]:
+        trainer = object.__new__(RayDAPOProbeCreditTrainer)
+        trainer.config = config
+        with pytest.raises(ValueError, match=message):
+            trainer._validate_probe_credit_mode()
+
+
+def test_final_retained_batch_probes_before_sleep_and_preserves_ids():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=True)
+    trainer.global_steps = 3
+    events = []
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
+
+    def probe(self, batch, metrics, timing_raw):
+        events.append(("probe", batch.non_tensor_batch["trajectory_id"].tolist()))
+        return batch
+
+    trainer._probe_final_retained_batch = MethodType(probe, trainer)
+    batch = _batch()
+
+    result = trainer._prepare_final_retained_batch(batch, {}, {})
+
+    assert events == [("probe", ["keep-a", "keep-b"]), "sleep"]
+    assert result.non_tensor_batch["trajectory_id"].tolist() == ["keep-a", "keep-b"]
+
+
+def test_feature_disabled_skips_probe_and_matches_baseline_ids():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=False, coef=0.0)
+    trainer.global_steps = 3
+    events = []
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
+    trainer._probe_final_retained_batch = MethodType(
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Probe must not run")), trainer
+    )
+
+    result = trainer._prepare_final_retained_batch(_batch(), {}, {})
+
+    assert events == ["sleep"]
+    assert result.non_tensor_batch["trajectory_id"].tolist() == ["keep-a", "keep-b"]
+
+
+def test_policy_version_mismatch_fails_before_probe_or_sleep():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=True)
+    trainer.global_steps = 3
+    trainer.checkpoint_manager = SimpleNamespace(
+        sleep_replicas=lambda: (_ for _ in ()).throw(AssertionError("must fail first"))
+    )
+
+    with pytest.raises(ValueError, match="policy version"):
+        trainer._prepare_final_retained_batch(_batch(versions=(3, 2)), {}, {})
+
+
+def test_mock_update_event_order_places_probe_and_redistribution_before_actor(monkeypatch):
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=True)
+    trainer.config.algorithm.gamma = 1.0
+    trainer.config.algorithm.lam = 1.0
+    trainer.config.algorithm.norm_adv_by_std_in_grpo = True
+    trainer.config.algorithm.get = lambda name, default=None: getattr(trainer.config.algorithm, name, default)
+    trainer.config.actor_rollout_ref.rollout.n = 4
+    trainer.global_steps = 3
+    events = ["terminal_reward", "filter", "final_selection"]
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: events.append("sleep"))
+    trainer._probe_final_retained_batch = MethodType(
+        lambda self, batch, _metrics, _timing: events.append("probe") or batch, trainer
+    )
+    trainer._compute_probe_credit_advantage = MethodType(
+        lambda self, batch, _metrics: events.append("redistribute") or batch, trainer
+    )
+    trainer._update_actor = MethodType(
+        lambda self, _batch: events.append("actor") or SimpleNamespace(meta_info={"metrics": {}}), trainer
+    )
+    monkeypatch.setattr(
+        dapo_trainer_module,
+        "compute_advantage",
+        lambda batch, **_kwargs: events.append("standard_grpo") or batch,
+    )
+
+    batch = trainer._prepare_final_retained_batch(_batch(), {}, {})
+    trainer._compute_advantage_and_actor_update(batch, {}, {})
+
+    assert events == [
+        "terminal_reward",
+        "filter",
+        "final_selection",
+        "probe",
+        "sleep",
+        "standard_grpo",
+        "redistribute",
+        "actor",
+    ]
