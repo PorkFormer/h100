@@ -54,6 +54,21 @@ from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
 
 
+def _config_get(node: Any, key: str, default: Any = None) -> Any:
+    if node is None:
+        return default
+    getter = getattr(node, "get", None)
+    if getter is not None:
+        return getter(key, default)
+    return getattr(node, key, default)
+
+
+def _accumulate_timing(destination: dict[str, float], source: dict[str, Any]) -> None:
+    """Add per-generation timing into the current optimizer-step totals."""
+    for key, value in source.items():
+        destination[key] = destination.get(key, 0.0) + float(value)
+
+
 class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     """Current-API DAPO loop whose optional Probe runs before every actor update."""
 
@@ -79,6 +94,29 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             raise ValueError("On-policy Probe credit supports the vLLM rollout backend only")
         if probe.enable and probe.coef <= 0:
             raise ValueError("Enabled Probe credit requires a positive coefficient")
+        if _config_get(self.config.algorithm, "use_kl_in_reward", False):
+            raise ValueError("The first DAPO Probe Credit trainer requires algorithm.use_kl_in_reward=false")
+        if getattr(self, "use_critic", False):
+            raise ValueError("The first DAPO Probe Credit trainer supports GRPO with no critic")
+        rollout = self.config.actor_rollout_ref.rollout
+        if _config_get(_config_get(rollout, "multi_turn"), "enable", False):
+            raise ValueError("The first DAPO Probe Credit trainer supports single-turn rollout only")
+        if _config_get(_config_get(self.config, "distillation"), "enabled", False):
+            raise ValueError("The first DAPO Probe Credit trainer does not support distillation")
+        if getattr(self, "use_teacher_policy", False):
+            raise ValueError("The first DAPO Probe Credit trainer does not support a teacher policy")
+        rollout_correction = _config_get(self.config.algorithm, "rollout_correction")
+        if rollout_correction is not None and any(
+            (
+                _config_get(rollout_correction, "rollout_is") is not None,
+                _config_get(rollout_correction, "rollout_rs") is not None,
+                bool(_config_get(rollout_correction, "bypass_mode", False)),
+            )
+        ):
+            raise ValueError("The first DAPO Probe Credit trainer does not support rollout correction")
+        profiler_steps = _config_get(_config_get(self.config, "global_profiler"), "steps")
+        if profiler_steps:
+            raise ValueError("The first DAPO Probe Credit trainer does not support configured profiling steps")
 
     def _publish_rollout_policy_version(self, version: int) -> None:
         """Publish weights and record the version only after every replica updated."""
@@ -362,12 +400,19 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         retained_batch: DataProto | None = None
         retained_prompts = 0
         num_gen_batches = 0
+        metrics: dict[str, float] = {}
+        timing_raw: dict[str, float] = {}
+        total_generated_prompt_count = 0
+        total_generated_trajectory_count = 0
+        total_kept_prompt_count = 0
+        total_filtered_prompt_count = 0
+        total_generated_response_tokens = 0
 
         for epoch in range(current_epoch, self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
-                metrics: dict[str, float] = {}
-                timing_raw: dict[str, float] = {}
                 candidate = DataProto.from_single_dict(batch_dict)
+                generated_prompt_count = len(candidate)
+                total_generated_prompt_count += generated_prompt_count
                 candidate.meta_info["temperature"] = self.config.actor_rollout_ref.rollout.temperature
                 candidate.non_tensor_batch["uid"] = np.asarray(
                     [str(uuid.uuid4()) for _ in range(len(candidate))], dtype=object
@@ -382,9 +427,10 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 with marked_timer("step", timing_raw):
                     with marked_timer("gen", timing_raw, color="red"):
                         gen_output = self.async_rollout_manager.generate_sequences(gen_input)
-                        timing_raw.update(gen_output.meta_info.get("timing", {}))
+                        _accumulate_timing(timing_raw, gen_output.meta_info.get("timing", {}))
                         gen_output.meta_info.pop("timing", None)
                     candidate = candidate.repeat(repeat_times=rollout_n, interleave=True).union(gen_output)
+                    total_generated_trajectory_count += len(candidate)
                     self._capture_actual_rollout_policy_version(candidate)
                     ordinals: dict[str, int] = {}
                     trajectory_ids = []
@@ -395,6 +441,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         ordinals[uid] = ordinal + 1
                     candidate.non_tensor_batch["trajectory_id"] = np.asarray(trajectory_ids, dtype=object)
                     candidate.batch["response_mask"] = compute_response_mask(candidate)
+                    total_generated_response_tokens += int(candidate.batch["response_mask"].sum().item())
 
                     with marked_timer("reward", timing_raw, color="yellow"):
                         if self.use_rm and "rm_scores" not in candidate.batch:
@@ -426,6 +473,8 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                             )
                         filtered = filter_dapo_generation_batch(candidate, metric_name)
                         kept_count = len(dict.fromkeys(filtered.non_tensor_batch["uid"].tolist()))
+                        total_kept_prompt_count += kept_count
+                        total_filtered_prompt_count += generated_prompt_count - kept_count
                         retained_prompts += kept_count
                         retained_batch = (
                             filtered if retained_batch is None else DataProto.concat([retained_batch, filtered])
@@ -442,6 +491,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         batch = select_complete_prompt_groups(retained_batch, prompt_bsz, rollout_n)
                     else:
                         batch = candidate
+                        total_kept_prompt_count += generated_prompt_count
 
                     batch = self._prepare_final_retained_batch(batch, metrics, timing_raw)
                     if self.config.trainer.balance_batch:
@@ -469,9 +519,22 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         is_last_step or self.global_steps % self.config.trainer.save_freq == 0 or esi_close
                     ):
                         self._save_checkpoint()
-                    self._publish_rollout_policy_version(self.global_steps)
+                    with marked_timer("update_weights", timing_raw, color="red"):
+                        self._publish_rollout_policy_version(self.global_steps)
 
                 metrics["train/num_gen_batches"] = num_gen_batches
+                metrics["train/generated_prompt_groups"] = total_generated_prompt_count
+                metrics["train/generated_trajectories"] = total_generated_trajectory_count
+                metrics["train/retained_prompt_groups"] = len(
+                    dict.fromkeys(batch.non_tensor_batch["uid"].tolist())
+                )
+                metrics["train/filtered_prompt_groups"] = total_filtered_prompt_count
+                metrics["train/dynamic_sampling_accept_rate"] = (
+                    total_kept_prompt_count / total_generated_prompt_count
+                    if total_generated_prompt_count
+                    else 0.0
+                )
+                metrics["train/generated_response_tokens"] = total_generated_response_tokens
                 metrics["training/global_step"] = self.global_steps
                 metrics["training/rollout_policy_version"] = step_rollout_policy_version
                 metrics.update(compute_data_metrics(batch=batch, use_critic=False))
@@ -487,6 +550,13 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 retained_batch = None
                 retained_prompts = 0
                 num_gen_batches = 0
+                metrics = {}
+                timing_raw = {}
+                total_generated_prompt_count = 0
+                total_generated_trajectory_count = 0
+                total_kept_prompt_count = 0
+                total_filtered_prompt_count = 0
+                total_generated_response_tokens = 0
                 self.global_steps += 1
                 if is_last_step:
                     self._shutdown_dump_executor()

@@ -37,13 +37,21 @@ from verl.trainer.config import ProbeCreditConfig  # noqa: E402
 
 
 def _config(*, enable=True, coef=0.5, adv_estimator="grpo", rollout_name="vllm"):
-    return SimpleNamespace(
+    config = SimpleNamespace(
         algorithm=SimpleNamespace(
             adv_estimator=adv_estimator,
             probe_credit=ProbeCreditConfig(enable=enable, coef=coef),
+            use_kl_in_reward=False,
+            rollout_correction=None,
         ),
-        actor_rollout_ref=SimpleNamespace(rollout=SimpleNamespace(name=rollout_name)),
+        actor_rollout_ref=SimpleNamespace(
+            rollout=SimpleNamespace(name=rollout_name, mode="async", multi_turn=SimpleNamespace(enable=False))
+        ),
+        distillation=SimpleNamespace(enabled=False),
+        global_profiler=SimpleNamespace(steps=None),
     )
+    config.algorithm.get = lambda name, default=None: getattr(config.algorithm, name, default)
+    return config
 
 
 def _batch(ids=("keep-a", "keep-b"), versions=(3, 3)):
@@ -81,12 +89,67 @@ def test_validation_instantiates_hydra_probe_node_as_typed_config():
                 },
             },
             "actor_rollout_ref": {"rollout": {"name": "vllm"}},
+            "distillation": {"enabled": False},
+            "global_profiler": {"steps": None},
         }
     )
 
     trainer._validate_probe_credit_mode()
 
     assert isinstance(trainer._probe_config(), ProbeCreditConfig)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda trainer: setattr(trainer.config.algorithm, "use_kl_in_reward", True), "use_kl_in_reward=false"),
+        (lambda trainer: setattr(trainer, "use_critic", True), "no critic"),
+        (
+            lambda trainer: setattr(trainer.config.actor_rollout_ref.rollout.multi_turn, "enable", True),
+            "single-turn",
+        ),
+        (lambda trainer: setattr(trainer.config.distillation, "enabled", True), "distillation"),
+        (lambda trainer: setattr(trainer, "use_teacher_policy", True), "teacher policy"),
+        (
+            lambda trainer: setattr(
+                trainer.config.algorithm,
+                "rollout_correction",
+                SimpleNamespace(rollout_is="sequence", rollout_rs=None, bypass_mode=False),
+            ),
+            "rollout correction",
+        ),
+        (lambda trainer: setattr(trainer.config.global_profiler, "steps", [1]), "profiling"),
+    ],
+)
+def test_validation_rejects_unverified_training_modes(mutate, message):
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=False, coef=0.0)
+    trainer.use_critic = False
+    trainer.use_teacher_policy = False
+    mutate(trainer)
+
+    with pytest.raises(ValueError, match=message):
+        trainer._validate_probe_credit_mode()
+
+
+def test_validation_allows_async_vllm_engine_with_synchronous_optimizer_updates():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=False, coef=0.0)
+    trainer.use_critic = False
+    trainer.use_teacher_policy = False
+
+    trainer._validate_probe_credit_mode()
+
+
+def test_timing_accumulator_adds_generation_batches_instead_of_overwriting():
+    timing = {"gen": 2.0, "agent_loop/generate_sequences/mean": 1.5}
+
+    dapo_trainer_module._accumulate_timing(
+        timing,
+        {"gen": 3.0, "agent_loop/generate_sequences/mean": 2.5},
+    )
+
+    assert timing == {"gen": 5.0, "agent_loop/generate_sequences/mean": 4.0}
 
 
 def test_final_retained_batch_probes_before_sleep_and_preserves_ids():

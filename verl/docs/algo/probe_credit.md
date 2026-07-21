@@ -1,6 +1,6 @@
 # On-Policy Probe Credit Redistribution
 
-This experimental trainer retains official DAPO Dynamic Sampling and changes only the temporal distribution of the standard GRPO advantage. It supports synchronous GRPO with vLLM. The shared `RayPPOTrainer.fit()` is unchanged.
+This experimental trainer retains official DAPO Dynamic Sampling and changes only the temporal distribution of the standard GRPO advantage. It supports synchronous single-turn GRPO with vLLM, no critic, and a synchronous verifier. The first version rejects KL-in-reward, active rollout correction, distillation/teacher policy, and configured profiling steps. The vLLM async engine remains supported because optimizer updates themselves are synchronous. The shared `RayPPOTrainer.fit()` is unchanged.
 
 ## Training order
 
@@ -39,6 +39,6 @@ The trainer saves standard GRPO output as `terminal_advantages`, then sets both 
 
 ## Metrics and smoke use
 
-Metrics include configured request concurrency/chunk size, grouped request/branch counts, Probe input/output token totals and output-length mean/max, position-wise `V(q)`, pseudo rewards, temporal returns, degenerate rate, correction magnitude, zero-mass residual, and terminal/correction/final advantage statistics. Normal generation, Probe generation/scoring, advantage work, actor update, and total step timers remain separate.
+Metrics include configured request concurrency/chunk size, grouped request/branch counts, Probe input/output token totals and output-length mean/max, position-wise `V(q)`, pseudo rewards, temporal returns, degenerate rate, correction magnitude, zero-mass residual, and terminal/correction/final advantage statistics. Dynamic Sampling generation counts, accepted/filtered prompt groups, trajectories, response tokens, and timing are accumulated over every generation batch in one optimizer step. Normal generation, Probe generation/scoring, advantage work, actor update, weight publication, and total step timers remain separate.
 
 The launcher under `examples/probe_credit/` requires an explicit positive `PROBE_CREDIT_COEF`. It invokes Python directly and is intended for a one-step engineering smoke only after CPU tests pass. It does not allocate resources or submit a training job by itself.
