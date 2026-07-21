@@ -265,3 +265,28 @@ def test_mock_update_event_order_places_probe_and_redistribution_before_actor(mo
         "redistribute",
         "actor",
     ]
+
+
+@pytest.mark.parametrize(
+    ("values", "valid_mask", "message"),
+    [
+        (torch.zeros(2, 5), torch.ones(2, 4, dtype=torch.bool), "same shape"),
+        (torch.zeros(2, 4), torch.ones(2, 4, dtype=torch.bool), "exactly 5 positions"),
+        (
+            torch.zeros(2, 5),
+            torch.tensor([[True] * 5, [True, True, False, True, True]]),
+            "all Probe values must be valid",
+        ),
+        (torch.tensor([[0.0, 0.0, float("nan"), 0.0, 0.0]]), torch.ones(1, 5, dtype=torch.bool), "finite"),
+        (torch.tensor([[0.0, 0.0, float("inf"), 0.0, 0.0]]), torch.ones(1, 5, dtype=torch.bool), "finite"),
+        (torch.tensor([[0.0, 0.0, 1.1, 0.0, 0.0]]), torch.ones(1, 5, dtype=torch.bool), r"in \[0, 1\]"),
+        (torch.tensor([[0.0, 0.0, -0.1, 0.0, 0.0]]), torch.ones(1, 5, dtype=torch.bool), r"in \[0, 1\]"),
+    ],
+)
+def test_probe_data_is_validated_before_advantage(values, valid_mask, message):
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = _config(enable=True)
+    batch = DataProto.from_dict(tensors={"probe_values": values, "probe_valid_mask": valid_mask})
+
+    with pytest.raises(ValueError, match=message):
+        trainer._compute_probe_credit_advantage(batch, {})

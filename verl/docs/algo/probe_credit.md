@@ -18,6 +18,8 @@ p + y[:h] + encode("\n\nAnswer:", add_special_tokens=false)
 
 No decoding/re-encoding, chat template, new turn, suffix, or manual EOS is used. The candidate is the first non-empty generated line and the configured verifier receives `Answer: {candidate}`. One grouped vLLM request uses one stable seed and returns `n` reproducible samples from that request RNG stream; these are not described as independent branch seeds. Context overflow, missing branches, and scoring errors fail closed when `strict=true`.
 
+The first implementation accepts only `relative_positions=[0.0,0.25,0.5,0.75,0.9]`, `probe_zero_position=true`, and `strict=true`. Unsupported protocol variants fail during trainer startup, before any Probe request is generated.
+
 The driver submits Probe requests in chunks of `request_batch_size` (default 512) and permits at most `max_concurrent_requests` (default 128) active grouped RPCs. This bounds driver tasks, Ray RPC pressure, and vLLM queue bursts without changing request seeds or sampling parameters.
 
 ## Credit equations

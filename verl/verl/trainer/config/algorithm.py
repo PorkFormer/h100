@@ -89,6 +89,22 @@ class ProbeCreditConfig(BaseConfig):
             raise ValueError(f"probe_credit.n must be positive, got {self.n}")
         if self.max_tokens <= 0:
             raise ValueError(f"probe_credit.max_tokens must be positive, got {self.max_tokens}")
+        if self.epsilon <= 0.0:
+            raise ValueError(f"probe_credit.epsilon must be positive, got {self.epsilon}")
+        if self.temperature < 0.0:
+            raise ValueError(f"probe_credit.temperature must be nonnegative, got {self.temperature}")
+        if not 0.0 < self.top_p <= 1.0:
+            raise ValueError(f"probe_credit.top_p must be in (0, 1], got {self.top_p}")
+        if self.top_k != -1 and self.top_k <= 0:
+            raise ValueError(f"probe_credit.top_k must be -1 or positive, got {self.top_k}")
+        if not self.answer_prefix:
+            raise ValueError("probe_credit.answer_prefix must be nonempty")
+        if not self.stop or any(not isinstance(stop, str) or not stop for stop in self.stop):
+            raise ValueError("probe_credit.stop must contain only nonempty strings")
+        if not self.probe_zero_position:
+            raise ValueError("The first Probe Credit implementation requires probe_zero_position=true")
+        if not self.strict:
+            raise ValueError("The first Probe Credit implementation requires strict=true")
         if self.max_concurrent_requests <= 0:
             raise ValueError(
                 "probe_credit.max_concurrent_requests must be positive, "
@@ -102,15 +118,12 @@ class ProbeCreditConfig(BaseConfig):
                 "probe_credit.max_concurrent_requests"
             )
 
-        positions = self.relative_positions
-        if not positions:
-            raise ValueError("probe_credit.relative_positions must not be empty")
-        if positions[0] != 0.0:
-            raise ValueError("probe_credit.relative_positions must start at 0.0")
-        if positions != sorted(positions):
-            raise ValueError("probe_credit.relative_positions must be sorted")
-        if any(position < 0.0 or position >= 1.0 for position in positions):
-            raise ValueError("probe_credit.relative_positions must be in [0, 1)")
+        canonical_positions = [0.0, 0.25, 0.5, 0.75, 0.9]
+        if self.relative_positions != canonical_positions:
+            raise ValueError(
+                "The first Probe Credit implementation supports only canonical positions "
+                "[0.0, 0.25, 0.5, 0.75, 0.9]."
+            )
 
 
 @dataclass

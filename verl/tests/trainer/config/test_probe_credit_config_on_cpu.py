@@ -67,7 +67,7 @@ def test_probe_credit_rejects_rho_outside_unit_interval(rho):
     ],
 )
 def test_probe_credit_rejects_invalid_relative_positions(positions):
-    with pytest.raises(ValueError, match="relative_positions"):
+    with pytest.raises(ValueError, match="canonical positions"):
         ProbeCreditConfig(relative_positions=positions).validate()
 
 
@@ -101,3 +101,34 @@ def test_probe_credit_rejects_nonpositive_request_limits(field_name, value):
 def test_probe_credit_rejects_request_batch_smaller_than_concurrency():
     with pytest.raises(ValueError, match="request_batch_size"):
         ProbeCreditConfig(max_concurrent_requests=9, request_batch_size=8).validate()
+
+
+def test_probe_credit_rejects_noncanonical_but_sorted_positions():
+    with pytest.raises(
+        ValueError,
+        match="supports only canonical positions",
+    ):
+        ProbeCreditConfig(relative_positions=[0.0, 0.2, 0.5, 0.75, 0.9]).validate()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"probe_zero_position": False}, "probe_zero_position=true"),
+        ({"strict": False}, "strict=true"),
+        ({"epsilon": 0.0}, "epsilon"),
+        ({"epsilon": -1.0}, "epsilon"),
+        ({"temperature": -0.1}, "temperature"),
+        ({"top_p": 0.0}, "top_p"),
+        ({"top_p": 1.1}, "top_p"),
+        ({"top_k": 0}, "top_k"),
+        ({"top_k": -2}, "top_k"),
+        ({"answer_prefix": ""}, "answer_prefix"),
+        ({"stop": []}, "stop"),
+        ({"stop": [""]}, "stop"),
+        ({"stop": ["\n", 1]}, "stop"),
+    ],
+)
+def test_probe_credit_rejects_unsupported_or_invalid_protocol_parameters(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        ProbeCreditConfig(**kwargs).validate()

@@ -253,9 +253,23 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         probe = self._probe_config()
         if not probe.enable:
             return batch
+        probe_values = batch.batch.get("probe_values")
+        valid_mask = batch.batch.get("probe_valid_mask")
+        if probe_values is None or valid_mask is None:
+            raise ValueError("Probe values and valid mask are required before advantage computation")
+        if probe_values.shape != valid_mask.shape:
+            raise ValueError("probe_valid_mask and probe_values must have the same shape")
+        if probe_values.ndim != 2 or probe_values.shape[-1] != 5:
+            raise ValueError("Probe values must contain exactly 5 positions")
+        if valid_mask.dtype is not torch.bool or not bool(valid_mask.all().item()):
+            raise ValueError("all Probe values must be valid before advantage computation")
+        if not bool(torch.isfinite(probe_values).all().item()):
+            raise ValueError("Probe values must be finite")
+        if not bool(((probe_values >= 0.0) & (probe_values <= 1.0)).all().item()):
+            raise ValueError("Probe values must be in [0, 1]")
         rewards_before = batch.batch["token_level_rewards"].clone()
         scores_before = batch.batch["token_level_scores"].clone()
-        pseudo_rewards = compute_probe_pseudo_rewards(batch.batch["probe_values"])
+        pseudo_rewards = compute_probe_pseudo_rewards(probe_values)
         temporal_returns = compute_probe_temporal_returns(pseudo_rewards, probe.rho)
         probe_advantages, norm_metrics = compute_group_relative_probe_advantages(
             temporal_returns,
