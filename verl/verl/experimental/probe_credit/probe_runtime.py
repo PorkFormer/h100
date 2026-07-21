@@ -32,6 +32,7 @@ class ProbeTarget:
 @dataclass(frozen=True)
 class ProbeRequest:
     request_id: str
+    routing_key: str
     policy_version: int
     uid: str
     trajectory_id: str
@@ -101,6 +102,11 @@ def derive_grouped_request_seed(
 def _request_id(policy_version: int, uid: str, trajectory_id: str, horizon: int) -> str:
     identity = json.dumps([policy_version, uid, trajectory_id, horizon], separators=(",", ":")).encode()
     return f"probe-{policy_version}-{hashlib.sha256(identity).hexdigest()[:20]}"
+
+
+def _routing_key(policy_version: int, uid: str) -> str:
+    identity = json.dumps([policy_version, uid], separators=(",", ":")).encode()
+    return f"probe-route-{policy_version}-{hashlib.sha256(identity).hexdigest()[:20]}"
 
 
 def build_probe_requests(
@@ -210,6 +216,7 @@ def _make_request(
         raise ValueError(message)  # non-strict omission is added only with explicit validity accounting
     return ProbeRequest(
         request_id=_request_id(policy_version, uid, trajectory_id, horizon),
+        routing_key=_routing_key(policy_version, uid),
         policy_version=policy_version,
         uid=uid,
         trajectory_id=trajectory_id,
@@ -331,6 +338,7 @@ async def generate_grouped_probe_results(
                 request.request_id,
                 prompt_ids=list(request.input_token_ids),
                 sampling_params=params,
+                routing_key=request.routing_key,
             )
         results: list[ProbeBranchResult] = []
         for fallback_index, output in enumerate(outputs):

@@ -200,12 +200,40 @@ def test_llm_server_client_generate_grouped_uses_one_rpc_and_copies_sampling_par
     assert sampling == {"n": 4, "seed": 17, "max_tokens": 8, "stop": ["\n"]}
 
 
+def test_grouped_client_routes_by_optional_key_but_keeps_backend_request_ids_unique():
+    acquire_keys = []
+    calls = []
+    server = type("Server", (), {})()
+    server.generate_grouped = _RemoteMethod(lambda **kwargs: calls.append(kwargs) or [])
+    client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
+
+    async def acquire(key):
+        acquire_keys.append(key)
+        return "server", server
+
+    client._acquire_server = acquire
+    client._release_server = lambda _server_id: None
+
+    async def run():
+        await client.generate_grouped(
+            "request-a", prompt_ids=[1], sampling_params={"n": 4}, routing_key="prompt-route"
+        )
+        await client.generate_grouped(
+            "request-b", prompt_ids=[1, 2], sampling_params={"n": 4}, routing_key="prompt-route"
+        )
+
+    asyncio.run(run())
+
+    assert acquire_keys == ["prompt-route", "prompt-route"]
+    assert calls[0]["request_id"] != calls[1]["request_id"]
+
+
 def test_probe_generator_uses_one_grouped_call_per_prefix_and_stable_branch_mapping():
     class FakeClient:
         def __init__(self):
             self.calls = []
 
-        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key=None):
             self.calls.append((request_id, prompt_ids, sampling_params))
             return [
                 TokenOutput(
@@ -244,7 +272,7 @@ def test_probe_generator_uses_one_grouped_call_per_prefix_and_stable_branch_mapp
 
 def test_probe_generator_preserves_actual_server_policy_version():
     class FakeClient:
-        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key=None):
             return [
                 TokenOutput(
                     token_ids=[branch],
@@ -319,7 +347,7 @@ def test_probe_generation_bounds_active_calls_and_preserves_all_results():
             self.active = 0
             self.peak_active = 0
 
-        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key=None):
             self.active += 1
             self.peak_active = max(self.peak_active, self.active)
             try:
@@ -368,7 +396,7 @@ def test_probe_generation_cancels_chunk_when_one_request_fails():
         def __init__(self):
             self.active = 0
 
-        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key=None):
             self.active += 1
             try:
                 if request_id == requests[3].request_id:
@@ -401,3 +429,37 @@ def test_probe_generation_cancels_chunk_when_one_request_fails():
         )
 
     assert client.active == 0
+
+
+def test_probe_requests_share_stable_prompt_routing_without_changing_request_seeds():
+    requests = build_probe_requests(
+        [
+            ProbeTrajectory("uid-a", "a-0", (1, 2), (3, 4, 5, 6)),
+            ProbeTrajectory("uid-a", "a-1", (1, 2), (7, 8, 9, 10)),
+            ProbeTrajectory("uid-b", "b-0", (11, 12), (13, 14, 15, 16)),
+        ],
+        policy_version=7,
+        relative_positions=POSITIONS,
+        answer_prefix_token_ids=(99,),
+        n=4,
+        max_tokens=8,
+        max_model_len=64,
+    )
+
+    uid_a = [request for request in requests if request.uid == "uid-a"]
+    uid_b = [request for request in requests if request.uid == "uid-b"]
+    assert len({request.routing_key for request in uid_a}) == 1
+    assert len({request.routing_key for request in uid_b}) == 1
+    assert uid_a[0].routing_key != uid_b[0].routing_key
+    assert len({request.request_id for request in requests}) == len(requests)
+    assert all(
+        request.grouped_seed
+        == derive_grouped_request_seed(
+            request.policy_version,
+            request.uid,
+            request.trajectory_id,
+            request.relative_position,
+            tuple(range(request.branch_count)),
+        )
+        for request in requests
+    )

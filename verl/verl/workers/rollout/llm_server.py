@@ -226,9 +226,10 @@ class LLMServerClient:
         *,
         prompt_ids: list[int],
         sampling_params: dict[str, Any],
+        routing_key: str | None = None,
     ) -> list[TokenOutput]:
         """Generate every completion from one grouped sampling request."""
-        server_id, server = await self._acquire_server(request_id)
+        server_id, server = await self._acquire_server(routing_key or request_id)
         try:
             return await server.generate_grouped.remote(
                 request_id=uuid4().hex,

@@ -22,6 +22,8 @@ The first implementation accepts only `relative_positions=[0.0,0.25,0.5,0.75,0.9
 
 The driver submits Probe requests in chunks of `request_batch_size` (default 512) and permits at most `max_concurrent_requests` (default 128) active grouped RPCs. This bounds driver tasks, Ray RPC pressure, and vLLM queue bursts without changing request seeds or sampling parameters.
 
+Every horizon for the same `(rollout_policy_version, uid)` uses one stable load-balancer routing key while retaining a unique backend request ID. This improves the chance of vLLM prefix-cache reuse without entering the scientific seed derivation.
+
 ## Credit equations
 
 For `q=[0,.25,.50,.75,.90]`, local progress and backward returns are
