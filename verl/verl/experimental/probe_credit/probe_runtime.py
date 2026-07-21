@@ -6,12 +6,11 @@ import asyncio
 import hashlib
 import json
 import math
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 from verl.utils.ray_utils import auto_await
-
 
 PROMPT_TRAJECTORY_SENTINEL = "__prompt__"
 

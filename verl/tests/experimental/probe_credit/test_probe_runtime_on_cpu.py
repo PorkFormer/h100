@@ -21,7 +21,7 @@ rollout_utils = types.ModuleType("verl.workers.rollout.utils")
 rollout_utils.update_prometheus_config = lambda *_args, **_kwargs: None
 sys.modules.setdefault("verl.workers.rollout.utils", rollout_utils)
 
-from verl.experimental.probe_credit.probe_runtime import (
+from verl.experimental.probe_credit.probe_runtime import (  # noqa: E402
     ProbeBranchResult,
     ProbeTrajectory,
     aggregate_probe_results,
@@ -29,13 +29,12 @@ from verl.experimental.probe_credit.probe_runtime import (
     build_probe_requests,
     derive_grouped_request_seed,
     first_nonempty_line,
-    immediate_verifier_text,
     generate_grouped_probe_results,
+    immediate_verifier_text,
     relative_horizons,
 )
-from verl.workers.rollout.llm_server import LLMServerClient
-from verl.workers.rollout.replica import TokenOutput
-
+from verl.workers.rollout.llm_server import LLMServerClient  # noqa: E402
+from verl.workers.rollout.replica import TokenOutput  # noqa: E402
 
 POSITIONS = [0.0, 0.25, 0.5, 0.75, 0.9]
 
@@ -176,7 +175,10 @@ def test_llm_server_client_generate_grouped_uses_one_rpc_and_copies_sampling_par
     server = type("Server", (), {})()
     server.generate_grouped = _RemoteMethod(
         lambda **kwargs: calls.append(kwargs)
-        or [TokenOutput(token_ids=[branch], extra_fields={"text": str(branch), "branch_id": branch}) for branch in range(4)]
+        or [
+            TokenOutput(token_ids=[branch], extra_fields={"text": str(branch), "branch_id": branch})
+            for branch in range(4)
+        ]
     )
     client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
 

@@ -36,6 +36,7 @@ from verl.experimental.probe_credit.probe_runtime import (
     generate_grouped_probe_results,
     relative_horizons,
 )
+from verl.trainer.config import ProbeCreditConfig
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss
 from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics
 from verl.trainer.ppo.ray_trainer import (
@@ -47,6 +48,7 @@ from verl.trainer.ppo.ray_trainer import (
 from verl.trainer.ppo.reward import extract_reward, get_custom_reward_fn
 from verl.trainer.ppo.utils import Role
 from verl.utils.checkpoint.checkpoint_manager import should_save_ckpt_esi
+from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.debug import marked_timer
 from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
@@ -55,8 +57,20 @@ from verl.utils.tracking import Tracking
 class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     """Current-API DAPO loop whose optional Probe runs before every actor update."""
 
+    def _probe_config(self) -> ProbeCreditConfig:
+        cached = getattr(self, "_typed_probe_credit_config", None)
+        if cached is None:
+            raw_config = self.config.algorithm.probe_credit
+            cached = (
+                raw_config
+                if isinstance(raw_config, ProbeCreditConfig)
+                else omega_conf_to_dataclass(raw_config, ProbeCreditConfig)
+            )
+            self._typed_probe_credit_config = cached
+        return cached
+
     def _validate_probe_credit_mode(self) -> None:
-        probe = self.config.algorithm.probe_credit
+        probe = self._probe_config()
         probe.validate()
         adv_estimator = self.config.algorithm.adv_estimator
         if adv_estimator not in ("grpo", AdvantageEstimator.GRPO, AdvantageEstimator.GRPO_VECTORIZED):
@@ -74,7 +88,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             raise ValueError(
                 f"retained rollout policy version must equal pre-update global step {self.global_steps}"
             )
-        if self.config.algorithm.probe_credit.enable:
+        if self._probe_config().enable:
             batch = self._probe_final_retained_batch(batch, metrics, timing_raw)
         self.checkpoint_manager.sleep_replicas()
         return batch
@@ -82,7 +96,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     def _probe_final_retained_batch(
         self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
     ) -> DataProto:
-        probe = self.config.algorithm.probe_credit
+        probe = self._probe_config()
         positions = tuple(float(position) for position in probe.relative_positions)
         response_mask = batch.batch["response_mask"]
         prompt_width = batch.batch["prompts"].shape[-1]
@@ -188,7 +202,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     def _compute_probe_credit_advantage(
         self, batch: DataProto, metrics: dict[str, float]
     ) -> DataProto:
-        probe = self.config.algorithm.probe_credit
+        probe = self._probe_config()
         if not probe.enable:
             return batch
         rewards_before = batch.batch["token_level_rewards"].clone()

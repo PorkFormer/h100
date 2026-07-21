@@ -5,6 +5,7 @@ from types import MethodType, SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 if "cachetools" not in sys.modules:
     cachetools = types.ModuleType("cachetools")
@@ -65,6 +66,27 @@ def test_validation_rejects_non_grpo_non_vllm_and_silent_zero_coefficient():
         trainer.config = config
         with pytest.raises(ValueError, match=message):
             trainer._validate_probe_credit_mode()
+
+
+def test_validation_instantiates_hydra_probe_node_as_typed_config():
+    trainer = object.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = OmegaConf.create(
+        {
+            "algorithm": {
+                "adv_estimator": "grpo",
+                "probe_credit": {
+                    "_target_": "verl.trainer.config.ProbeCreditConfig",
+                    "enable": False,
+                    "coef": 0.0,
+                },
+            },
+            "actor_rollout_ref": {"rollout": {"name": "vllm"}},
+        }
+    )
+
+    trainer._validate_probe_credit_mode()
+
+    assert isinstance(trainer._probe_config(), ProbeCreditConfig)
 
 
 def test_final_retained_batch_probes_before_sleep_and_preserves_ids():
