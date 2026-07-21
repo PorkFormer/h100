@@ -1,0 +1,20 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+algorithm:
+  adv_estimator: grpo
+
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: true
+    metric: acc
+    max_num_gen_batches: 0
+
+  probe_credit:
+    enable: false
+    coef: 0.0
+
+actor_rollout_ref:
+  rollout:
+    name: vllm
