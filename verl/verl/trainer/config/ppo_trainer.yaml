@@ -109,6 +109,60 @@ algorithm:
     # Power used for weight scaling in "pow" method
     weight_pow: 2.0
 
+  # Optional on-policy Immediate Answer Probe credit redistribution
+  probe_credit:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.trainer.config.ProbeCreditConfig
+
+    # Whether to enable Probe generation and credit redistribution
+    enable: false
+
+    # Scale applied to the zero-mass Probe correction
+    coef: 0.0
+
+    # Discount factor for backward Probe progress propagation
+    rho: 0.5
+
+    # Relative response positions at which recoverability is measured
+    relative_positions: [0.0, 0.25, 0.50, 0.75, 0.90]
+
+    # Number of grouped samples generated per Probe prefix
+    n: 4
+
+    # Probe sampling temperature
+    temperature: 0.7
+
+    # Probe nucleus-sampling probability
+    top_p: 0.95
+
+    # Probe top-k sampling limit; -1 disables the limit
+    top_k: -1
+
+    # Maximum number of generated Probe tokens
+    max_tokens: 64
+
+    # Stop strings for Probe generation
+    stop: ["\n"]
+
+    # Raw-token suffix appended to every Probe prefix
+    answer_prefix: "\n\nAnswer:"
+
+    # Whether to divide group-relative Probe returns by sample standard deviation
+    norm_probe_by_std: true
+
+    # Numerical threshold for degenerate group segments
+    epsilon: 1.0e-6
+
+    # Whether to generate and broadcast the prompt-level zero-position Probe
+    probe_zero_position: true
+
+    # Whether missing, invalid, or overflowed Probe branches fail closed
+    strict: true
+
+    # Whether to write bounded per-step Probe diagnostics
+    debug_dump: false
+
 # config for the trainer
 trainer:
 

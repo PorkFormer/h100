@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from verl.base_config import BaseConfig
 
-__all__ = ["AlgoConfig", "FilterGroupsConfig", "KLControlConfig", "RolloutCorrectionConfig"]
+__all__ = ["AlgoConfig", "FilterGroupsConfig", "KLControlConfig", "ProbeCreditConfig", "RolloutCorrectionConfig"]
 
 
 @dataclass
@@ -54,6 +54,49 @@ class FilterGroupsConfig(BaseConfig):
     enable: bool = False
     metric: Optional[str] = None
     max_num_gen_batches: int = 0
+
+
+@dataclass
+class ProbeCreditConfig(BaseConfig):
+    """Configuration for on-policy Probe credit redistribution."""
+
+    enable: bool = False
+    coef: float = 0.0
+    rho: float = 0.5
+    relative_positions: list[float] = field(default_factory=lambda: [0.0, 0.25, 0.5, 0.75, 0.9])
+    n: int = 4
+    temperature: float = 0.7
+    top_p: float = 0.95
+    top_k: int = -1
+    max_tokens: int = 64
+    stop: list[str] = field(default_factory=lambda: ["\n"])
+    answer_prefix: str = "\n\nAnswer:"
+    norm_probe_by_std: bool = True
+    epsilon: float = 1.0e-6
+    probe_zero_position: bool = True
+    strict: bool = True
+    debug_dump: bool = False
+
+    def validate(self) -> None:
+        """Validate Probe credit parameters that define the scientific protocol."""
+        if not 0.0 <= self.rho <= 1.0:
+            raise ValueError(f"probe_credit.rho must be in [0, 1], got {self.rho}")
+        if self.coef < 0.0:
+            raise ValueError(f"probe_credit.coef must be nonnegative, got {self.coef}")
+        if self.n <= 0:
+            raise ValueError(f"probe_credit.n must be positive, got {self.n}")
+        if self.max_tokens <= 0:
+            raise ValueError(f"probe_credit.max_tokens must be positive, got {self.max_tokens}")
+
+        positions = self.relative_positions
+        if not positions:
+            raise ValueError("probe_credit.relative_positions must not be empty")
+        if positions[0] != 0.0:
+            raise ValueError("probe_credit.relative_positions must start at 0.0")
+        if positions != sorted(positions):
+            raise ValueError("probe_credit.relative_positions must be sorted")
+        if any(position < 0.0 or position >= 1.0 for position in positions):
+            raise ValueError("probe_credit.relative_positions must be in [0, 1)")
 
 
 @dataclass
@@ -658,6 +701,7 @@ class AlgoConfig(BaseConfig):
     use_pf_ppo: bool = False
     pf_ppo: dict[str, Any] = field(default_factory=dict)
     filter_groups: Optional[FilterGroupsConfig] = None
+    probe_credit: ProbeCreditConfig = field(default_factory=ProbeCreditConfig)
     # Rollout Correction: corrects off-policy issues (policy mismatch, model staleness, distribution shifts)
     # Set to None to disable, use RolloutCorrectionConfig presets (e.g., .tis(), .mis()), or pass dict
     rollout_correction: Optional[RolloutCorrectionConfig] = None
