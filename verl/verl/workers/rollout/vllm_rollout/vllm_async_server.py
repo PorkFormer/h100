@@ -601,6 +601,72 @@ class vLLMHttpServer:
             extra_fields=extra_fields,
         )
 
+    async def generate_grouped(
+        self,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        request_id: str,
+        priority: int = 0,
+    ) -> list[TokenOutput]:
+        """Generate all indexed outputs from one vLLM grouped request for Probe sampling."""
+        prompt_ids = normalize_token_ids(prompt_ids)
+        params = dict(sampling_params)
+        max_possible_tokens = self.config.max_model_len - len(prompt_ids)
+        max_tokens = int(params.pop("max_tokens"))
+        if max_tokens < 1 or max_tokens > max_possible_tokens:
+            raise ValueError(
+                f"Grouped request context overflow: input_len={len(prompt_ids)} + max_tokens={max_tokens} "
+                f"exceeds max_model_len={self.config.max_model_len}"
+            )
+        params["logprobs"] = 0 if params.pop("logprobs", False) else None
+        params.setdefault("repetition_penalty", self.config.get("repetition_penalty", 1.0))
+        grouped_sampling_params = SamplingParams(max_tokens=max_tokens, **params)
+        prompt_ids = qwen2_5_vl_dedup_image_tokens(prompt_ids, self.model_config.processor)
+        try:
+            prompt = TokensPrompt(prompt_token_ids=prompt_ids, multi_modal_data={})
+        except TypeError:
+            prompt = {"prompt_token_ids": prompt_ids, "multi_modal_data": {}}
+
+        lora_request = None
+        if self.lora_as_adapter:
+            lora_loaded = VLLM_LORA_INT_ID in await self.engine.list_loras()
+            if lora_loaded:
+                lora_request = LoRARequest(
+                    lora_name=VLLM_LORA_NAME, lora_int_id=VLLM_LORA_INT_ID, lora_path=VLLM_LORA_PATH
+                )
+
+        generator = self.engine.generate(
+            prompt=prompt,
+            sampling_params=grouped_sampling_params,
+            request_id=request_id,
+            lora_request=lora_request,
+            priority=priority,
+        )
+        final_res: Optional[RequestOutput] = None
+        async for output in generator:
+            final_res = output
+        if final_res is None or not final_res.outputs:
+            return []
+
+        outputs: list[TokenOutput] = []
+        for branch_id, completion in enumerate(final_res.outputs):
+            finish_reason = completion.finish_reason
+            stop_reason = "completed" if finish_reason in ("stop", "length") else finish_reason
+            outputs.append(
+                TokenOutput(
+                    token_ids=list(completion.token_ids),
+                    log_probs=None,
+                    routed_experts=None,
+                    stop_reason=stop_reason,
+                    extra_fields={
+                        "branch_id": branch_id,
+                        "text": completion.text,
+                        "global_steps": self.global_steps,
+                    },
+                )
+            )
+        return outputs
+
     async def wake_up(self, tags: list[str] | None = None):
         if self.node_rank != 0:
             return

@@ -219,6 +219,25 @@ class LLMServerClient:
         finally:
             self._release_server(server_id)
 
+    @rollout_trace_op
+    async def generate_grouped(
+        self,
+        request_id: str,
+        *,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+    ) -> list[TokenOutput]:
+        """Generate every completion from one grouped sampling request."""
+        server_id, server = await self._acquire_server(request_id)
+        try:
+            return await server.generate_grouped.remote(
+                request_id=uuid4().hex,
+                prompt_ids=list(prompt_ids),
+                sampling_params=dict(sampling_params),
+            )
+        finally:
+            self._release_server(server_id)
+
 
 class LLMServerManager:
     """LLMServerManager is responsible for:

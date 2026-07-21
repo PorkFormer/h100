@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Callable
+from typing import Any, Iterable, Mapping, Sequence
+
+from verl.utils.ray_utils import auto_await
 
 
 PROMPT_TRAJECTORY_SENTINEL = "__prompt__"
@@ -268,3 +272,34 @@ def aggregate_probe_results(
                 values[target.trajectory_index][position_index] = value
                 valid_mask[target.trajectory_index][position_index] = True
     return ProbeAggregation(tuple(tuple(row) for row in values), tuple(tuple(row) for row in valid_mask))
+
+
+@auto_await
+async def generate_grouped_probe_results(
+    client: Any,
+    requests: Sequence[ProbeRequest],
+    *,
+    sampling_params: Mapping[str, Any],
+    score_candidate: Callable[[ProbeRequest, str], bool | float],
+) -> list[ProbeBranchResult]:
+    """Generate and score grouped Probe requests without mutating rollout sampling state."""
+
+    async def generate_one(request: ProbeRequest) -> list[ProbeBranchResult]:
+        params = dict(sampling_params)
+        params.update({"n": request.branch_count, "seed": request.grouped_seed})
+        outputs = await client.generate_grouped(
+            request.request_id,
+            prompt_ids=list(request.input_token_ids),
+            sampling_params=params,
+        )
+        results: list[ProbeBranchResult] = []
+        for fallback_index, output in enumerate(outputs):
+            extra_fields = output.extra_fields or {}
+            branch_id = int(extra_fields.get("branch_id", fallback_index))
+            candidate = first_nonempty_line(str(extra_fields.get("text", "")))
+            success = score_candidate(request, immediate_verifier_text(candidate))
+            results.append(ProbeBranchResult(request.request_id, branch_id, success))
+        return results
+
+    grouped = await asyncio.gather(*(generate_one(request) for request in requests))
+    return [result for request_results in grouped for result in request_results]
