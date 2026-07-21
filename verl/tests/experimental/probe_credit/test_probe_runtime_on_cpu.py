@@ -311,3 +311,93 @@ def test_probe_aggregation_rejects_missing_mixed_or_mismatched_server_versions(v
             n=4,
             expected_policy_version=10,
         )
+
+
+def test_probe_generation_bounds_active_calls_and_preserves_all_results():
+    class FakeClient:
+        def __init__(self):
+            self.active = 0
+            self.peak_active = 0
+
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+            self.active += 1
+            self.peak_active = max(self.peak_active, self.active)
+            try:
+                await asyncio.sleep((int(request_id[-1], 16) % 3) * 0.001)
+                return [
+                    TokenOutput(
+                        token_ids=[branch, branch + 1],
+                        extra_fields={"text": str(branch), "branch_id": branch, "global_steps": 5},
+                    )
+                    for branch in reversed(range(4))
+                ]
+            finally:
+                self.active -= 1
+
+    requests = build_probe_requests(
+        [ProbeTrajectory(f"uid-{index}", f"t-{index}", (1,), (2, 3)) for index in range(80)],
+        policy_version=5,
+        relative_positions=[0.5],
+        answer_prefix_token_ids=(9,),
+        n=4,
+        max_tokens=8,
+        max_model_len=32,
+        probe_zero_position=False,
+    )
+    sampling = {"temperature": 0.7, "max_tokens": 8, "stop": ["\n"]}
+    client = FakeClient()
+
+    results = generate_grouped_probe_results(
+        client,
+        requests,
+        sampling_params=sampling,
+        score_candidate=lambda *_args: True,
+        max_concurrent_requests=7,
+        request_batch_size=13,
+    )
+
+    assert client.peak_active <= 7
+    assert len(results) == 80 * 4
+    assert {result.request_id for result in results} == {request.request_id for request in requests}
+    assert {result.output_token_count for result in results} == {2}
+    assert sampling == {"temperature": 0.7, "max_tokens": 8, "stop": ["\n"]}
+
+
+def test_probe_generation_cancels_chunk_when_one_request_fails():
+    class FakeClient:
+        def __init__(self):
+            self.active = 0
+
+        async def generate_grouped(self, request_id, *, prompt_ids, sampling_params):
+            self.active += 1
+            try:
+                if request_id == requests[3].request_id:
+                    raise RuntimeError("backend failed")
+                await asyncio.sleep(0.05)
+                return []
+            finally:
+                self.active -= 1
+
+    requests = build_probe_requests(
+        [ProbeTrajectory(f"uid-{index}", f"t-{index}", (1,), (2, 3)) for index in range(20)],
+        policy_version=5,
+        relative_positions=[0.5],
+        answer_prefix_token_ids=(9,),
+        n=4,
+        max_tokens=8,
+        max_model_len=32,
+        probe_zero_position=False,
+    )
+    client = FakeClient()
+
+    with pytest.raises(RuntimeError, match="backend failed"):
+        generate_grouped_probe_results(
+            client,
+            requests,
+            sampling_params={"max_tokens": 8},
+            score_candidate=lambda *_args: True,
+            max_concurrent_requests=4,
+            request_batch_size=8,
+        )
+
+    assert client.active == 0

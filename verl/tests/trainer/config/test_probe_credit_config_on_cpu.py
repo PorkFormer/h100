@@ -36,6 +36,8 @@ def test_probe_credit_defaults_are_disabled_and_canonical():
     assert config.probe_zero_position is True
     assert config.strict is True
     assert config.debug_dump is False
+    assert config.max_concurrent_requests == 128
+    assert config.request_batch_size == 512
     config.validate()
 
 
@@ -80,3 +82,22 @@ def test_probe_credit_rejects_nonpositive_integer_limits(field_name, value):
 
     with pytest.raises(ValueError, match=field_name):
         config.validate()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("max_concurrent_requests", 0),
+        ("max_concurrent_requests", -1),
+        ("request_batch_size", 0),
+        ("request_batch_size", -1),
+    ],
+)
+def test_probe_credit_rejects_nonpositive_request_limits(field_name, value):
+    with pytest.raises(ValueError, match=field_name):
+        ProbeCreditConfig(**{field_name: value}).validate()
+
+
+def test_probe_credit_rejects_request_batch_smaller_than_concurrency():
+    with pytest.raises(ValueError, match="request_batch_size"):
+        ProbeCreditConfig(max_concurrent_requests=9, request_batch_size=8).validate()

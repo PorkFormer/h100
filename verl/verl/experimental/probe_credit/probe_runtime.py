@@ -49,6 +49,7 @@ class ProbeBranchResult:
     branch_id: int
     success: float | bool | None
     actual_policy_version: int | None = None
+    output_token_count: int = 0
     error: str | None = None
 
 
@@ -310,17 +311,27 @@ async def generate_grouped_probe_results(
     *,
     sampling_params: Mapping[str, Any],
     score_candidate: Callable[[ProbeRequest, str], bool | float],
+    max_concurrent_requests: int = 128,
+    request_batch_size: int = 512,
 ) -> list[ProbeBranchResult]:
     """Generate and score grouped Probe requests without mutating rollout sampling state."""
+    if max_concurrent_requests <= 0:
+        raise ValueError("max_concurrent_requests must be positive")
+    if request_batch_size <= 0:
+        raise ValueError("request_batch_size must be positive")
+    if request_batch_size < max_concurrent_requests:
+        raise ValueError("request_batch_size must be at least max_concurrent_requests")
+    semaphore = asyncio.Semaphore(max_concurrent_requests)
 
     async def generate_one(request: ProbeRequest) -> list[ProbeBranchResult]:
-        params = dict(sampling_params)
-        params.update({"n": request.branch_count, "seed": request.grouped_seed})
-        outputs = await client.generate_grouped(
-            request.request_id,
-            prompt_ids=list(request.input_token_ids),
-            sampling_params=params,
-        )
+        async with semaphore:
+            params = dict(sampling_params)
+            params.update({"n": request.branch_count, "seed": request.grouped_seed})
+            outputs = await client.generate_grouped(
+                request.request_id,
+                prompt_ids=list(request.input_token_ids),
+                sampling_params=params,
+            )
         results: list[ProbeBranchResult] = []
         for fallback_index, output in enumerate(outputs):
             extra_fields = output.extra_fields or {}
@@ -336,9 +347,22 @@ async def generate_grouped_probe_results(
                     actual_policy_version=(
                         int(actual_policy_version) if actual_policy_version is not None else None
                     ),
+                    output_token_count=len(output.token_ids),
                 )
             )
         return results
 
-    grouped = await asyncio.gather(*(generate_one(request) for request in requests))
-    return [result for request_results in grouped for result in request_results]
+    results: list[ProbeBranchResult] = []
+    for start in range(0, len(requests), request_batch_size):
+        chunk = requests[start : start + request_batch_size]
+        tasks = [asyncio.create_task(generate_one(request)) for request in chunk]
+        try:
+            grouped = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        results.extend(result for request_results in grouped for result in request_results)
+    return results

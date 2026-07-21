@@ -18,6 +18,8 @@ p + y[:h] + encode("\n\nAnswer:", add_special_tokens=false)
 
 No decoding/re-encoding, chat template, new turn, suffix, or manual EOS is used. The candidate is the first non-empty generated line and the configured verifier receives `Answer: {candidate}`. One grouped vLLM request uses one stable seed and returns `n` reproducible samples from that request RNG stream; these are not described as independent branch seeds. Context overflow, missing branches, and scoring errors fail closed when `strict=true`.
 
+The driver submits Probe requests in chunks of `request_batch_size` (default 512) and permits at most `max_concurrent_requests` (default 128) active grouped RPCs. This bounds driver tasks, Ray RPC pressure, and vLLM queue bursts without changing request seeds or sampling parameters.
+
 ## Credit equations
 
 For `q=[0,.25,.50,.75,.90]`, local progress and backward returns are
@@ -35,6 +37,6 @@ The trainer saves standard GRPO output as `terminal_advantages`, then sets both 
 
 ## Metrics and smoke use
 
-Metrics include grouped request/branch counts, Probe input tokens, position-wise `V(q)`, pseudo rewards, temporal returns, degenerate rate, correction magnitude, zero-mass residual, and terminal/correction/final advantage statistics. Normal generation, Probe generation/scoring, advantage work, actor update, and total step timers remain separate.
+Metrics include configured request concurrency/chunk size, grouped request/branch counts, Probe input/output token totals and output-length mean/max, position-wise `V(q)`, pseudo rewards, temporal returns, degenerate rate, correction magnitude, zero-mass residual, and terminal/correction/final advantage statistics. Normal generation, Probe generation/scoring, advantage work, actor update, and total step timers remain separate.
 
 The launcher under `examples/probe_credit/` requires an explicit positive `PROBE_CREDIT_COEF`. It invokes Python directly and is intended for a one-step engineering smoke only after CPU tests pass. It does not allocate resources or submit a training job by itself.

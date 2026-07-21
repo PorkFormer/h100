@@ -163,6 +163,12 @@ algorithm:
     # Whether to write bounded per-step Probe diagnostics
     debug_dump: false
 
+    # Maximum number of active grouped Probe RPCs
+    max_concurrent_requests: 128
+
+    # Maximum number of Probe requests submitted in one driver chunk
+    request_batch_size: 512
+
 # config for the trainer
 trainer:
 

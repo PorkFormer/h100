@@ -76,6 +76,8 @@ class ProbeCreditConfig(BaseConfig):
     probe_zero_position: bool = True
     strict: bool = True
     debug_dump: bool = False
+    max_concurrent_requests: int = 128
+    request_batch_size: int = 512
 
     def validate(self) -> None:
         """Validate Probe credit parameters that define the scientific protocol."""
@@ -87,6 +89,18 @@ class ProbeCreditConfig(BaseConfig):
             raise ValueError(f"probe_credit.n must be positive, got {self.n}")
         if self.max_tokens <= 0:
             raise ValueError(f"probe_credit.max_tokens must be positive, got {self.max_tokens}")
+        if self.max_concurrent_requests <= 0:
+            raise ValueError(
+                "probe_credit.max_concurrent_requests must be positive, "
+                f"got {self.max_concurrent_requests}"
+            )
+        if self.request_batch_size <= 0:
+            raise ValueError(f"probe_credit.request_batch_size must be positive, got {self.request_batch_size}")
+        if self.request_batch_size < self.max_concurrent_requests:
+            raise ValueError(
+                "probe_credit.request_batch_size must be greater than or equal to "
+                "probe_credit.max_concurrent_requests"
+            )
 
         positions = self.relative_positions
         if not positions:

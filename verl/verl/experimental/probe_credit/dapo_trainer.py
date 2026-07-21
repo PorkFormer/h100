@@ -178,6 +178,8 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 requests,
                 sampling_params=sampling_params,
                 score_candidate=lambda request, text: self._score_probe_candidate(batch, request, text),
+                max_concurrent_requests=probe.max_concurrent_requests,
+                request_batch_size=probe.request_batch_size,
             )
         aggregate = aggregate_probe_results(
             requests,
@@ -199,11 +201,20 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             dtype=torch.long,
             device=device,
         )
+        output_token_counts = [result.output_token_count for result in results]
+        total_output_tokens = sum(output_token_counts)
         metrics.update(
             {
+                "probe_credit/max_concurrent_requests": float(probe.max_concurrent_requests),
+                "probe_credit/request_batch_size": float(probe.request_batch_size),
                 "probe_credit/request_count": float(len(requests)),
                 "probe_credit/branch_count": float(len(results)),
                 "probe_credit/input_tokens": float(sum(len(request.input_token_ids) for request in requests)),
+                "probe_credit/output_tokens": float(total_output_tokens),
+                "probe_credit/mean_output_tokens": (
+                    float(total_output_tokens / len(output_token_counts)) if output_token_counts else 0.0
+                ),
+                "probe_credit/max_output_tokens": float(max(output_token_counts, default=0)),
             }
         )
         for position_index, position in enumerate(positions):
