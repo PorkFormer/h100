@@ -17,7 +17,14 @@ from typing import Any, Optional
 
 from verl.base_config import BaseConfig
 
-__all__ = ["AlgoConfig", "FilterGroupsConfig", "KLControlConfig", "ProbeCreditConfig", "RolloutCorrectionConfig"]
+__all__ = [
+    "AlgoConfig",
+    "FilterGroupsConfig",
+    "KLControlConfig",
+    "ProbeCreditConfig",
+    "ReadinessDominanceConfig",
+    "RolloutCorrectionConfig",
+]
 
 
 @dataclass
@@ -54,6 +61,129 @@ class FilterGroupsConfig(BaseConfig):
     enable: bool = False
     metric: Optional[str] = None
     max_num_gen_batches: int = 0
+
+
+@dataclass
+class ReadinessDominanceConfig(BaseConfig):
+    """Configuration for fixed-horizon direct readiness dominance."""
+
+    mode: str = "off"
+    absolute_horizons: list[int] = field(default_factory=lambda: [256, 512, 1024, 2048])
+    n: int = 4
+    temperature: float = 0.7
+    top_p: float = 0.95
+    top_k: int = -1
+    max_tokens: int = 32
+    stop: list[str] = field(default_factory=lambda: ["\n"])
+    answer_prefix: str = "\n\nAnswer:"
+    strict: bool = True
+    strict_branch_margin: int = 1
+    min_common_positions: int = 2
+    max_concurrent_requests: int = 128
+    request_batch_size: int = 512
+
+    def validate(self) -> None:
+        """Validate the standalone Readiness Dominance scientific protocol."""
+        if self.mode not in {"off", "shadow", "reweight"}:
+            raise ValueError(
+                "readiness_dominance.mode must be one of off, shadow, or reweight, "
+                f"got {self.mode!r}"
+            )
+        if not self.absolute_horizons:
+            raise ValueError("readiness_dominance.absolute_horizons must be nonempty")
+        if any(
+            not isinstance(horizon, int) or isinstance(horizon, bool) or horizon <= 0
+            for horizon in self.absolute_horizons
+        ):
+            raise ValueError(
+                "readiness_dominance.absolute_horizons must contain positive integers"
+            )
+        if any(
+            right <= left
+            for left, right in zip(
+                self.absolute_horizons, self.absolute_horizons[1:], strict=False
+            )
+        ):
+            raise ValueError(
+                "readiness_dominance.absolute_horizons must be strictly increasing"
+            )
+        if not isinstance(self.n, int) or isinstance(self.n, bool) or self.n <= 0:
+            raise ValueError(f"readiness_dominance.n must be positive, got {self.n}")
+        if (
+            not isinstance(self.max_tokens, int)
+            or isinstance(self.max_tokens, bool)
+            or self.max_tokens <= 0
+        ):
+            raise ValueError(
+                f"readiness_dominance.max_tokens must be positive, got {self.max_tokens}"
+            )
+        if (
+            not isinstance(self.strict_branch_margin, int)
+            or isinstance(self.strict_branch_margin, bool)
+            or self.strict_branch_margin <= 0
+            or self.strict_branch_margin > self.n
+        ):
+            raise ValueError(
+                "readiness_dominance.strict_branch_margin must be in [1, n], "
+                f"got {self.strict_branch_margin}"
+            )
+        if (
+            not isinstance(self.min_common_positions, int)
+            or isinstance(self.min_common_positions, bool)
+            or self.min_common_positions <= 0
+        ):
+            raise ValueError(
+                "readiness_dominance.min_common_positions must be positive, "
+                f"got {self.min_common_positions}"
+            )
+        if self.temperature < 0.0:
+            raise ValueError(
+                "readiness_dominance.temperature must be nonnegative, "
+                f"got {self.temperature}"
+            )
+        if not 0.0 < self.top_p <= 1.0:
+            raise ValueError(
+                f"readiness_dominance.top_p must be in (0, 1], got {self.top_p}"
+            )
+        if self.top_k != -1 and self.top_k <= 0:
+            raise ValueError(
+                f"readiness_dominance.top_k must be -1 or positive, got {self.top_k}"
+            )
+        if not self.answer_prefix:
+            raise ValueError("readiness_dominance.answer_prefix must be nonempty")
+        if not self.stop or any(
+            not isinstance(stop, str) or not stop for stop in self.stop
+        ):
+            raise ValueError(
+                "readiness_dominance.stop must contain only nonempty strings"
+            )
+        if not self.strict:
+            raise ValueError(
+                "The first Readiness Dominance implementation requires strict=true"
+            )
+        if (
+            not isinstance(self.max_concurrent_requests, int)
+            or isinstance(self.max_concurrent_requests, bool)
+            or self.max_concurrent_requests <= 0
+        ):
+            raise ValueError(
+                "readiness_dominance.max_concurrent_requests must be positive, "
+                f"got {self.max_concurrent_requests}"
+            )
+        if (
+            not isinstance(self.request_batch_size, int)
+            or isinstance(self.request_batch_size, bool)
+            or self.request_batch_size <= 0
+        ):
+            raise ValueError(
+                "readiness_dominance.request_batch_size must be positive, "
+                f"got {self.request_batch_size}"
+            )
+        if self.request_batch_size < self.max_concurrent_requests:
+            raise ValueError(
+                "readiness_dominance.request_batch_size must be greater than or equal to "
+                "readiness_dominance.max_concurrent_requests"
+            )
 
 
 @dataclass
@@ -729,6 +859,9 @@ class AlgoConfig(BaseConfig):
     pf_ppo: dict[str, Any] = field(default_factory=dict)
     filter_groups: Optional[FilterGroupsConfig] = None
     probe_credit: ProbeCreditConfig = field(default_factory=ProbeCreditConfig)
+    readiness_dominance: ReadinessDominanceConfig = field(
+        default_factory=ReadinessDominanceConfig
+    )
     # Rollout Correction: corrects off-policy issues (policy mismatch, model staleness, distribution shifts)
     # Set to None to disable, use RolloutCorrectionConfig presets (e.g., .tis(), .mis()), or pass dict
     rollout_correction: Optional[RolloutCorrectionConfig] = None
