@@ -317,7 +317,7 @@ def test_real_absolute_probe_requests_only_terminal_success_trajectories():
         [True, True],
         [False, False],
     ]
-    assert result.batch["dominance_absolute_horizons"].tolist() == [1, 2]
+    assert result.batch["dominance_absolute_horizons"].tolist() == [[1, 2], [1, 2]]
     assert metrics["dominance/probe_valid_cell_rate"] == 1.0
     assert metrics["dominance/request_count"] == 2.0
     assert metrics["dominance/branch_count"] == 8.0
@@ -357,6 +357,31 @@ def test_strict_missing_probe_branch_fails_before_sleep():
     with pytest.raises(ValueError, match="missing Probe branches"):
         trainer._prepare_final_retained_batch(_probe_batch(), {}, {})
     assert events == []
+
+
+def test_success_trajectory_with_no_active_horizon_needs_no_server_version():
+    trainer = _trainer(_config(horizons=[1]))
+    trainer.tokenizer = lambda *_args, **_kwargs: {"input_ids": [99]}
+    trainer.llm_server_manager = SimpleNamespace(
+        get_client=lambda: (_ for _ in ()).throw(
+            AssertionError("an empty absolute plan must not call the server")
+        )
+    )
+    batch = _probe_batch()
+    batch.batch["response_mask"][0] = torch.tensor([1, 0, 0, 0])
+    batch.batch["token_level_scores"][0] = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    batch.batch["token_level_rewards"][0] = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    metrics = {}
+    terminal_success = trainer._terminal_success_from_acc(batch, metrics)
+
+    result = trainer._probe_final_retained_batch(batch, terminal_success, metrics, {})
+
+    assert result.batch["dominance_probe_values"].tolist() == [[0.0], [0.0]]
+    assert result.batch["dominance_probe_valid_mask"].tolist() == [[False], [False]]
+    assert result.batch["dominance_absolute_horizons"].tolist() == [[1], [1]]
+    assert metrics["dominance/request_count"] == 0.0
+    assert metrics["dominance/branch_count"] == 0.0
+    assert metrics["dominance/probe_valid_cell_rate"] == 0.0
 
 
 def _shadow_advantage_batch():

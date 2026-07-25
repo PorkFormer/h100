@@ -11,6 +11,7 @@ from verl.experimental.probe_credit.dapo_trainer import (
     _config_get,
 )
 from verl.experimental.probe_credit.probe_runtime import (
+    ProbeAggregation,
     ProbeTrajectory,
     aggregate_probe_results,
     build_absolute_probe_requests,
@@ -200,26 +201,37 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
             "max_tokens": config.max_tokens,
             "stop": list(config.stop),
         }
-        with marked_timer("dominance_probe_generation_scoring", timing_raw, color="magenta"):
-            results = generate_grouped_probe_results(
-                self.llm_server_manager.get_client(),
+        if plan.requests:
+            with marked_timer(
+                "dominance_probe_generation_scoring", timing_raw, color="magenta"
+            ):
+                results = generate_grouped_probe_results(
+                    self.llm_server_manager.get_client(),
+                    plan.requests,
+                    sampling_params=sampling_params,
+                    score_candidate=lambda request, text: self._score_probe_candidate(
+                        batch, request, text
+                    ),
+                    max_concurrent_requests=config.max_concurrent_requests,
+                    request_batch_size=config.request_batch_size,
+                )
+            aggregate = aggregate_probe_results(
                 plan.requests,
-                sampling_params=sampling_params,
-                score_candidate=lambda request, text: self._score_probe_candidate(
-                    batch, request, text
-                ),
-                max_concurrent_requests=config.max_concurrent_requests,
-                request_batch_size=config.request_batch_size,
+                results,
+                trajectory_count=len(batch),
+                position_count=len(plan.absolute_horizons),
+                n=config.n,
+                strict=config.strict,
+                expected_policy_version=rollout_policy_version,
             )
-        aggregate = aggregate_probe_results(
-            plan.requests,
-            results,
-            trajectory_count=len(batch),
-            position_count=len(plan.absolute_horizons),
-            n=config.n,
-            strict=config.strict,
-            expected_policy_version=rollout_policy_version,
-        )
+        else:
+            results = []
+            aggregate = ProbeAggregation(
+                values=tuple(
+                    (0.0,) * len(plan.absolute_horizons) for _ in range(len(batch))
+                ),
+                valid_mask=plan.valid_mask,
+            )
         if config.strict and aggregate.valid_mask != plan.valid_mask:
             raise ValueError("absolute Probe aggregation validity does not match its plan")
         device = batch.batch["responses"].device
@@ -231,7 +243,7 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
         )
         batch.batch["dominance_absolute_horizons"] = torch.tensor(
             plan.absolute_horizons, dtype=torch.long, device=device
-        )
+        ).repeat(len(batch), 1)
         batch.batch["dominance_terminal_success"] = terminal_success.to(device=device)
         output_token_counts = [result.output_token_count for result in results]
         total_output_tokens = sum(output_token_counts)
