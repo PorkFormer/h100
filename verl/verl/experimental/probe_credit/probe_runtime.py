@@ -8,11 +8,12 @@ import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from verl.utils.ray_utils import auto_await
 
 PROMPT_TRAJECTORY_SENTINEL = "__prompt__"
+ProbePositionKind = Literal["relative", "absolute"]
 
 
 @dataclass(frozen=True)
@@ -36,12 +37,13 @@ class ProbeRequest:
     policy_version: int
     uid: str
     trajectory_id: str
-    relative_position: float
+    relative_position: float | None
     absolute_horizon: int
     input_token_ids: tuple[int, ...]
     grouped_seed: int
     branch_count: int
     targets: tuple[ProbeTarget, ...]
+    position_kind: ProbePositionKind = "relative"
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,13 @@ class ProbeBranchResult:
 class ProbeAggregation:
     values: tuple[tuple[float, ...], ...]
     valid_mask: tuple[tuple[bool, ...], ...]
+
+
+@dataclass(frozen=True)
+class AbsoluteProbePlan:
+    requests: tuple[ProbeRequest, ...]
+    valid_mask: tuple[tuple[bool, ...], ...]
+    absolute_horizons: tuple[int, ...]
 
 
 def relative_horizons(response_length: int, positions: Sequence[float]) -> tuple[int, ...]:
@@ -99,9 +108,39 @@ def derive_grouped_request_seed(
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**31)
 
 
+def derive_absolute_grouped_request_seed(
+    policy_version: int,
+    uid: str,
+    trajectory_id: str,
+    absolute_horizon: int,
+    ordered_branch_ids: Sequence[int],
+) -> int:
+    """Derive a stable absolute-horizon seed in a separate semantic namespace."""
+    payload = json.dumps(
+        [
+            "absolute",
+            int(policy_version),
+            str(uid),
+            str(trajectory_id),
+            int(absolute_horizon),
+            list(ordered_branch_ids),
+        ],
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**31)
+
+
 def _request_id(policy_version: int, uid: str, trajectory_id: str, horizon: int) -> str:
     identity = json.dumps([policy_version, uid, trajectory_id, horizon], separators=(",", ":")).encode()
     return f"probe-{policy_version}-{hashlib.sha256(identity).hexdigest()[:20]}"
+
+
+def _absolute_request_id(policy_version: int, uid: str, trajectory_id: str, horizon: int) -> str:
+    identity = json.dumps(
+        ["absolute", policy_version, uid, trajectory_id, horizon], separators=(",", ":")
+    ).encode()
+    return f"probe-absolute-{policy_version}-{hashlib.sha256(identity).hexdigest()[:20]}"
 
 
 def _routing_key(policy_version: int, uid: str) -> str:
@@ -191,6 +230,122 @@ def build_probe_requests(
             )
         )
     return requests
+
+
+def _validate_absolute_horizons(absolute_horizons: Sequence[int]) -> tuple[int, ...]:
+    if not absolute_horizons:
+        raise ValueError("absolute_horizons must be nonempty")
+    horizons: list[int] = []
+    for horizon in absolute_horizons:
+        if not isinstance(horizon, int) or isinstance(horizon, bool):
+            raise ValueError("absolute_horizons must contain integers")
+        if horizon <= 0:
+            raise ValueError("absolute_horizons must contain positive integers")
+        horizons.append(horizon)
+    if any(right <= left for left, right in zip(horizons, horizons[1:], strict=False)):
+        raise ValueError("absolute_horizons must be strictly increasing")
+    return tuple(horizons)
+
+
+def build_absolute_probe_requests(
+    trajectories: Sequence[ProbeTrajectory],
+    *,
+    trajectory_mask: Sequence[bool],
+    policy_version: int,
+    absolute_horizons: Sequence[int],
+    answer_prefix_token_ids: Sequence[int],
+    n: int,
+    max_tokens: int,
+    max_model_len: int,
+    strict: bool = True,
+) -> AbsoluteProbePlan:
+    """Plan active-prefix requests at fixed absolute token horizons."""
+    horizons = _validate_absolute_horizons(absolute_horizons)
+    if len(trajectory_mask) != len(trajectories):
+        raise ValueError("trajectory_mask length must match trajectories")
+    if any(not isinstance(active, bool) for active in trajectory_mask):
+        raise ValueError("trajectory_mask must contain boolean values")
+    if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+        raise ValueError("n must be a positive integer")
+    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens <= 0:
+        raise ValueError("max_tokens must be a positive integer")
+
+    prefix_ids = tuple(int(token_id) for token_id in answer_prefix_token_ids)
+    branch_ids = tuple(range(n))
+    prompt_by_uid: dict[str, tuple[int, ...]] = {}
+    valid_mask = [[False] * len(horizons) for _ in trajectories]
+    requests: list[ProbeRequest] = []
+    for trajectory_index, trajectory in enumerate(trajectories):
+        prompt_ids = tuple(int(token_id) for token_id in trajectory.prompt_token_ids)
+        if trajectory.uid in prompt_by_uid and prompt_by_uid[trajectory.uid] != prompt_ids:
+            raise ValueError(f"retained prompt group {trajectory.uid!r} has inconsistent prompt token IDs")
+        prompt_by_uid[trajectory.uid] = prompt_ids
+        if not trajectory_mask[trajectory_index]:
+            continue
+        response_ids = tuple(int(token_id) for token_id in trajectory.response_token_ids)
+        for position_index, horizon in enumerate(horizons):
+            if horizon >= len(response_ids):
+                continue
+            valid_mask[trajectory_index][position_index] = True
+            input_ids = (*prompt_ids, *response_ids[:horizon], *prefix_ids)
+            requests.append(
+                _make_absolute_request(
+                    policy_version=policy_version,
+                    uid=trajectory.uid,
+                    trajectory_id=trajectory.trajectory_id,
+                    horizon=horizon,
+                    input_ids=input_ids,
+                    branch_ids=branch_ids,
+                    target=ProbeTarget(trajectory_index, (position_index,)),
+                    max_tokens=max_tokens,
+                    max_model_len=max_model_len,
+                    strict=strict,
+                )
+            )
+    return AbsoluteProbePlan(
+        requests=tuple(requests),
+        valid_mask=tuple(tuple(row) for row in valid_mask),
+        absolute_horizons=horizons,
+    )
+
+
+def _make_absolute_request(
+    *,
+    policy_version: int,
+    uid: str,
+    trajectory_id: str,
+    horizon: int,
+    input_ids: tuple[int, ...],
+    branch_ids: tuple[int, ...],
+    target: ProbeTarget,
+    max_tokens: int,
+    max_model_len: int,
+    strict: bool,
+) -> ProbeRequest:
+    if len(input_ids) + max_tokens > max_model_len:
+        message = (
+            f"Probe context overflow: input_len={len(input_ids)} + max_tokens={max_tokens} "
+            f"exceeds max_model_len={max_model_len}"
+        )
+        if strict:
+            raise ValueError(message)
+        raise ValueError(message)
+    return ProbeRequest(
+        request_id=_absolute_request_id(policy_version, uid, trajectory_id, horizon),
+        routing_key=_routing_key(policy_version, uid),
+        policy_version=policy_version,
+        uid=uid,
+        trajectory_id=trajectory_id,
+        relative_position=None,
+        absolute_horizon=horizon,
+        input_token_ids=tuple(int(token_id) for token_id in input_ids),
+        grouped_seed=derive_absolute_grouped_request_seed(
+            policy_version, uid, trajectory_id, horizon, branch_ids
+        ),
+        branch_count=len(branch_ids),
+        targets=(target,),
+        position_kind="absolute",
+    )
 
 
 def _make_request(
