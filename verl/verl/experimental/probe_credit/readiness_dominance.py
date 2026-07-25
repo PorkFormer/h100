@@ -183,3 +183,171 @@ def compute_readiness_dominance(
         ),
         metrics,
     )
+
+
+def _validate_dominance_result(
+    dominance: DominanceResult,
+    group_ids: Sequence[object],
+    batch_size: int,
+    device: torch.device,
+) -> list[list[int]]:
+    matrix = dominance.dominance_matrix
+    if matrix.shape != (batch_size, batch_size) or matrix.dtype is not torch.bool:
+        raise ValueError("dominance_matrix must be a boolean (batch, batch) tensor")
+    vector_names = (
+        "eligible_mask",
+        "frontier_mask",
+        "dominated_mask",
+        "group_has_dominance",
+    )
+    for name in vector_names:
+        tensor = getattr(dominance, name)
+        if tensor.shape != (batch_size,) or tensor.dtype is not torch.bool:
+            raise ValueError(f"{name} must be a boolean (batch,) tensor")
+        if tensor.device != device:
+            raise ValueError("all dominance tensors must be on the advantages device")
+    if matrix.device != device:
+        raise ValueError("all dominance tensors must be on the advantages device")
+    if bool(torch.diagonal(matrix).any().item()):
+        raise ValueError("dominance_matrix must not contain self-dominance")
+    if not torch.equal(matrix.any(dim=0), dominance.dominated_mask):
+        raise ValueError("dominated_mask must match direct incoming dominance edges")
+    expected_frontier = dominance.eligible_mask & ~dominance.dominated_mask
+    if not torch.equal(expected_frontier, dominance.frontier_mask):
+        raise ValueError("frontier_mask must be the directly nondominated eligible set")
+    if bool((dominance.dominated_mask & ~dominance.eligible_mask).any().item()):
+        raise ValueError("only eligible trajectories may be dominated")
+
+    groups = _group_indices(group_ids)
+    group_index_by_row = [-1] * batch_size
+    for group_index, indices in enumerate(groups):
+        for index in indices:
+            group_index_by_row[index] = group_index
+        expected_has_edge = bool(matrix[indices][:, indices].any().item())
+        if any(
+            bool(dominance.group_has_dominance[index].item()) != expected_has_edge
+            for index in indices
+        ):
+            raise ValueError("group_has_dominance must match direct within-group edges")
+    for source, target in matrix.nonzero(as_tuple=False).tolist():
+        if group_index_by_row[source] != group_index_by_row[target]:
+            raise ValueError("dominance_matrix must not contain cross-group edges")
+    return groups
+
+
+@torch.no_grad()
+def apply_frontier_reweighting(
+    advantages: torch.Tensor,
+    response_mask: torch.Tensor,
+    group_ids: Sequence[object],
+    dominance: DominanceResult,
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
+    """Apply token-mean-mass-preserving trajectory weights to direct dominance groups."""
+    if advantages.ndim != 2:
+        raise ValueError("advantages must have shape (batch, response_tokens)")
+    if not advantages.is_floating_point():
+        raise ValueError("advantages must have floating dtype")
+    if response_mask.shape != advantages.shape:
+        raise ValueError("response_mask and advantages must have the same shape")
+    if response_mask.device != advantages.device:
+        raise ValueError("response_mask and advantages must be on the same device")
+    if len(group_ids) != advantages.shape[0]:
+        raise ValueError("group_ids length must match advantages batch size")
+    if response_mask.is_floating_point() and not bool(torch.isfinite(response_mask).all().item()):
+        raise ValueError("response_mask must be finite and binary")
+    if not bool(((response_mask == 0) | (response_mask == 1)).all().item()):
+        raise ValueError("response_mask must be binary")
+    if not bool(torch.isfinite(advantages).all().item()):
+        raise ValueError("advantages must be finite")
+
+    mask = response_mask.bool()
+    for row in range(advantages.shape[0]):
+        active = advantages[row, mask[row]]
+        padding = advantages[row, ~mask[row]]
+        if active.numel() and not torch.equal(active, active[0].expand_as(active)):
+            raise ValueError(
+                "standard GRPO advantages must be constant within each trajectory"
+            )
+        if padding.numel() and not torch.equal(padding, torch.zeros_like(padding)):
+            raise ValueError("standard GRPO padding advantages must be exactly zero")
+
+    groups = _validate_dominance_result(
+        dominance, group_ids, advantages.shape[0], advantages.device
+    )
+    positive_mass_by_row = (
+        advantages.clamp_min(0) * mask.to(dtype=advantages.dtype)
+    ).sum(dim=-1)
+    weights = torch.ones(
+        advantages.shape[0], dtype=advantages.dtype, device=advantages.device
+    )
+    scales: list[torch.Tensor] = []
+    group_masses: list[tuple[list[int], torch.Tensor]] = []
+    total_before = advantages.new_zeros(())
+    for indices in groups:
+        if not bool(dominance.group_has_dominance[indices[0]].item()):
+            continue
+        eligible_indices = [
+            index for index in indices if bool(dominance.eligible_mask[index].item())
+        ]
+        frontier_indices = [
+            index for index in indices if bool(dominance.frontier_mask[index].item())
+        ]
+        dominated_indices = [
+            index for index in indices if bool(dominance.dominated_mask[index].item())
+        ]
+        before = positive_mass_by_row[eligible_indices].sum()
+        frontier_mass = positive_mass_by_row[frontier_indices].sum()
+        if not bool(torch.isfinite(before).item()) or before <= 0:
+            raise ValueError("eligible positive advantage mass must be finite and positive")
+        if not bool(torch.isfinite(frontier_mass).item()) or frontier_mass <= 0:
+            raise ValueError("frontier mass must be finite and positive")
+        scale = before / frontier_mass
+        if not bool(torch.isfinite(scale).item()):
+            raise ValueError("frontier scale must be finite")
+        weights[dominated_indices] = 0
+        weights[frontier_indices] = scale
+        scales.append(scale)
+        group_masses.append((eligible_indices, before))
+        total_before += before
+
+    new_advantages = advantages * weights.unsqueeze(-1)
+    new_positive_mass_by_row = (
+        new_advantages.clamp_min(0) * mask.to(dtype=advantages.dtype)
+    ).sum(dim=-1)
+    total_after = advantages.new_zeros(())
+    residuals: list[torch.Tensor] = []
+    for eligible_indices, before in group_masses:
+        after = new_positive_mass_by_row[eligible_indices].sum()
+        residual = (after - before).abs()
+        tolerance = max(1.0e-6, 1.0e-6 * abs(float(before.item())))
+        if not bool(torch.isfinite(after).item()) or not bool(torch.isfinite(residual).item()):
+            raise ValueError("reweighted positive advantage mass must be finite")
+        if float(residual.item()) > tolerance:
+            raise ValueError("frontier reweighting violates positive mass conservation")
+        total_after += after
+        residuals.append(residual)
+
+    if scales:
+        scale_tensor = torch.stack(scales).float()
+        scale_mean = float(scale_tensor.mean().item())
+        scale_max = float(scale_tensor.max().item())
+        scale_p50 = float(torch.quantile(scale_tensor, 0.50).item())
+        scale_p90 = float(torch.quantile(scale_tensor, 0.90).item())
+        scale_p99 = float(torch.quantile(scale_tensor, 0.99).item())
+    else:
+        scale_mean = scale_max = scale_p50 = scale_p90 = scale_p99 = 0.0
+    residual_max = (
+        float(torch.stack(residuals).max().item()) if residuals else 0.0
+    )
+    metrics = {
+        "dominance/positive_mass_before": float(total_before.item()),
+        "dominance/positive_mass_after": float(total_after.item()),
+        "dominance/mass_residual_max": residual_max,
+        "dominance/frontier_scale_mean": scale_mean,
+        "dominance/frontier_scale_max": scale_max,
+        "dominance/frontier_scale_p50": scale_p50,
+        "dominance/frontier_scale_p90": scale_p90,
+        "dominance/frontier_scale_p99": scale_p99,
+        "dominance/skipped_invalid_mass_groups": 0.0,
+    }
+    return new_advantages, weights, metrics

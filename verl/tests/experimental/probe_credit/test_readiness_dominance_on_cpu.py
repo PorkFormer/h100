@@ -1,7 +1,11 @@
 import pytest
 import torch
 
-from verl.experimental.probe_credit.readiness_dominance import compute_readiness_dominance
+from verl.experimental.probe_credit.readiness_dominance import (
+    DominanceResult,
+    apply_frontier_reweighting,
+    compute_readiness_dominance,
+)
 
 
 def _compute(
@@ -291,4 +295,195 @@ def test_invalid_protocol_parameters_fail_closed(kwargs, message):
             torch.zeros(2, 2),
             torch.ones(2, 2, dtype=torch.bool),
             **kwargs,
+        )
+
+
+def _dominance_result(matrix, eligible, group_has_dominance):
+    dominance_matrix = torch.tensor(matrix, dtype=torch.bool)
+    eligible_mask = torch.tensor(eligible, dtype=torch.bool)
+    dominated_mask = dominance_matrix.any(dim=0)
+    return DominanceResult(
+        dominance_matrix=dominance_matrix,
+        eligible_mask=eligible_mask,
+        frontier_mask=eligible_mask & ~dominated_mask,
+        dominated_mask=dominated_mask,
+        group_has_dominance=torch.tensor(group_has_dominance, dtype=torch.bool),
+    )
+
+
+def test_trajectory_weights_conserve_token_mean_positive_mass():
+    advantages = torch.tensor(
+        [[1.0, 1.0, 0.0], [2.0, 2.0, 0.0], [-1.0, -1.0, 0.0]]
+    )
+    response_mask = torch.tensor(
+        [[1, 1, 0], [1, 1, 0], [1, 1, 0]], dtype=torch.bool
+    )
+    dominance = _dominance_result(
+        [[False, True, False], [False, False, False], [False, False, False]],
+        [True, True, False],
+        [True, True, True],
+    )
+
+    new_advantages, weights, metrics = apply_frontier_reweighting(
+        advantages, response_mask, ["p", "p", "p"], dominance
+    )
+
+    torch.testing.assert_close(weights, torch.tensor([3.0, 0.0, 1.0]))
+    torch.testing.assert_close(
+        new_advantages,
+        torch.tensor([[3.0, 3.0, 0.0], [0.0, 0.0, 0.0], [-1.0, -1.0, 0.0]]),
+    )
+    assert metrics["dominance/positive_mass_before"] == 6.0
+    assert metrics["dominance/positive_mass_after"] == 6.0
+    assert metrics["dominance/mass_residual_max"] == 0.0
+    assert metrics["dominance/frontier_scale_mean"] == 3.0
+    assert metrics["dominance/frontier_scale_max"] == 3.0
+    assert metrics["dominance/frontier_scale_p50"] == 3.0
+    assert metrics["dominance/frontier_scale_p90"] == 3.0
+    assert metrics["dominance/frontier_scale_p99"] == 3.0
+    assert metrics["dominance/skipped_invalid_mass_groups"] == 0.0
+
+
+def test_no_direct_dominance_is_bitwise_noop():
+    advantages = torch.tensor([[1.0, 1.0, 0.0], [2.0, 2.0, 0.0]])
+    response_mask = torch.tensor([[1, 1, 0], [1, 1, 0]], dtype=torch.bool)
+    dominance = _dominance_result(
+        [[False, False], [False, False]],
+        [True, True],
+        [False, False],
+    )
+
+    new_advantages, weights, metrics = apply_frontier_reweighting(
+        advantages, response_mask, ["p", "p"], dominance
+    )
+
+    assert torch.equal(new_advantages, advantages)
+    assert torch.equal(weights, torch.ones(2))
+    assert metrics["dominance/positive_mass_before"] == 0.0
+    assert metrics["dominance/positive_mass_after"] == 0.0
+    assert metrics["dominance/frontier_scale_mean"] == 0.0
+
+
+def test_multiple_groups_scale_independently_and_crossing_group_stays_unchanged():
+    advantages = torch.tensor(
+        [
+            [1.0, 1.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [3.0, 3.0, 0.0],
+            [4.0, 4.0, 0.0],
+        ]
+    )
+    response_mask = torch.tensor([[1, 1, 0]] * 4, dtype=torch.bool)
+    dominance = _dominance_result(
+        [
+            [False, True, False, False],
+            [False, False, False, False],
+            [False, False, False, False],
+            [False, False, False, False],
+        ],
+        [True, True, True, True],
+        [True, True, False, False],
+    )
+
+    new_advantages, weights, metrics = apply_frontier_reweighting(
+        advantages, response_mask, ["a", "a", "b", "b"], dominance
+    )
+
+    torch.testing.assert_close(weights, torch.tensor([3.0, 0.0, 1.0, 1.0]))
+    assert torch.equal(new_advantages[2:], advantages[2:])
+    assert metrics["dominance/positive_mass_before"] == 6.0
+    assert metrics["dominance/positive_mass_after"] == 6.0
+
+
+def test_noneligible_negative_and_padding_values_remain_unchanged():
+    advantages = torch.tensor(
+        [[1.0, 1.0, 0.0], [2.0, 2.0, 0.0], [-2.0, -2.0, 0.0]]
+    )
+    response_mask = torch.tensor([[1, 1, 0]] * 3, dtype=torch.bool)
+    dominance = _dominance_result(
+        [[False, True, False], [False, False, False], [False, False, False]],
+        [True, True, False],
+        [True, True, True],
+    )
+
+    new_advantages, weights, _ = apply_frontier_reweighting(
+        advantages, response_mask, ["p", "p", "p"], dominance
+    )
+
+    assert weights[2].item() == 1.0
+    assert torch.equal(new_advantages[2], advantages[2])
+    assert torch.equal(new_advantages[:, 2], advantages[:, 2])
+
+
+@pytest.mark.parametrize(
+    ("advantages", "response_mask", "dominance", "message"),
+    [
+        (
+            torch.tensor([[1.0, 2.0], [2.0, 2.0]]),
+            torch.ones(2, 2, dtype=torch.bool),
+            _dominance_result(
+                [[False, True], [False, False]], [True, True], [True, True]
+            ),
+            "constant",
+        ),
+        (
+            torch.tensor([[1.0, 1.0], [2.0, 1.0]]),
+            torch.tensor([[1, 1], [1, 0]], dtype=torch.bool),
+            _dominance_result(
+                [[False, True], [False, False]], [True, True], [True, True]
+            ),
+            "padding",
+        ),
+        (
+            torch.tensor([[float("nan"), float("nan")], [2.0, 2.0]]),
+            torch.ones(2, 2, dtype=torch.bool),
+            _dominance_result(
+                [[False, True], [False, False]], [True, True], [True, True]
+            ),
+            "finite",
+        ),
+        (
+            torch.tensor([[float("inf"), float("inf")], [2.0, 2.0]]),
+            torch.ones(2, 2, dtype=torch.bool),
+            _dominance_result(
+                [[False, True], [False, False]], [True, True], [True, True]
+            ),
+            "finite",
+        ),
+        (
+            torch.tensor([[0.0, 0.0], [2.0, 2.0]]),
+            torch.ones(2, 2, dtype=torch.bool),
+            _dominance_result(
+                [[False, True], [False, False]], [True, True], [True, True]
+            ),
+            "frontier mass",
+        ),
+    ],
+)
+def test_reweighting_fails_closed_for_invalid_grpo_or_mass(
+    advantages, response_mask, dominance, message
+):
+    with pytest.raises(ValueError, match=message):
+        apply_frontier_reweighting(
+            advantages, response_mask, ["p", "p"], dominance
+        )
+
+
+def test_reweighting_rejects_shape_mask_and_group_mismatches():
+    dominance = _dominance_result(
+        [[False, False], [False, False]], [True, True], [False, False]
+    )
+    advantages = torch.ones(2, 2)
+
+    with pytest.raises(ValueError, match="same shape"):
+        apply_frontier_reweighting(
+            advantages, torch.ones(2, 3), ["p", "p"], dominance
+        )
+    with pytest.raises(ValueError, match="binary"):
+        apply_frontier_reweighting(
+            advantages, torch.tensor([[1, 2], [1, 1]]), ["p", "p"], dominance
+        )
+    with pytest.raises(ValueError, match="group_ids"):
+        apply_frontier_reweighting(
+            advantages, torch.ones(2, 2), ["p"], dominance
         )
