@@ -31,9 +31,16 @@ sys.modules.setdefault("verl.utils.checkpoint", checkpoint_package)
 sys.modules.setdefault("verl.utils.checkpoint.checkpoint_manager", checkpoint_manager)
 
 from verl import DataProto  # noqa: E402
+from verl.experimental.probe_credit import (  # noqa: E402
+    dapo_dominance_trainer as dapo_dominance_trainer_module,
+)
 from verl.experimental.probe_credit import dapo_trainer as dapo_trainer_module  # noqa: E402
 from verl.experimental.probe_credit.dapo_dominance_trainer import (  # noqa: E402
     RayDAPOReadinessDominanceTrainer,
+)
+from verl.experimental.probe_credit.dynamic_sampling import (  # noqa: E402
+    filter_dapo_generation_batch,
+    select_complete_prompt_groups,
 )
 from verl.trainer.config import ProbeCreditConfig, ReadinessDominanceConfig  # noqa: E402
 from verl.workers.rollout.replica import TokenOutput  # noqa: E402
@@ -453,3 +460,198 @@ def test_mock_event_order_places_shadow_dominance_after_standard_grpo(monkeypatc
         "dominance",
         "actor_update",
     ]
+
+
+def test_reweight_saves_terminal_grpo_and_applies_trajectory_weights():
+    trainer = _trainer(_config(mode="reweight"))
+    batch = _shadow_advantage_batch()
+    standard_advantages = batch.batch["advantages"].clone()
+    scores_before = batch.batch["token_level_scores"].clone()
+    rewards_before = batch.batch["token_level_rewards"].clone()
+    ids_before = batch.non_tensor_batch["trajectory_id"].copy()
+    metrics = {}
+
+    result = trainer._compute_probe_credit_advantage(batch, metrics)
+
+    assert torch.equal(result.batch["terminal_advantages"], standard_advantages)
+    torch.testing.assert_close(
+        result.batch["dominance_weights"], torch.tensor([1.5, 0.0, 1.0])
+    )
+    torch.testing.assert_close(
+        result.batch["advantages"],
+        torch.tensor([[1.5, 1.5, 0.0], [0.0, 0.0, 0.0], [-1.0, -1.0, 0.0]]),
+    )
+    assert torch.equal(result.batch["returns"], result.batch["advantages"])
+    assert torch.equal(result.batch["token_level_scores"], scores_before)
+    assert torch.equal(result.batch["token_level_rewards"], rewards_before)
+    assert result.non_tensor_batch["trajectory_id"].tolist() == ids_before.tolist()
+    assert metrics["dominance/positive_mass_before"] == 3.0
+    assert metrics["dominance/positive_mass_after"] == 3.0
+    assert metrics["dominance/mass_residual_max"] == 0.0
+
+
+def test_reweight_without_direct_dominance_is_bitwise_baseline():
+    trainer = _trainer(_config(mode="reweight"))
+    batch = _shadow_advantage_batch()
+    batch.batch["dominance_probe_values"][:2] = torch.tensor(
+        [[0.25, 1.0], [0.50, 0.75]]
+    )
+    standard_advantages = batch.batch["advantages"].clone()
+    standard_returns = batch.batch["returns"].clone()
+
+    result = trainer._compute_probe_credit_advantage(batch, {})
+
+    assert torch.equal(result.batch["terminal_advantages"], standard_advantages)
+    assert torch.equal(result.batch["advantages"], standard_advantages)
+    assert torch.equal(result.batch["returns"], standard_returns)
+    assert torch.equal(result.batch["dominance_weights"], torch.ones(3))
+    assert not bool(result.batch["dominance_dominated_mask"].any())
+
+
+def test_reweight_rejects_token_varying_standard_grpo_advantages():
+    trainer = _trainer(_config(mode="reweight"))
+    batch = _shadow_advantage_batch()
+    batch.batch["advantages"][0, :2] = torch.tensor([1.0, 2.0])
+    batch.batch["returns"] = batch.batch["advantages"].clone()
+
+    with pytest.raises(ValueError, match="constant"):
+        trainer._compute_probe_credit_advantage(batch, {})
+
+
+def test_mock_event_order_places_frontier_reweight_before_actor(monkeypatch):
+    trainer = _trainer(_config(mode="reweight"))
+    trainer.config.algorithm.gamma = 1.0
+    trainer.config.algorithm.lam = 1.0
+    trainer.config.algorithm.norm_adv_by_std_in_grpo = True
+    trainer.config.actor_rollout_ref.rollout.n = 4
+    events = ["terminal_reward", "filter", "complete_group_selection"]
+    trainer.checkpoint_manager = SimpleNamespace(
+        sleep_replicas=lambda: events.append("sleep_replicas")
+    )
+    trainer._probe_final_retained_batch = MethodType(
+        lambda self, batch, success, metrics, timing: events.append("absolute_probe")
+        or batch,
+        trainer,
+    )
+    trainer._update_actor = MethodType(
+        lambda self, batch: events.append("actor_update")
+        or SimpleNamespace(meta_info={"metrics": {}}),
+        trainer,
+    )
+    monkeypatch.setattr(
+        dapo_trainer_module,
+        "compute_advantage",
+        lambda batch, **kwargs: events.append("standard_grpo") or batch,
+    )
+    original_dominance = dapo_dominance_trainer_module.compute_readiness_dominance
+    original_reweight = dapo_dominance_trainer_module.apply_frontier_reweighting
+
+    def record_dominance(*args, **kwargs):
+        events.append("dominance")
+        return original_dominance(*args, **kwargs)
+
+    def record_reweight(*args, **kwargs):
+        events.append("frontier_reweight")
+        return original_reweight(*args, **kwargs)
+
+    monkeypatch.setattr(
+        dapo_dominance_trainer_module,
+        "compute_readiness_dominance",
+        record_dominance,
+    )
+    monkeypatch.setattr(
+        dapo_dominance_trainer_module,
+        "apply_frontier_reweighting",
+        record_reweight,
+    )
+    batch = _shadow_advantage_batch()
+    batch.non_tensor_batch["rollout_policy_version"] = np.asarray(
+        [3, 3, 3], dtype=object
+    )
+    batch.non_tensor_batch["acc"] = np.asarray([1.0, 1.0, 0.0], dtype=object)
+
+    batch = trainer._prepare_final_retained_batch(batch, {}, {})
+    events.append("old_log_prob")
+    trainer._compute_advantage_and_actor_update(batch, {}, {})
+
+    assert events == [
+        "terminal_reward",
+        "filter",
+        "complete_group_selection",
+        "absolute_probe",
+        "sleep_replicas",
+        "old_log_prob",
+        "standard_grpo",
+        "dominance",
+        "frontier_reweight",
+        "actor_update",
+    ]
+
+
+def test_subclass_reuses_parent_fit_without_copying_training_loop():
+    assert (
+        RayDAPOReadinessDominanceTrainer.fit
+        is dapo_trainer_module.RayDAPOProbeCreditTrainer.fit
+    )
+
+
+def test_only_final_retained_complete_groups_reach_absolute_probe():
+    trainer = _trainer()
+    trainer.checkpoint_manager = SimpleNamespace(sleep_replicas=lambda: None)
+    observed_ids = []
+    observed_success = []
+
+    def probe(self, batch, terminal_success, metrics, timing_raw):
+        observed_ids.extend(batch.non_tensor_batch["trajectory_id"].tolist())
+        observed_success.extend(terminal_success.tolist())
+        return batch
+
+    trainer._probe_final_retained_batch = MethodType(probe, trainer)
+    uids = ["keep-a"] * 4 + ["filtered"] * 4 + ["keep-b"] * 4
+    acc = [0.0, 1.0, 0.0, 1.0] + [0.0] * 4 + [1.0, 0.0, 1.0, 0.0]
+    scores = torch.zeros(12, 2)
+    scores[:, -1] = torch.tensor(acc)
+    candidate = DataProto.from_dict(
+        tensors={
+            "token_level_scores": scores,
+            "token_level_rewards": scores.clone(),
+        },
+        non_tensors={
+            "uid": np.asarray(uids, dtype=object),
+            "trajectory_id": np.asarray([f"t-{index}" for index in range(12)], dtype=object),
+            "rollout_policy_version": np.asarray([3] * 12, dtype=object),
+            "acc": np.asarray(acc, dtype=object),
+        },
+    )
+
+    filtered = filter_dapo_generation_batch(candidate, "acc")
+    retained = select_complete_prompt_groups(filtered, prompt_count=2, rollout_n=4)
+    result = trainer._prepare_final_retained_batch(retained, {}, {})
+
+    assert result.non_tensor_batch["uid"].tolist() == ["keep-a"] * 4 + ["keep-b"] * 4
+    assert observed_ids == [f"t-{index}" for index in range(4)] + [
+        f"t-{index}" for index in range(8, 12)
+    ]
+    assert observed_success == [False, True, False, True, True, False, True, False]
+    assert not any("filtered" == uid for uid in result.non_tensor_batch["uid"])
+
+
+def test_incomplete_prompt_group_fails_before_absolute_probe():
+    trainer = _trainer()
+    trainer._probe_final_retained_batch = MethodType(
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("selection must fail before Probe")
+        ),
+        trainer,
+    )
+    candidate = DataProto.from_dict(
+        tensors={"dummy": torch.zeros(7, 1)},
+        non_tensors={
+            "uid": np.asarray(["a"] * 4 + ["b"] * 3, dtype=object),
+            "trajectory_id": np.asarray([f"t-{index}" for index in range(7)], dtype=object),
+            "acc": np.asarray([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0], dtype=object),
+        },
+    )
+
+    with pytest.raises(ValueError, match="complete"):
+        select_complete_prompt_groups(candidate, prompt_count=2, rollout_n=4)

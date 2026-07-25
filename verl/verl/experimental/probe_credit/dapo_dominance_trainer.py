@@ -17,6 +17,7 @@ from verl.experimental.probe_credit.probe_runtime import (
     generate_grouped_probe_results,
 )
 from verl.experimental.probe_credit.readiness_dominance import (
+    apply_frontier_reweighting,
     compute_readiness_dominance,
 )
 from verl.trainer.config import ReadinessDominanceConfig
@@ -272,8 +273,6 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
         config = self._dominance_config()
         if config.mode == "off":
             return batch
-        if config.mode == "reweight":
-            raise NotImplementedError("Readiness Dominance reweight is not implemented yet")
         advantages_before = batch.batch["advantages"].clone()
         returns_before = batch.batch["returns"].clone()
         scores_before = batch.batch["token_level_scores"].clone()
@@ -299,10 +298,27 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
         batch.batch["dominance_frontier_mask"] = dominance.frontier_mask
         batch.batch["dominance_dominated_mask"] = dominance.dominated_mask
         metrics.update(dominance_metrics)
-        if not torch.equal(batch.batch["advantages"], advantages_before):
-            raise AssertionError("Readiness Dominance shadow changed standard GRPO advantages")
-        if not torch.equal(batch.batch["returns"], returns_before):
-            raise AssertionError("Readiness Dominance shadow changed standard GRPO returns")
+        if config.mode == "reweight":
+            new_advantages, weights, reweight_metrics = apply_frontier_reweighting(
+                advantages_before,
+                batch.batch["response_mask"],
+                batch.non_tensor_batch["uid"],
+                dominance,
+            )
+            batch.batch["terminal_advantages"] = advantages_before
+            batch.batch["advantages"] = new_advantages
+            batch.batch["returns"] = new_advantages
+            batch.batch["dominance_weights"] = weights
+            metrics.update(reweight_metrics)
+        else:
+            if not torch.equal(batch.batch["advantages"], advantages_before):
+                raise AssertionError(
+                    "Readiness Dominance shadow changed standard GRPO advantages"
+                )
+            if not torch.equal(batch.batch["returns"], returns_before):
+                raise AssertionError(
+                    "Readiness Dominance shadow changed standard GRPO returns"
+                )
         if not torch.equal(batch.batch["token_level_scores"], scores_before):
             raise AssertionError("Readiness Dominance changed token_level_scores")
         if not torch.equal(batch.batch["token_level_rewards"], rewards_before):
