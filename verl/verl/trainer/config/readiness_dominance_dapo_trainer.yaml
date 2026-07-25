@@ -1,0 +1,30 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  max_response_length: 4096
+
+algorithm:
+  adv_estimator: grpo
+
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: true
+    metric: acc
+    max_num_gen_batches: 0
+
+  probe_credit:
+    enable: false
+    coef: 0.0
+
+  readiness_dominance:
+    _target_: verl.trainer.config.ReadinessDominanceConfig
+    mode: "off"
+    absolute_horizons: [256, 512, 1024, 2048]
+
+actor_rollout_ref:
+  actor:
+    loss_agg_mode: token-mean
+  rollout:
+    name: vllm
