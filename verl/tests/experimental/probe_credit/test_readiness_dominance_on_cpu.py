@@ -4,8 +4,210 @@ import torch
 from verl.experimental.probe_credit.readiness_dominance import (
     DominanceResult,
     apply_frontier_reweighting,
+    compute_horizon_readiness_metrics,
     compute_readiness_dominance,
 )
+
+
+def test_horizon_readiness_metrics_use_active_terminal_success_subset():
+    metrics = compute_horizon_readiness_metrics(
+        torch.tensor(
+            [
+                [0.25, 0.75],
+                [0.50, 1.00],
+                [0.00, 0.00],
+            ]
+        ),
+        torch.tensor(
+            [
+                [True, True],
+                [True, False],
+                [False, False],
+            ]
+        ),
+        torch.tensor([True, True, False]),
+        [256, 512],
+    )
+
+    assert metrics == pytest.approx(
+        {
+            "dominance/readiness_active_mean_h256": 0.375,
+            "dominance/readiness_active_count_h256": 2.0,
+            "dominance/readiness_active_valid_rate_h256": 1.0,
+            "dominance/readiness_active_mean_h512": 0.75,
+            "dominance/readiness_active_count_h512": 1.0,
+            "dominance/readiness_active_valid_rate_h512": 0.5,
+            "dominance/terminal_success_trajectory_count": 2.0,
+            "dominance/terminal_success_trajectory_rate": 2 / 3,
+        }
+    )
+    assert all(type(value) is float for value in metrics.values())
+
+
+def test_horizon_readiness_metrics_ignore_nonzero_invalid_cells():
+    metrics = compute_horizon_readiness_metrics(
+        torch.tensor([[0.25, 0.99], [0.75, 0.88]]),
+        torch.tensor([[True, False], [True, False]]),
+        torch.tensor([True, True]),
+        [100, 200],
+    )
+
+    assert metrics["dominance/readiness_active_mean_h100"] == 0.5
+    assert metrics["dominance/readiness_active_mean_h200"] == 0.0
+    assert metrics["dominance/readiness_active_count_h200"] == 0.0
+    assert metrics["dominance/readiness_active_valid_rate_h200"] == 0.0
+
+
+def test_horizon_readiness_metrics_report_zero_without_terminal_success():
+    metrics = compute_horizon_readiness_metrics(
+        torch.tensor([[0.25, 0.75], [0.50, 1.00]]),
+        torch.zeros(2, 2, dtype=torch.bool),
+        torch.zeros(2, dtype=torch.bool),
+        [7, 4096],
+    )
+
+    assert metrics == {
+        "dominance/readiness_active_mean_h7": 0.0,
+        "dominance/readiness_active_count_h7": 0.0,
+        "dominance/readiness_active_valid_rate_h7": 0.0,
+        "dominance/readiness_active_mean_h4096": 0.0,
+        "dominance/readiness_active_count_h4096": 0.0,
+        "dominance/readiness_active_valid_rate_h4096": 0.0,
+        "dominance/terminal_success_trajectory_count": 0.0,
+        "dominance/terminal_success_trajectory_rate": 0.0,
+    }
+
+
+def test_horizon_readiness_metrics_reject_valid_failure_cells():
+    with pytest.raises(ValueError, match="terminal-success"):
+        compute_horizon_readiness_metrics(
+            torch.tensor([[0.25], [0.75]]),
+            torch.tensor([[True], [True]]),
+            torch.tensor([True, False]),
+            [256],
+        )
+
+
+@pytest.mark.parametrize(
+    ("probe_values", "valid_mask", "terminal_success", "horizons", "message"),
+    [
+        (
+            torch.zeros(2),
+            torch.zeros(2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "two-dimensional",
+        ),
+        (
+            torch.zeros(2, 1, dtype=torch.long),
+            torch.zeros(2, 1, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "floating",
+        ),
+        (
+            torch.zeros(2, 1),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "same shape",
+        ),
+        (
+            torch.zeros(2, 1),
+            torch.zeros(2, 1),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "valid_mask",
+        ),
+        (
+            torch.zeros(2, 1),
+            torch.zeros(2, 1, dtype=torch.bool),
+            torch.zeros(2, 1, dtype=torch.bool),
+            [1],
+            r"shape \[2\]",
+        ),
+        (
+            torch.zeros(2, 1),
+            torch.zeros(2, 1, dtype=torch.bool),
+            torch.zeros(2),
+            [1],
+            "terminal_success",
+        ),
+        (
+            torch.zeros(2, 1),
+            torch.zeros(2, 1, dtype=torch.bool, device="meta"),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "same device",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1],
+            "length",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [0, 2],
+            "positive integers",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1, 1],
+            "strictly increasing",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [2, 1],
+            "strictly increasing",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [True, 2],
+            "positive integers",
+        ),
+        (
+            torch.zeros(2, 2),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1, 2.5],
+            "positive integers",
+        ),
+        (
+            torch.tensor([[0.0, float("nan")], [0.0, 1.0]]),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1, 2],
+            "finite",
+        ),
+        (
+            torch.tensor([[0.0, 1.1], [0.0, 1.0]]),
+            torch.zeros(2, 2, dtype=torch.bool),
+            torch.zeros(2, dtype=torch.bool),
+            [1, 2],
+            r"\[0, 1\]",
+        ),
+    ],
+)
+def test_horizon_readiness_metrics_validate_inputs(
+    probe_values, valid_mask, terminal_success, horizons, message
+):
+    with pytest.raises(ValueError, match=message):
+        compute_horizon_readiness_metrics(
+            probe_values,
+            valid_mask,
+            terminal_success,
+            horizons,
+        )
 
 
 def _compute(

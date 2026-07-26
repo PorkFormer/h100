@@ -19,6 +19,7 @@ from verl.experimental.probe_credit.probe_runtime import (
 )
 from verl.experimental.probe_credit.readiness_dominance import (
     apply_frontier_reweighting,
+    compute_horizon_readiness_metrics,
     compute_readiness_dominance,
 )
 from verl.trainer.config import ReadinessDominanceConfig
@@ -96,7 +97,10 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
             or response_length <= 0
         ):
             raise ValueError("rollout.response_length must be a positive integer")
-        if max(dominance.absolute_horizons) >= response_length:
+        if (
+            dominance.mode != "off"
+            and max(dominance.absolute_horizons) >= response_length
+        ):
             raise ValueError(
                 "every readiness_dominance absolute horizon must be less than "
                 f"rollout.response_length={response_length}"
@@ -245,6 +249,14 @@ class RayDAPOReadinessDominanceTrainer(RayDAPOProbeCreditTrainer):
             plan.absolute_horizons, dtype=torch.long, device=device
         ).repeat(len(batch), 1)
         batch.batch["dominance_terminal_success"] = terminal_success.to(device=device)
+        metrics.update(
+            compute_horizon_readiness_metrics(
+                batch.batch["dominance_probe_values"],
+                batch.batch["dominance_probe_valid_mask"],
+                batch.batch["dominance_terminal_success"],
+                plan.absolute_horizons,
+            )
+        )
         output_token_counts = [result.output_token_count for result in results]
         total_output_tokens = sum(output_token_counts)
         valid_denominator = int(terminal_success.sum().item()) * len(

@@ -149,6 +149,24 @@ def test_validation_accepts_typed_shadow_configuration():
     assert trainer._dominance_config().mode == "shadow"
 
 
+def test_validation_allows_off_mode_horizon_equal_to_response_length():
+    config = _config(mode="off", horizons=[256, 512, 1024, 2048])
+    config.actor_rollout_ref.rollout.response_length = 2048
+    trainer = _trainer(config)
+
+    trainer._validate_probe_credit_mode()
+
+
+@pytest.mark.parametrize("mode", ["shadow", "reweight"])
+def test_validation_rejects_active_mode_horizon_equal_to_response_length(mode):
+    config = _config(mode=mode, horizons=[256, 512, 1024, 2048])
+    config.actor_rollout_ref.rollout.response_length = 2048
+    trainer = _trainer(config)
+
+    with pytest.raises(ValueError, match="response_length"):
+        trainer._validate_probe_credit_mode()
+
+
 def test_validation_instantiates_hydra_dominance_node_as_typed_config():
     trainer = _trainer()
     trainer.config.algorithm.readiness_dominance = OmegaConf.create(
@@ -185,6 +203,7 @@ def test_validation_rejects_unsupported_training_protocol(config, message):
 def test_off_mode_overrides_parent_prepare_and_skips_probe_and_acc():
     trainer = _trainer(_config(mode="off"))
     events = []
+    metrics = {}
     trainer.checkpoint_manager = SimpleNamespace(
         sleep_replicas=lambda: events.append("sleep")
     )
@@ -196,11 +215,17 @@ def test_off_mode_overrides_parent_prepare_and_skips_probe_and_acc():
     )
     batch = _version_batch()
 
-    result = trainer._prepare_final_retained_batch(batch, {}, {})
+    result = trainer._prepare_final_retained_batch(batch, metrics, {})
 
     assert events == ["sleep"]
     assert result is batch
     assert "acc" not in batch.non_tensor_batch
+    assert not any(name.startswith("dominance_") for name in batch.batch.keys())
+    assert not any(
+        key.startswith("dominance/readiness_active_")
+        or key.startswith("dominance/terminal_success_trajectory_")
+        for key in metrics
+    )
 
 
 def test_policy_version_mismatch_fails_before_probe_or_sleep():
@@ -276,8 +301,9 @@ def test_shadow_prepare_probes_before_sleep_with_authoritative_success_mask():
     assert result is batch
 
 
-def test_real_absolute_probe_requests_only_terminal_success_trajectories():
-    trainer = _trainer()
+@pytest.mark.parametrize("mode", ["shadow", "reweight"])
+def test_active_modes_log_identical_readiness_without_mutating_training_fields(mode):
+    trainer = _trainer(_config(mode=mode))
     trainer.tokenizer = lambda *_args, **_kwargs: {"input_ids": [99]}
     calls = []
 
@@ -303,6 +329,19 @@ def test_real_absolute_probe_requests_only_terminal_success_trajectories():
         lambda self, batch, request, text: True, trainer
     )
     batch = _probe_batch()
+    batch.batch["advantages"] = torch.arange(8, dtype=torch.float32).reshape(2, 4)
+    batch.batch["returns"] = batch.batch["advantages"].clone()
+    tensor_snapshots = {
+        name: batch.batch[name].clone()
+        for name in (
+            "advantages",
+            "returns",
+            "token_level_scores",
+            "token_level_rewards",
+        )
+    }
+    uid_before = batch.non_tensor_batch["uid"].copy()
+    trajectory_ids_before = batch.non_tensor_batch["trajectory_id"].copy()
     metrics = {}
     terminal_success = trainer._terminal_success_from_acc(batch, metrics)
 
@@ -321,6 +360,28 @@ def test_real_absolute_probe_requests_only_terminal_success_trajectories():
     assert metrics["dominance/probe_valid_cell_rate"] == 1.0
     assert metrics["dominance/request_count"] == 2.0
     assert metrics["dominance/branch_count"] == 8.0
+    assert {
+        key: value
+        for key, value in metrics.items()
+        if key.startswith("dominance/readiness_active_")
+        or key.startswith("dominance/terminal_success_trajectory_")
+    } == {
+        "dominance/readiness_active_mean_h1": 1.0,
+        "dominance/readiness_active_count_h1": 1.0,
+        "dominance/readiness_active_valid_rate_h1": 1.0,
+        "dominance/readiness_active_mean_h2": 1.0,
+        "dominance/readiness_active_count_h2": 1.0,
+        "dominance/readiness_active_valid_rate_h2": 1.0,
+        "dominance/terminal_success_trajectory_count": 1.0,
+        "dominance/terminal_success_trajectory_rate": 0.5,
+    }
+    for name, before in tensor_snapshots.items():
+        assert torch.equal(result.batch[name], before)
+    assert result.non_tensor_batch["uid"].tolist() == uid_before.tolist()
+    assert (
+        result.non_tensor_batch["trajectory_id"].tolist()
+        == trajectory_ids_before.tolist()
+    )
 
 
 def test_strict_missing_probe_branch_fails_before_sleep():
@@ -382,6 +443,11 @@ def test_success_trajectory_with_no_active_horizon_needs_no_server_version():
     assert metrics["dominance/request_count"] == 0.0
     assert metrics["dominance/branch_count"] == 0.0
     assert metrics["dominance/probe_valid_cell_rate"] == 0.0
+    assert metrics["dominance/readiness_active_mean_h1"] == 0.0
+    assert metrics["dominance/readiness_active_count_h1"] == 0.0
+    assert metrics["dominance/readiness_active_valid_rate_h1"] == 0.0
+    assert metrics["dominance/terminal_success_trajectory_count"] == 1.0
+    assert metrics["dominance/terminal_success_trajectory_rate"] == 0.5
 
 
 def _shadow_advantage_batch():

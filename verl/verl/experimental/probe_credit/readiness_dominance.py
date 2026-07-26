@@ -43,6 +43,78 @@ def _rate(numerator: int, denominator: int) -> float:
 
 
 @torch.no_grad()
+def compute_horizon_readiness_metrics(
+    probe_values: torch.Tensor,
+    valid_mask: torch.Tensor,
+    terminal_success: torch.Tensor,
+    absolute_horizons: Sequence[int],
+) -> dict[str, float]:
+    """Summarize readiness on each horizon's active terminal-success subset."""
+    if not isinstance(probe_values, torch.Tensor) or probe_values.ndim != 2:
+        raise ValueError("probe_values must be a two-dimensional tensor")
+    if not probe_values.is_floating_point():
+        raise ValueError("probe_values must have floating dtype")
+    if not isinstance(valid_mask, torch.Tensor) or valid_mask.shape != probe_values.shape:
+        raise ValueError("valid_mask and probe_values must have the same shape")
+    if valid_mask.dtype is not torch.bool:
+        raise ValueError("valid_mask must have boolean dtype")
+    batch_size, position_count = probe_values.shape
+    if (
+        not isinstance(terminal_success, torch.Tensor)
+        or terminal_success.shape != (batch_size,)
+    ):
+        raise ValueError(f"terminal_success must have shape [{batch_size}]")
+    if terminal_success.dtype is not torch.bool:
+        raise ValueError("terminal_success must have boolean dtype")
+    if (
+        valid_mask.device != probe_values.device
+        or terminal_success.device != probe_values.device
+    ):
+        raise ValueError("all readiness tensors must be on the same device")
+    try:
+        horizons = tuple(absolute_horizons)
+    except TypeError as exc:
+        raise ValueError("absolute_horizons must be a sequence") from exc
+    if len(horizons) != position_count:
+        raise ValueError("absolute_horizons length must match probe_values columns")
+    if any(
+        not isinstance(horizon, int) or isinstance(horizon, bool) or horizon <= 0
+        for horizon in horizons
+    ):
+        raise ValueError("absolute_horizons must contain positive integers")
+    if any(left >= right for left, right in zip(horizons, horizons[1:], strict=False)):
+        raise ValueError("absolute_horizons must be strictly increasing")
+    if not bool(torch.isfinite(probe_values).all().item()):
+        raise ValueError("probe_values must be finite")
+    if not bool(((probe_values >= 0.0) & (probe_values <= 1.0)).all().item()):
+        raise ValueError("probe_values must be in [0, 1]")
+    if bool((valid_mask.any(dim=1) & ~terminal_success).any().item()):
+        raise ValueError("valid_mask cells are allowed only on terminal-success trajectories")
+
+    terminal_success_count = int(terminal_success.sum().item())
+    metrics = {
+        "dominance/terminal_success_trajectory_count": float(terminal_success_count),
+        "dominance/terminal_success_trajectory_rate": _rate(
+            terminal_success_count, batch_size
+        ),
+    }
+    for column, horizon in enumerate(horizons):
+        active_mask = terminal_success & valid_mask[:, column]
+        active_count = int(active_mask.sum().item())
+        active_mean = (
+            float(probe_values[active_mask, column].mean().item())
+            if active_count
+            else 0.0
+        )
+        metrics[f"dominance/readiness_active_mean_h{horizon}"] = active_mean
+        metrics[f"dominance/readiness_active_count_h{horizon}"] = float(active_count)
+        metrics[f"dominance/readiness_active_valid_rate_h{horizon}"] = _rate(
+            active_count, terminal_success_count
+        )
+    return metrics
+
+
+@torch.no_grad()
 def compute_readiness_dominance(
     probe_values: torch.Tensor,
     valid_mask: torch.Tensor,

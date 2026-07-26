@@ -92,6 +92,48 @@ Rate metrics use fixed denominators:
 
 Zero denominators report zero. Raw comparable/same-group pair counts and common-position mean/min/max are logged alongside positive mass, residual, and frontier-scale metrics.
 
+## Online readiness metrics
+
+Online readiness metrics are produced only in `shadow` and `reweight` modes. For each configured absolute horizon `h`, the active set contains retained trajectories that are both terminal-success according to `acc` and still have a valid prefix at `h`:
+
+- `dominance/readiness_active_mean_h{h}` is the sum of Probe readiness values over that active set divided by its trajectory count.
+- `dominance/readiness_active_count_h{h}` is the active trajectory count.
+- `dominance/readiness_active_valid_rate_h{h}` is the active trajectory count divided by the number of retained terminal-success trajectories.
+- `dominance/terminal_success_trajectory_count` is the number of retained terminal-success trajectories.
+- `dominance/terminal_success_trajectory_rate` is the terminal-success trajectory count divided by the retained batch trajectory count.
+
+All zero denominators produce `0.0`. The active mean is a conditional mean over the active terminal-success subset, not unconditional readiness over the retained population. It should not be interpreted across horizons as if every horizon measured the same population. Always inspect `readiness_active_valid_rate_h{h}` and `readiness_active_count_h{h}` with the mean: when coverage falls at later horizons, a mean change may come from subset composition.
+
+The trainer adds these Python scalar values to the existing VERL `metrics` mapping. VERL's unified logger records them once per optimizer step, not once per Probe request. W&B therefore needs no direct API call. Enable the existing W&B logger with command-line overrides such as:
+
+```bash
+trainer.logger='["console","wandb"]' \
+trainer.project_name=h100_verl \
+trainer.experiment_name=readiness_dominance_shadow
+```
+
+The smoke launcher remains console-only by default so an unconfigured run cannot create a W&B run accidentally.
+
+Suggested W&B panels:
+
+- Readiness:
+  - `dominance/readiness_active_mean_h*`
+  - `dominance/readiness_active_valid_rate_h*`
+  - `dominance/readiness_active_count_h*`
+- Dominance:
+  - `dominance/group_with_dominance_rate`
+  - `dominance/dominated_positive_rate`
+  - `dominance/profile_cross_rate`
+  - `dominance/pair_coverage_rate`
+- Cost:
+  - `dominance/input_tokens`
+  - `dominance/output_tokens`
+  - `dominance/request_count`
+- Reweight:
+  - `dominance/frontier_scale_p90`
+  - `dominance/frontier_scale_max`
+  - `dominance/mass_residual_max`
+
 ## Experimental use
 
 Readiness Dominance is experimental. Run `shadow` before considering `reweight`. Formal reweight training must wait for offline split-half agreement, repeated-Probe stability, and sensitivity analysis over `n`; `n=4` with a one-branch margin may be noisy.
