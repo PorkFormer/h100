@@ -31,6 +31,7 @@ from vllm.entrypoints.openai.api_server import build_app, init_app_state
 from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
+from vllm.sampling_params import RequestOutputKind
 from vllm.usage.usage_lib import UsageContext
 from vllm.v1.engine.async_llm import AsyncLLM
 
@@ -620,7 +621,14 @@ class vLLMHttpServer:
             )
         params["logprobs"] = 0 if params.pop("logprobs", False) else None
         params.setdefault("repetition_penalty", self.config.get("repetition_penalty", 1.0))
-        grouped_sampling_params = SamplingParams(max_tokens=max_tokens, **params)
+        params.pop("output_kind", None)
+        grouped_sampling_params = SamplingParams(
+            max_tokens=max_tokens,
+            output_kind=RequestOutputKind.FINAL_ONLY,
+            **params,
+        )
+        expected_n = int(grouped_sampling_params.n)
+        expected = set(range(expected_n))
         prompt_ids = qwen2_5_vl_dedup_image_tokens(prompt_ids, self.model_config.processor)
         try:
             prompt = TokensPrompt(prompt_token_ids=prompt_ids, multi_modal_data={})
@@ -646,26 +654,66 @@ class vLLMHttpServer:
         async for output in generator:
             final_res = output
         if final_res is None or not final_res.outputs:
-            return []
+            raise RuntimeError(
+                f"Grouped request produced no final outputs: request_id={request_id!r}, requested_n={expected_n}, "
+                f"received=[], missing={sorted(expected)}, extra=[]"
+            )
 
-        outputs: list[TokenOutput] = []
-        for branch_id, completion in enumerate(final_res.outputs):
+        completions_by_branch: dict[int, Any] = {}
+        received_ids: list[int] = []
+        duplicates: set[int] = set()
+        for completion in final_res.outputs:
+            if not hasattr(completion, "index"):
+                raise RuntimeError(
+                    f"Grouped request has missing completion.index: request_id={request_id!r}, "
+                    f"requested_n={expected_n}"
+                )
+            try:
+                branch_id = int(completion.index)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"Grouped request has invalid completion.index={completion.index!r}: "
+                    f"request_id={request_id!r}, requested_n={expected_n}"
+                ) from exc
+
+            received_ids.append(branch_id)
+            if branch_id in completions_by_branch:
+                duplicates.add(branch_id)
+            else:
+                completions_by_branch[branch_id] = completion
+
+        received = set(received_ids)
+        missing = expected - received
+        extra = received - expected
+        diagnostics = (
+            f"request_id={request_id!r}, requested_n={expected_n}, received={sorted(received)}, "
+            f"missing={sorted(missing)}, extra={sorted(extra)}"
+        )
+        if duplicates:
+            raise RuntimeError(
+                f"Grouped request has duplicate branches: {diagnostics}, duplicates={sorted(duplicates)}"
+            )
+        if extra:
+            raise RuntimeError(f"Grouped request has out-of-range branches: {diagnostics}")
+        if received != expected:
+            raise RuntimeError(f"Grouped request is missing branches: {diagnostics}")
+
+        outputs_by_branch: dict[int, TokenOutput] = {}
+        for branch_id, completion in completions_by_branch.items():
             finish_reason = completion.finish_reason
             stop_reason = "completed" if finish_reason in ("stop", "length") else finish_reason
-            outputs.append(
-                TokenOutput(
-                    token_ids=list(completion.token_ids),
-                    log_probs=None,
-                    routed_experts=None,
-                    stop_reason=stop_reason,
-                    extra_fields={
-                        "branch_id": branch_id,
-                        "text": completion.text,
-                        "global_steps": self.global_steps,
-                    },
-                )
+            outputs_by_branch[branch_id] = TokenOutput(
+                token_ids=list(completion.token_ids),
+                log_probs=None,
+                routed_experts=None,
+                stop_reason=stop_reason,
+                extra_fields={
+                    "branch_id": branch_id,
+                    "text": completion.text,
+                    "global_steps": self.global_steps,
+                },
             )
-        return outputs
+        return [outputs_by_branch[branch_id] for branch_id in range(expected_n)]
 
     async def wake_up(self, tags: list[str] | None = None):
         if self.node_rank != 0:
