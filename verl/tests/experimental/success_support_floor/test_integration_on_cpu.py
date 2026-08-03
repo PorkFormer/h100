@@ -1,4 +1,5 @@
 import inspect
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -153,3 +154,22 @@ def test_augmented_update_keeps_optimizer_mini_batch_count_and_ppo_token_denomin
     assert captured["num_mini_batch"] == 2
     assert captured["mini_batch_size"] is None
     assert captured["loss_tokens"] == int(rl.batch["response_mask"].sum().item())
+
+
+def test_launchers_are_syntax_valid_and_keep_shadow_before_dual():
+    example_dir = ROOT / "examples" / "success_support_floor"
+    smoke = example_dir / "train_dapo_qwen3_4b_h4096_bssf_smoke.sh"
+    active = example_dir / "train_dapo_qwen3_4b_h4096_bssf.sh"
+    subprocess.run(["bash", "-n", str(smoke)], check=True)
+    subprocess.run(["bash", "-n", str(active)], check=True)
+    smoke_text = smoke.read_text()
+    active_text = active.read_text()
+    assert "algorithm.success_support_floor.mode=shadow" in smoke_text
+    assert "trainer.total_training_steps=2" in smoke_text
+    assert "algorithm.success_support_floor.mode=dual" in active_text
+    assert "trainer.total_training_steps=200" in active_text
+    assert "data.max_response_length=4096" in smoke_text
+    assert "data.max_response_length=4096" in active_text
+    assert "generate_grouped" not in smoke_text + active_text
+    assert "sbatch" not in smoke_text + active_text
+    assert "srun" not in smoke_text + active_text
