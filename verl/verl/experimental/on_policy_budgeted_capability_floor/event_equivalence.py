@@ -10,7 +10,6 @@ from typing import Any
 
 
 PREFIX_PROTOCOL_VERSION = "exact-response-token-prefix-v1"
-_IDENTITY_FIELDS = ("model_id", "prompt_id", "rollout_index")
 _MATCH_FIELDS = (
     "prompt_hash",
     "response_hash",

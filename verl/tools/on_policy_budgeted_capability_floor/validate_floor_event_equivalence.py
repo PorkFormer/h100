@@ -10,14 +10,15 @@ import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from omegaconf import OmegaConf, open_dict
 import torch
+from omegaconf import OmegaConf, open_dict
 
 from verl.experimental.capability_constraints.identity import tokenizer_fingerprints
 from verl.experimental.on_policy_budgeted_capability_floor.artifact_batch import (
@@ -48,7 +49,7 @@ def extract_binary_acc_from_reward_result(result: Mapping[str, Any]) -> bool:
     if isinstance(acc, bool):
         return acc
     if (
-        not isinstance(acc, (int, float))
+        not isinstance(acc, Real)
         or isinstance(acc, bool)
         or not math.isfinite(float(acc))
         or float(acc) not in (0.0, 1.0)

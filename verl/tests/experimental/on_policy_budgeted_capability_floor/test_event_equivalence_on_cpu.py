@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+import numpy as np
 import pytest
 
 from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence import (
@@ -108,6 +109,9 @@ def test_nonbinary_acc_fails_without_shaped_reward_fallback():
     assert extract_binary_acc_from_reward_result(
         {"reward_score": 99.0, "reward_extra_info": {"acc": 1}}
     ) is True
+    assert extract_binary_acc_from_reward_result(
+        {"reward_score": 99.0, "reward_extra_info": {"acc": np.float32(0)}}
+    ) is False
     with pytest.raises(ValueError, match="binary acc"):
         extract_binary_acc_from_reward_result(
             {"reward_score": 1.0, "reward_extra_info": {"acc": 0.5}}
