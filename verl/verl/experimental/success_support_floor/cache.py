@@ -89,6 +89,20 @@ def canonical_prompt_key(
     return _sha256_bytes(_canonical_json(payload))
 
 
+def tokenizer_fingerprints(tokenizer: Any) -> tuple[str, str]:
+    """Return deterministic tokenizer-vocabulary and chat-template fingerprints."""
+    tokenizer_fingerprint = _sha256_bytes(
+        _canonical_json(
+            {
+                "vocab": tokenizer.get_vocab(),
+                "special_tokens": tokenizer.special_tokens_map,
+            }
+        )
+    )
+    template_fingerprint = _sha256_bytes(_canonical_json(tokenizer.chat_template or ""))
+    return tokenizer_fingerprint, template_fingerprint
+
+
 def witness_is_eligible(
     *,
     full_reward: bool,

@@ -1,0 +1,48 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  max_response_length: 4096
+
+algorithm:
+  adv_estimator: grpo
+
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: true
+    metric: acc
+    max_num_gen_batches: 0
+
+  probe_credit:
+    enable: false
+    coef: 0.0
+
+  readiness_dominance:
+    _target_: verl.trainer.config.ReadinessDominanceConfig
+    mode: "off"
+
+  success_support_floor:
+    _target_: verl.trainer.config.SuccessSupportFloorConfig
+    mode: "off"
+    cache_path: null
+    reference_budget: 2048
+    support_threshold: 2
+    alpha: 0.5
+    delta: 0.05
+    constraint_batch_size: 0
+    update_interval: 2
+    lambda_init: 0.0
+    lambda_max: 10.0
+    dual_lr: 0.01
+    dual_ema_beta: 0.9
+    seed: 20260803
+    strict: true
+
+actor_rollout_ref:
+  actor:
+    loss_agg_mode: token-mean
+    use_kl_loss: false
+
+  rollout:
+    name: vllm

@@ -1,0 +1,232 @@
+import sys
+import types
+from types import MethodType, SimpleNamespace
+
+import pytest
+import torch
+
+if "cachetools" not in sys.modules:
+    cachetools = types.ModuleType("cachetools")
+
+    class _LRUCache(dict):
+        def __init__(self, maxsize):
+            super().__init__()
+            self.maxsize = maxsize
+
+    cachetools.LRUCache = _LRUCache
+    sys.modules["cachetools"] = cachetools
+
+rollout_utils = types.ModuleType("verl.workers.rollout.utils")
+rollout_utils.update_prometheus_config = lambda *_args, **_kwargs: None
+sys.modules.setdefault("verl.workers.rollout.utils", rollout_utils)
+
+checkpoint_package = types.ModuleType("verl.utils.checkpoint")
+checkpoint_package.__path__ = []
+checkpoint_manager = types.ModuleType("verl.utils.checkpoint.checkpoint_manager")
+checkpoint_manager.find_latest_ckpt_path = lambda *_args, **_kwargs: None
+checkpoint_manager.should_save_ckpt_esi = lambda *_args, **_kwargs: False
+sys.modules.setdefault("verl.utils.checkpoint", checkpoint_package)
+sys.modules.setdefault("verl.utils.checkpoint.checkpoint_manager", checkpoint_manager)
+
+from verl import DataProto  # noqa: E402
+from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer  # noqa: E402
+from verl.experimental.success_support_floor.cache import (  # noqa: E402
+    canonical_prompt_key,
+    tokenizer_fingerprints,
+    write_cache,
+)
+from verl.experimental.success_support_floor.dapo_trainer import (  # noqa: E402
+    RayDAPOSuccessSupportFloorTrainer,
+    support_metrics_from_log_probs,
+)
+from verl.trainer.config import (  # noqa: E402
+    ProbeCreditConfig,
+    ReadinessDominanceConfig,
+    SuccessSupportFloorConfig,
+)
+
+
+class _Tokenizer:
+    pad_token_id = 0
+    chat_template = "template"
+    special_tokens_map = {"eos_token": "</s>"}
+
+    def get_vocab(self):
+        return {"a": 1, "</s>": 2}
+
+
+def _cache(path):
+    tokenizer = _Tokenizer()
+    tok, template = tokenizer_fingerprints(tokenizer)
+    key = canonical_prompt_key(tok, template, [1])
+    manifest = {
+        "schema_version": 1,
+        "algorithm": "budgeted_success_support_floor",
+        "reference_model_id": "base",
+        "reference_model_hash": "model",
+        "reference_budget": 4,
+        "base_rollouts_per_prompt": 2,
+        "support_threshold": 2,
+        "tokenizer_fingerprint": tok,
+        "chat_template_fingerprint": template,
+        "prompt_manifest_fingerprint": "prompts",
+        "verifier_fingerprint": "verifier",
+        "logprob_temperature": 1.0,
+        "logprob_convention": "response-token-sum",
+        "include_eos": True,
+        "created_at": "now",
+        "source_git_commit": "sha",
+    }
+    prompts = [{
+        "prompt_key": key,
+        "prompt_id": 0,
+        "original_dataset_index": 0,
+        "prompt_hash": "p",
+        "prompt_token_ids": [1],
+        "prompt_token_count": 1,
+        "base_rollout_count": 2,
+        "eligible_success_count": 2,
+        "q_reference": 1.0,
+    }]
+    witnesses = [
+        {
+            "prompt_key": key,
+            "witness_id": index,
+            "source_rollout_index": index,
+            "response_token_ids": [2],
+            "response_token_count": 1,
+            "reference_seq_logprob": -1.0,
+            "reference_mean_logprob": -1.0,
+            "finish_reason": "eos",
+            "full_reward": True,
+            "prefix_reward_reference_budget": True,
+            "response_hash": f"r{index}",
+        }
+        for index in range(2)
+    ]
+    write_cache(path, manifest, prompts, witnesses)
+    return tokenizer
+
+
+def _config(cache_path, *, mode="shadow"):
+    algorithm = SimpleNamespace(
+        adv_estimator="grpo",
+        probe_credit=ProbeCreditConfig(),
+        readiness_dominance=ReadinessDominanceConfig(),
+        success_support_floor=SuccessSupportFloorConfig(
+            mode=mode,
+            cache_path=str(cache_path) if cache_path is not None else None,
+            reference_budget=4,
+            support_threshold=2,
+            constraint_batch_size=1,
+            update_interval=2,
+        ),
+        use_kl_in_reward=False,
+        rollout_correction=None,
+        filter_groups=SimpleNamespace(enable=True, metric="acc"),
+        gamma=1.0,
+        lam=1.0,
+    )
+    algorithm.get = lambda name, default=None: getattr(algorithm, name, default)
+    actor = SimpleNamespace(
+        loss_agg_mode="token-mean",
+        ppo_mini_batch_size=1,
+        use_kl_loss=False,
+    )
+    rollout = SimpleNamespace(
+        name="vllm",
+        n=1,
+        temperature=1.0,
+        multi_turn=SimpleNamespace(enable=False),
+    )
+    return SimpleNamespace(
+        algorithm=algorithm,
+        actor_rollout_ref=SimpleNamespace(actor=actor, rollout=rollout),
+        distillation=SimpleNamespace(enabled=False),
+        global_profiler=SimpleNamespace(steps=None),
+    )
+
+
+def _trainer(config, tokenizer):
+    trainer = object.__new__(RayDAPOSuccessSupportFloorTrainer)
+    trainer.config = config
+    trainer.tokenizer = tokenizer
+    trainer.use_critic = False
+    trainer.use_teacher_policy = False
+    trainer.use_reference_policy = False
+    trainer.global_steps = 2
+    return trainer
+
+
+def test_off_mode_does_not_touch_missing_cache():
+    trainer = _trainer(_config(None, mode="off"), _Tokenizer())
+    trainer._validate_probe_credit_mode()
+    assert trainer._success_support_cache is None
+
+
+def test_shadow_validation_loads_strict_cache(tmp_path):
+    tokenizer = _cache(tmp_path)
+    trainer = _trainer(_config(tmp_path), tokenizer)
+    trainer._validate_probe_credit_mode()
+    assert trainer._success_support_cache.manifest["witness_count"] == 2
+    assert trainer._lambda == 0.0
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda c: setattr(c.algorithm, "probe_credit", ProbeCreditConfig(enable=True)), "ProbeCredit"),
+        (
+            lambda c: setattr(
+                c.algorithm, "readiness_dominance", ReadinessDominanceConfig(mode="shadow")
+            ),
+            "ReadinessDominance",
+        ),
+        (lambda c: setattr(c.actor_rollout_ref.actor, "use_kl_loss", True), "KL"),
+        (lambda c: setattr(c.actor_rollout_ref.rollout, "name", "sglang"), "vLLM"),
+    ],
+)
+def test_validation_rejects_unsupported_combinations(tmp_path, mutation, message):
+    tokenizer = _cache(tmp_path)
+    config = _config(tmp_path)
+    mutation(config)
+    trainer = _trainer(config, tokenizer)
+    with pytest.raises(ValueError, match=message):
+        trainer._validate_probe_credit_mode()
+
+
+def test_support_metrics_have_unambiguous_names():
+    metrics = support_metrics_from_log_probs(
+        torch.tensor([[-2.0, -1.0], [-1.0, 0.0]]),
+        torch.tensor([[1, 1], [1, 0]], dtype=torch.bool),
+        torch.tensor([-2.0, -1.0]),
+        alpha=0.5,
+        delta=0.05,
+        lambda_value=0.2,
+    )
+    assert metrics["support_floor/shortfall_mean"] > 0
+    assert "support_floor/log_ratio_mean" in metrics
+    assert "support_floor/constraint_residual" in metrics
+
+
+def test_shadow_runs_after_standard_actor_update_without_dual_update(monkeypatch, tmp_path):
+    tokenizer = _cache(tmp_path)
+    trainer = _trainer(_config(tmp_path), tokenizer)
+    trainer._validate_probe_credit_mode()
+    events = []
+    batch = DataProto.from_dict(tensors={"dummy": torch.ones(1, 1)})
+    actor_output = DataProto.from_single_dict(data={}, meta_info={"metrics": {}})
+
+    def parent_update(self, received, metrics, timing):
+        events.append("actor")
+        return received, actor_output
+
+    monkeypatch.setattr(RayDAPOProbeCreditTrainer, "_compute_advantage_and_actor_update", parent_update)
+    trainer._compute_shadow_metrics = MethodType(
+        lambda self: events.append("shadow") or {"support_floor/update_applied": 0.0}, trainer
+    )
+    result, output = trainer._compute_advantage_and_actor_update(batch, {}, {})
+
+    assert events == ["actor", "shadow"]
+    assert result is batch and output is actor_output
+    assert trainer._lambda == 0.0

@@ -17,6 +17,7 @@ import pyarrow.parquet as pq
 
 from verl.experimental.success_support_floor.cache import (
     canonical_prompt_key,
+    tokenizer_fingerprints,
     witness_is_eligible,
     write_cache,
 )
@@ -97,10 +98,7 @@ def main() -> None:
     model, tokenizer, device = load_reference_model(
         args.reference_model_path, args.tokenizer_path, device=args.device
     )
-    tokenizer_fp = _json_hash(
-        {"vocab": tokenizer.get_vocab(), "special_tokens": tokenizer.special_tokens_map}
-    )
-    template_fp = _json_hash(tokenizer.chat_template or "")
+    tokenizer_fp, template_fp = tokenizer_fingerprints(tokenizer)
     prompt_by_id = {int(row["prompt_id"]): row for row in prompt_rows}
     eligible_by_prompt: dict[int, list[dict[str, Any]]] = {}
     for rollout in rollouts:
