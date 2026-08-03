@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 
 from tools.on_policy_budgeted_capability_floor.simulate_obcf_signal import (
     ENGINEERING_GATE_THRESHOLD,
+    engineering_exit_code,
     simulate_obcf_signal,
 )
 
@@ -22,7 +24,9 @@ def _cache_rows():
             "prompt_key": f"key-{prompt_id}",
             "prompt_id": prompt_id,
             "prompt_hash": f"hash-{prompt_id}",
+            "base_rollout_count": 8,
             "base_prefix_success_count": base_count,
+            "floor_count": round(floor * 8),
             "capability_floor": floor,
         }
         for prompt_id, base_count, floor in values
@@ -84,15 +88,24 @@ def test_synthetic_report_has_exact_counts_metrics_and_engineering_gate():
     assert report["nonzero_gradient_fraction"] == pytest.approx(0.25)
     assert report["active_without_gradient_fraction"] == pytest.approx(0.25)
     assert report["expected_prefix_verifier_calls_per_step"] == pytest.approx(16.0)
-    assert report["deficit_by_base_success_count"] == {
-        "2": {"prompt_count": 2, "deficit_mean": pytest.approx(0.0)},
-        "4": {"prompt_count": 1, "deficit_mean": pytest.approx(0.375)},
-        "8": {"prompt_count": 1, "deficit_mean": pytest.approx(0.375)},
+    strata = report["by_base_success_count"]
+    assert sum(value["prompt_count"] for value in strata.values()) == 4
+    assert strata["2"]["prompt_count"] == 2
+    assert strata["2"]["deficit_mean"] == pytest.approx(0.0)
+    assert strata["4"]["deficit_mean"] == pytest.approx(0.375)
+    assert strata["8"]["deficit_mean"] == pytest.approx(0.375)
+    assert report["actionability"] == {
+        "protected_prompt_count": 4,
+        "actionable_prompt_count": 1,
+        "inert_prompt_count": 3,
+        "inert_prompt_fraction": pytest.approx(0.75),
+        "passed": False,
     }
-    gate = report["engineering_gate"]
-    assert gate["threshold"] == ENGINEERING_GATE_THRESHOLD == 0.05
-    assert gate["passed"] is True
-    assert "not a theoretical threshold" in gate["note"].lower()
+    gate = report["engineering_gates"]
+    assert gate["signal_density"]["threshold"] == ENGINEERING_GATE_THRESHOLD == 0.05
+    assert gate["signal_density"]["passed"] is True
+    assert gate["actionability"]["passed"] is False
+    assert gate["passed"] is False
 
 
 def test_optional_retained_delayed_lost_breakdown_is_prompt_level():
@@ -114,7 +127,7 @@ def test_all_zero_active_groups_fail_the_engineering_gate_honestly():
 
     assert report["nonzero_gradient_fraction"] == 0.0
     assert report["active_without_gradient_fraction"] == 1.0
-    assert report["engineering_gate"]["passed"] is False
+    assert report["engineering_gates"]["signal_density"]["passed"] is False
 
 
 def test_zero_token_mixed_group_has_no_gradient_and_cannot_pass_gate():
@@ -127,7 +140,108 @@ def test_zero_token_mixed_group_has_no_gradient_and_cannot_pass_gate():
             row[f"prefix_reward_{BUDGET}"] = False
     report = _simulate(rows)
     assert report["nonzero_gradient_fraction"] == 0.0
-    assert report["engineering_gate"]["passed"] is False
+    assert report["engineering_gates"]["signal_density"]["passed"] is False
+
+
+def _single_prompt_simulation(*, base_success_count, tolerance, rewards):
+    n0 = 8
+    rows = [
+        {
+            "prompt_id": 0,
+            "prompt_hash": "hash-0",
+            "base_rollout_count": n0,
+            "base_prefix_success_count": base_success_count,
+            "floor_count": base_success_count - 1,
+            "capability_floor": (base_success_count - 1) / n0,
+        }
+    ]
+    scores = [
+        {
+            "model_id": "current",
+            "prompt_id": 0,
+            "prompt_hash": "hash-0",
+            "rollout_index": index,
+            f"prefix_reward_{BUDGET}": reward,
+            f"prefix_error_{BUDGET}": None,
+            f"prefix_token_count_{BUDGET}": 10,
+            "response_token_count": 10,
+        }
+        for index, reward in enumerate(rewards)
+    ]
+    return simulate_obcf_signal(
+        cache_rows=rows,
+        current_score_rows=scores,
+        reference_budget=BUDGET,
+        current_rollouts_per_prompt=len(rewards),
+        train_batch_size=1,
+        model_id="current",
+        override_reference_tolerance_count=tolerance,
+    )
+
+
+def test_tolerance_override_stratifies_actionable_and_inert_floors():
+    inert = _single_prompt_simulation(
+        base_success_count=2,
+        tolerance=1,
+        rewards=[False, True, False, False, False, False, False, False],
+    )
+    assert inert["actionability"]["inert_prompt_count"] == 1
+    assert inert["by_base_success_count"]["2"]["structurally_inert_fraction"] == 1.0
+
+    actionable = _single_prompt_simulation(
+        base_success_count=2,
+        tolerance=0,
+        rewards=[True, False, False, False, False, False, False, False],
+    )
+    stratum = actionable["by_base_success_count"]["2"]
+    assert stratum["capability_floor"] == pytest.approx(2 / 8)
+    assert stratum["active_fraction"] == 1.0
+    assert stratum["mixed_fraction"] == 1.0
+    assert stratum["nonzero_gradient_fraction"] == 1.0
+
+    base_three = _single_prompt_simulation(
+        base_success_count=3,
+        tolerance=1,
+        rewards=[True, False, False, False, False, False, False, False],
+    )
+    assert base_three["by_base_success_count"]["3"]["active_fraction"] == 1.0
+
+
+def test_active_all_zero_reports_deficit_without_gradient():
+    report = _single_prompt_simulation(
+        base_success_count=2,
+        tolerance=0,
+        rewards=[False] * 8,
+    )
+    stratum = report["by_base_success_count"]["2"]
+    assert stratum["deficit_mean"] == pytest.approx(2 / 8)
+    assert stratum["all_zero_fraction"] == 1.0
+    assert stratum["nonzero_gradient_fraction"] == 0.0
+    assert stratum["active_without_gradient_fraction"] == 1.0
+
+
+def test_override_does_not_mutate_cache_rows_and_exit_codes_are_distinct():
+    cache_rows = _cache_rows()
+    before = copy.deepcopy(cache_rows)
+    report = simulate_obcf_signal(
+        cache_rows=cache_rows,
+        current_score_rows=_score_rows(),
+        reference_budget=BUDGET,
+        current_rollouts_per_prompt=2,
+        train_batch_size=10,
+        model_id="current",
+        override_reference_tolerance_count=0,
+    )
+    assert cache_rows == before
+    assert report["floor_configuration"]["source"] == "override"
+    assert engineering_exit_code(report) == 3
+
+    passing = copy.deepcopy(report)
+    passing["engineering_gates"]["actionability"]["passed"] = True
+    passing["engineering_gates"]["signal_density"]["passed"] = True
+    assert engineering_exit_code(passing) == 0
+    passing["engineering_gates"]["signal_density"]["passed"] = False
+    assert engineering_exit_code(passing) == 2
 
 
 def test_retained_delayed_lost_is_a_complete_nonmonotonic_partition():
@@ -188,3 +302,15 @@ def test_module_help_is_available():
         text=True,
     )
     assert "engineering gate" in result.stdout.lower()
+
+    malformed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.on_policy_budgeted_capability_floor.simulate_obcf_signal",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert malformed.returncode == 1
