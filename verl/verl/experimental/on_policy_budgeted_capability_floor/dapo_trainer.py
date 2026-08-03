@@ -24,6 +24,9 @@ from verl.experimental.on_policy_budgeted_capability_floor.math import (
     compute_capability_advantage,
     summarize_floor_actionability,
 )
+from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence import (
+    prefix_protocol_fingerprint,
+)
 from verl.experimental.on_policy_budgeted_capability_floor.prefix_batch import (
     ProtectedGroupSelection,
     build_exact_prefix_batch,
@@ -99,6 +102,12 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 "memory_limit_mb": _config_get(sandbox, "memory_limit_mb", 1024),
             },
         )
+        protocol_fp = prefix_protocol_fingerprint(
+            reference_budget=config.reference_budget,
+            tokenizer_fingerprint=tokenizer_fp,
+            chat_template_fingerprint=template_fp,
+            verifier_fingerprint=verifier_fp,
+        )
         self._obcf_cache = CapabilityFloorCache.load(
             config.cache_path,
             CacheExpectations(
@@ -109,6 +118,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 tokenizer_fingerprint=tokenizer_fp,
                 chat_template_fingerprint=template_fp,
                 verifier_fingerprint=verifier_fp,
+                prefix_protocol_fingerprint=protocol_fp,
             ),
         )
         self._validate_cache_actionability()

@@ -12,12 +12,15 @@ from verl.experimental.on_policy_budgeted_capability_floor.cache import (
     build_floor_rows,
     write_cache,
 )
+from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence import (
+    prefix_protocol_fingerprint,
+)
 from tools.on_policy_budgeted_capability_floor import build_floor_cache as builder
 
 
 def _manifest() -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "algorithm": "on_policy_budgeted_capability_floor",
         "reference_model_id": "base",
         "reference_model_hash": "a" * 64,
@@ -32,6 +35,7 @@ def _manifest() -> dict:
         "rollout_fingerprint": "c" * 64,
         "score_fingerprint": "d" * 64,
         "verifier_fingerprint": "e" * 64,
+        "prefix_protocol_fingerprint": "f" * 64,
         "created_at": "2026-08-03T00:00:00+00:00",
         "source_git_commit": "f4282a317f1ffdbd52ab0c83e3ddac987ef0d72d",
         "prompt_count": 3,
@@ -110,6 +114,7 @@ def _expectations(**overrides) -> CacheExpectations:
         tokenizer_fingerprint="tok",
         chat_template_fingerprint="tmpl",
         verifier_fingerprint="e" * 64,
+        prefix_protocol_fingerprint="f" * 64,
     )
     values.update(overrides)
     return CacheExpectations(**values)
@@ -385,6 +390,103 @@ def test_builder_converts_hash_bound_legacy_artifact_attestation(tmp_path):
     assert "verifier_fingerprint" not in scores[0]
 
 
+def _event_attestation(artifact_fingerprints=None, **overrides):
+    artifacts = artifact_fingerprints or {
+        "prompt_manifest_fingerprint": "b" * 64,
+        "rollout_fingerprint": "c" * 64,
+        "score_fingerprint": "d" * 64,
+    }
+    attestation = {
+        "schema_version": 1,
+        "passed": True,
+        "reference_budget": 2048,
+        "tokenizer_fingerprint": "tok",
+        "chat_template_fingerprint": "tmpl",
+        "verifier_fingerprint": "e" * 64,
+        "prefix_protocol_fingerprint": prefix_protocol_fingerprint(
+            reference_budget=2048,
+            tokenizer_fingerprint="tok",
+            chat_template_fingerprint="tmpl",
+            verifier_fingerprint="e" * 64,
+        ),
+        "prompt_manifest_fingerprint": artifacts["prompt_manifest_fingerprint"],
+        "rollout_fingerprint": artifacts["rollout_fingerprint"],
+        "historical_score_fingerprint": artifacts["score_fingerprint"],
+        "score_fingerprint": artifacts["score_fingerprint"],
+        "artifact_hashes": {
+            "prompts": artifacts["prompt_manifest_fingerprint"],
+            "rollouts": artifacts["rollout_fingerprint"],
+            "historical_scores": artifacts["score_fingerprint"],
+            "resolved_config": "1" * 64,
+            "recomputed_scores": "2" * 64,
+        },
+        "row_count": 24,
+        "exact_match_count": 24,
+        "mismatch_count": 0,
+        "historical_false_recomputed_true_count": 0,
+        "historical_true_recomputed_false_count": 0,
+        "historical_error_count": 0,
+        "recomputed_error_count": 0,
+        "source_git_commit": "a" * 40,
+    }
+    return attestation | overrides
+
+
+def test_event_attestation_is_required_and_valid_attestation_passes(tmp_path):
+    with pytest.raises(ValueError, match="attestation"):
+        builder._load_event_equivalence_attestation(None)
+
+    attestation_path = tmp_path / "event.json"
+    attestation_path.write_text(json.dumps(_event_attestation()))
+    loaded = builder._load_event_equivalence_attestation(attestation_path)
+    protocol = builder._validate_event_equivalence_attestation(
+        attestation=loaded,
+        reference_budget=2048,
+        tokenizer_fingerprint="tok",
+        chat_template_fingerprint="tmpl",
+        verifier_fingerprint="e" * 64,
+        artifact_fingerprints={
+            "prompt_manifest_fingerprint": "b" * 64,
+            "rollout_fingerprint": "c" * 64,
+            "score_fingerprint": "d" * 64,
+        },
+    )
+    assert protocol == prefix_protocol_fingerprint(
+        reference_budget=2048,
+        tokenizer_fingerprint="tok",
+        chat_template_fingerprint="tmpl",
+        verifier_fingerprint="e" * 64,
+    )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"passed": False}, "passed"),
+        ({"reference_budget": 1024}, "reference_budget"),
+        ({"verifier_fingerprint": "0" * 64}, "verifier_fingerprint"),
+        ({"prefix_protocol_fingerprint": "0" * 64}, "prefix_protocol"),
+        ({"mismatch_count": 1, "exact_match_count": 23}, "mismatch_count"),
+        ({"recomputed_error_count": 1, "exact_match_count": 23}, "recomputed_error_count"),
+        ({"prompt_manifest_fingerprint": "0" * 64}, "prompt_manifest_fingerprint"),
+    ],
+)
+def test_event_attestation_mismatch_fails_closed(overrides, match):
+    with pytest.raises(ValueError, match=match):
+        builder._validate_event_equivalence_attestation(
+            attestation=_event_attestation(**overrides),
+            reference_budget=2048,
+            tokenizer_fingerprint="tok",
+            chat_template_fingerprint="tmpl",
+            verifier_fingerprint="e" * 64,
+            artifact_fingerprints={
+                "prompt_manifest_fingerprint": "b" * 64,
+                "rollout_fingerprint": "c" * 64,
+                "score_fingerprint": "d" * 64,
+            },
+        )
+
+
 def test_round_trip_validates_audit_and_supports_key_lookup(tmp_path):
     cache = _write(tmp_path)
     key = canonical_prompt_key("tok", "tmpl", [10, 20])
@@ -456,6 +558,7 @@ def test_audit_success_histogram_must_match_each_protected_success_bin(tmp_path)
         ("tokenizer_fingerprint", "other"),
         ("chat_template_fingerprint", "other"),
         ("verifier_fingerprint", "f" * 64),
+        ("prefix_protocol_fingerprint", "0" * 64),
     ],
 )
 def test_expectation_mismatch_fails_closed(tmp_path, field, value):
@@ -488,4 +591,20 @@ def test_strict_parquet_schema_rejects_extra_or_nullable_contract(tmp_path):
     )
     pq.write_table(table, tmp_path / "prompts.parquet")
     with pytest.raises(ValueError, match="schema|hash"):
+        CapabilityFloorCache.load(tmp_path, _expectations())
+
+
+def test_schema_one_cache_is_rejected(tmp_path):
+    _write(tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    manifest["schema_version"] = 1
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest, sort_keys=True) + "\n")
+    hashes = json.loads((tmp_path / "hashes.json").read_text())
+    import hashlib
+
+    hashes["files"]["manifest.json"] = hashlib.sha256(
+        (tmp_path / "manifest.json").read_bytes()
+    ).hexdigest()
+    (tmp_path / "hashes.json").write_text(json.dumps(hashes, sort_keys=True) + "\n")
+    with pytest.raises(ValueError, match="schema"):
         CapabilityFloorCache.load(tmp_path, _expectations())

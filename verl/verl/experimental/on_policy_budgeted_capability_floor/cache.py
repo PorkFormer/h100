@@ -17,7 +17,7 @@ import pyarrow.parquet as pq
 from verl.experimental.capability_constraints.identity import canonical_prompt_key
 from verl.experimental.on_policy_budgeted_capability_floor.math import compute_capability_floor
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ALGORITHM = "on_policy_budgeted_capability_floor"
 
 PROMPT_SCHEMA = pa.schema(
@@ -53,6 +53,7 @@ REQUIRED_MANIFEST_FIELDS = frozenset(
         "rollout_fingerprint",
         "score_fingerprint",
         "verifier_fingerprint",
+        "prefix_protocol_fingerprint",
         "created_at",
         "source_git_commit",
         "prompt_count",
@@ -69,6 +70,7 @@ class CacheExpectations:
     tokenizer_fingerprint: str
     chat_template_fingerprint: str
     verifier_fingerprint: str
+    prefix_protocol_fingerprint: str
 
 
 class _FloorRows(list[dict[str, Any]]):
@@ -265,6 +267,7 @@ def _validate_manifest(manifest: Mapping[str, Any]) -> None:
         "rollout_fingerprint",
         "score_fingerprint",
         "verifier_fingerprint",
+        "prefix_protocol_fingerprint",
         "created_at",
         "source_git_commit",
     ):
@@ -278,6 +281,7 @@ def _validate_manifest(manifest: Mapping[str, Any]) -> None:
         "rollout_fingerprint",
         "score_fingerprint",
         "verifier_fingerprint",
+        "prefix_protocol_fingerprint",
     ):
         digest = manifest[name]
         if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
@@ -433,6 +437,7 @@ class CapabilityFloorCache:
         manifest = json.loads((root / "manifest.json").read_text())
         audit = json.loads((root / "audit_report.json").read_text())
         hashes = json.loads((root / "hashes.json").read_text())
+        _validate_manifest(manifest)
         actual_hashes = {name: _sha256_file(root / name) for name in required[:-1]}
         if hashes.get("files") != actual_hashes:
             raise ValueError("cache file hash mismatch")
@@ -445,7 +450,6 @@ class CapabilityFloorCache:
             raise ValueError("audit_report passed must be true")
         if audit.get("schema_version") != SCHEMA_VERSION:
             raise ValueError("audit_report schema_version mismatch")
-        _validate_manifest(manifest)
         for field in (
             "reference_budget",
             "base_rollouts_per_prompt",
@@ -454,6 +458,7 @@ class CapabilityFloorCache:
             "tokenizer_fingerprint",
             "chat_template_fingerprint",
             "verifier_fingerprint",
+            "prefix_protocol_fingerprint",
         ):
             expected = getattr(expectations, field)
             if manifest.get(field) != expected:

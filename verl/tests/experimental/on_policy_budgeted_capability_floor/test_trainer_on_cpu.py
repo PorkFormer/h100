@@ -12,6 +12,9 @@ from verl.experimental.capability_constraints.identity import reference_model_fi
 from verl.experimental.on_policy_budgeted_capability_floor.dapo_trainer import (
     RayDAPOOnPolicyBudgetedCapabilityFloorTrainer,
 )
+from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence import (
+    prefix_protocol_fingerprint,
+)
 from verl.experimental.on_policy_budgeted_capability_floor.math import CapabilityAdvantageResult
 from verl.experimental.on_policy_budgeted_capability_floor.prefix_batch import ProtectedGroupSelection
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
@@ -135,6 +138,22 @@ def test_off_mode_actionability_is_unaffected():
         "obcf/cache_inert_prompt_fraction": 0.0,
         "obcf/minimum_positive_empirical_rate": 0.0,
     }
+
+
+def test_trainer_protocol_fingerprint_binds_current_online_event():
+    actual = prefix_protocol_fingerprint(
+        reference_budget=2,
+        tokenizer_fingerprint="tok",
+        chat_template_fingerprint="tmpl",
+        verifier_fingerprint="verifier",
+    )
+    changed = prefix_protocol_fingerprint(
+        reference_budget=3,
+        tokenizer_fingerprint="tok",
+        chat_template_fingerprint="tmpl",
+        verifier_fingerprint="verifier",
+    )
+    assert actual != changed
 
 
 @pytest.mark.parametrize(

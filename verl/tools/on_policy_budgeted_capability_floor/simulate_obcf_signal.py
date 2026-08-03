@@ -382,6 +382,7 @@ def main() -> None:
             tokenizer_fingerprint=manifest["tokenizer_fingerprint"],
             chat_template_fingerprint=manifest["chat_template_fingerprint"],
             verifier_fingerprint=manifest["verifier_fingerprint"],
+            prefix_protocol_fingerprint=manifest["prefix_protocol_fingerprint"],
         ),
     )
     report = simulate_obcf_signal(

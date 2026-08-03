@@ -21,6 +21,9 @@ from verl.experimental.capability_constraints.identity import (
     tokenizer_fingerprints,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.cache import build_floor_rows, write_cache
+from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence import (
+    prefix_protocol_fingerprint,
+)
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     verifier_pipeline_fingerprint,
 )
@@ -164,6 +167,84 @@ def _apply_legacy_attestation(
     return converted_prompts, converted_scores
 
 
+def _load_event_equivalence_attestation(path: Path | None) -> dict:
+    if path is None:
+        raise ValueError("event-equivalence attestation is required")
+    if not path.is_file():
+        raise ValueError("event-equivalence attestation path does not exist")
+    attestation = json.loads(path.read_text())
+    if not isinstance(attestation, dict):
+        raise ValueError("event-equivalence attestation must be a JSON object")
+    return attestation
+
+
+def _validate_event_equivalence_attestation(
+    *,
+    attestation: dict,
+    reference_budget: int,
+    tokenizer_fingerprint: str,
+    chat_template_fingerprint: str,
+    verifier_fingerprint: str,
+    artifact_fingerprints: dict[str, str],
+) -> str:
+    expected_protocol = prefix_protocol_fingerprint(
+        reference_budget=reference_budget,
+        tokenizer_fingerprint=tokenizer_fingerprint,
+        chat_template_fingerprint=chat_template_fingerprint,
+        verifier_fingerprint=verifier_fingerprint,
+    )
+    expected_fields = {
+        "schema_version": 1,
+        "passed": True,
+        "reference_budget": reference_budget,
+        "tokenizer_fingerprint": tokenizer_fingerprint,
+        "chat_template_fingerprint": chat_template_fingerprint,
+        "verifier_fingerprint": verifier_fingerprint,
+        "prefix_protocol_fingerprint": expected_protocol,
+        **artifact_fingerprints,
+        "historical_score_fingerprint": artifact_fingerprints["score_fingerprint"],
+    }
+    for field, expected in expected_fields.items():
+        if attestation.get(field) != expected:
+            raise ValueError(f"event-equivalence attestation {field} mismatch")
+    artifact_hashes = attestation.get("artifact_hashes")
+    if not isinstance(artifact_hashes, dict):
+        raise ValueError("event-equivalence attestation artifact_hashes is missing")
+    for field, source_name in (
+        ("prompt_manifest_fingerprint", "prompts"),
+        ("rollout_fingerprint", "rollouts"),
+        ("score_fingerprint", "historical_scores"),
+    ):
+        if artifact_hashes.get(source_name) != artifact_fingerprints[field]:
+            raise ValueError(f"event-equivalence attestation artifact hash {field} mismatch")
+    for field in (
+        "mismatch_count",
+        "historical_false_recomputed_true_count",
+        "historical_true_recomputed_false_count",
+        "historical_error_count",
+        "recomputed_error_count",
+    ):
+        if attestation.get(field) != 0:
+            raise ValueError(f"event-equivalence attestation {field} must be zero")
+    row_count = attestation.get("row_count")
+    exact_match_count = attestation.get("exact_match_count")
+    if (
+        not isinstance(row_count, int)
+        or isinstance(row_count, bool)
+        or row_count <= 0
+        or exact_match_count != row_count
+    ):
+        raise ValueError("event-equivalence attestation row counts do not exactly match")
+    source_commit = attestation.get("source_git_commit")
+    if (
+        not isinstance(source_commit, str)
+        or len(source_commit) != 40
+        or any(character not in "0123456789abcdef" for character in source_commit)
+    ):
+        raise ValueError("event-equivalence attestation source_git_commit is invalid")
+    return expected_protocol
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prompts", type=Path, nargs="+", required=True)
@@ -191,6 +272,7 @@ def main() -> None:
     parser.add_argument("--support-threshold", type=int, default=2)
     parser.add_argument("--reference-tolerance-count", type=int, default=1)
     parser.add_argument("--source-git-commit", required=True)
+    parser.add_argument("--event-equivalence-attestation", type=Path, required=True)
     parser.add_argument(
         "--legacy-artifact-attestation",
         type=Path,
@@ -236,6 +318,17 @@ def main() -> None:
         "rollout_fingerprint": _file_hash(args.rollouts),
         "score_fingerprint": _file_hash(args.scores),
     }
+    event_attestation = _load_event_equivalence_attestation(
+        args.event_equivalence_attestation
+    )
+    protocol_fp = _validate_event_equivalence_attestation(
+        attestation=event_attestation,
+        reference_budget=args.reference_budget,
+        tokenizer_fingerprint=tokenizer_fp,
+        chat_template_fingerprint=template_fp,
+        verifier_fingerprint=verifier_fp,
+        artifact_fingerprints=artifact_fingerprints,
+    )
     prompts = _rows(args.prompts)
     rollouts = _rows(args.rollouts)
     scores = _rows(args.scores)
@@ -270,7 +363,7 @@ def main() -> None:
         require_prompt_provenance=True,
     )
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "algorithm": "on_policy_budgeted_capability_floor",
         "reference_model_id": args.model_id,
         "reference_model_hash": reference_model_fingerprint(args.model_path),
@@ -283,6 +376,7 @@ def main() -> None:
         "chat_template_fingerprint": template_fp,
         **artifact_fingerprints,
         "verifier_fingerprint": verifier_fp,
+        "prefix_protocol_fingerprint": protocol_fp,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source_git_commit": args.source_git_commit,
         "prompt_count": len(prompts),
