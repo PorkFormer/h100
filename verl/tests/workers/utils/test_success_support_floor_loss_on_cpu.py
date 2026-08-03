@@ -82,6 +82,7 @@ def test_mixed_batch_decomposes_ppo_and_support_loss():
     assert metrics["actor/pg_loss"].aggregate() == pytest.approx(expected_pg)
     assert metrics["actor/support_floor_unweighted_shortfall"].aggregate() == pytest.approx(expected_shortfall)
     assert metrics["actor/support_floor_loss"].aggregate() == pytest.approx(0.25 * expected_shortfall)
+    assert metrics["actor/support_floor_log_ratio_p50"].aggregate() == pytest.approx(-2.0)
     assert loss.item() == pytest.approx(expected_pg + 0.25 * expected_shortfall)
 
 

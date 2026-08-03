@@ -39,6 +39,7 @@ from verl.experimental.success_support_floor.dapo_trainer import (  # noqa: E402
     RayDAPOSuccessSupportFloorTrainer,
     support_metrics_from_log_probs,
 )
+from verl.experimental.success_support_floor import dapo_trainer as bssf_trainer_module  # noqa: E402
 from verl.trainer.config import (  # noqa: E402
     ProbeCreditConfig,
     ReadinessDominanceConfig,
@@ -230,3 +231,54 @@ def test_shadow_runs_after_standard_actor_update_without_dual_update(monkeypatch
     assert events == ["actor", "shadow"]
     assert result is batch and output is actor_output
     assert trainer._lambda == 0.0
+
+
+def test_active_update_orders_advantage_support_actor_then_dual(monkeypatch, tmp_path):
+    tokenizer = _cache(tmp_path)
+    trainer = _trainer(_config(tmp_path, mode="dual"), tokenizer)
+    trainer._validate_probe_credit_mode()
+    events = []
+    batch = DataProto.from_dict(tensors={"response_mask": torch.ones(1, 1)})
+    support = DataProto.from_dict(tensors={"response_mask": torch.ones(1, 1)})
+    augmented = DataProto.from_dict(tensors={"dummy": torch.ones(2, 1)})
+    actor_output = DataProto.from_single_dict(
+        data={},
+        meta_info={
+            "metrics": {
+                "actor/support_floor_unweighted_shortfall": [1.0],
+                "actor/support_floor_log_ratio_mean": [-1.0],
+                "actor/support_floor_active_fraction": [1.0],
+            }
+        },
+    )
+
+    monkeypatch.setattr(
+        bssf_trainer_module,
+        "compute_advantage",
+        lambda received, **_kwargs: events.append("advantage") or received,
+    )
+    trainer._build_support_batch = MethodType(
+        lambda self: events.append("support") or support, trainer
+    )
+    monkeypatch.setattr(
+        bssf_trainer_module,
+        "build_augmented_actor_batch",
+        lambda *_args, **_kwargs: events.append("augment") or augmented,
+    )
+    trainer._update_actor_augmented = MethodType(
+        lambda self, received, *, rl_batch_size: events.append("actor") or actor_output,
+        trainer,
+    )
+    real_update_dual = trainer._update_dual
+    trainer._update_dual = MethodType(
+        lambda self, output, metrics: events.append("dual") or real_update_dual(output, metrics),
+        trainer,
+    )
+    metrics = {}
+    result, output = trainer._compute_advantage_and_actor_update(batch, metrics, {})
+
+    assert events == ["advantage", "support", "augment", "actor", "dual"]
+    assert result is batch and output is actor_output
+    assert trainer._violation_ema == pytest.approx(0.1)
+    assert trainer._lambda == pytest.approx(0.0005)
+    assert metrics["support_floor/constraint_residual"] == pytest.approx(0.95)

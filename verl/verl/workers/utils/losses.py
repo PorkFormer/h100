@@ -233,10 +233,15 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
             support_unweighted = shortfall.sum() * scale
             support_log_ratio_mean = log_ratio.sum() * scale
             support_active_fraction = (shortfall > 0).float().sum() * scale
+            support_quantiles = {
+                quantile: torch.quantile(log_ratio.detach(), quantile)
+                for quantile in (0.1, 0.5, 0.9)
+            }
         else:
             support_unweighted = differentiable_zero
             support_log_ratio_mean = differentiable_zero
             support_active_fraction = differentiable_zero
+            support_quantiles = None
         support_loss = lambdas[0] * support_unweighted
         policy_loss = policy_loss + support_loss
         metrics["actor/support_floor_loss"] = Metric(
@@ -251,6 +256,11 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
         metrics["actor/support_floor_active_fraction"] = Metric(
             value=support_active_fraction, aggregation=AggregationType.SUM
         )
+        if support_quantiles is not None:
+            for quantile, value in support_quantiles.items():
+                metrics[f"actor/support_floor_log_ratio_p{int(quantile * 100)}"] = Metric(
+                    value=value, aggregation=AggregationType.MEAN
+                )
 
     return policy_loss, metrics
 

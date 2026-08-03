@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -9,17 +10,29 @@ import torch
 
 from verl import DataProto
 from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer, _config_get
-from verl.experimental.success_support_floor.batch import build_support_batch
+from verl.experimental.success_support_floor.batch import (
+    build_augmented_actor_batch,
+    build_support_batch,
+)
 from verl.experimental.success_support_floor.cache import (
     CacheExpectations,
     SuccessSupportCache,
     tokenizer_fingerprints,
 )
-from verl.experimental.success_support_floor.math import compute_support_floor
+from verl.experimental.success_support_floor.math import compute_support_floor, update_dual_state
+from verl.experimental.success_support_floor.state import (
+    SuccessSupportFloorState,
+    load_state,
+    save_state,
+    scientific_config_fingerprint,
+)
 from verl.trainer.config import SuccessSupportFloorConfig
 from verl.trainer.ppo.core_algos import AdvantageEstimator, get_current_clip_ratios
+from verl.trainer.ppo.ray_trainer import compute_advantage
 from verl.utils import tensordict_utils as tu
 from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.debug import marked_timer
+from verl.utils.metric import reduce_metrics
 from verl.utils.py_functional import rename_dict
 from verl.workers.utils.padding import left_right_2_no_padding, no_padding_2_padding
 
@@ -283,13 +296,182 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         actor_metrics["perf/mfu/actor"] = actor_metrics.pop("actor/mfu")
         return DataProto.from_single_dict(data={}, meta_info={"metrics": actor_metrics})
 
+    def _update_dual(
+        self, actor_output: DataProto, metrics: dict[str, float]
+    ) -> None:
+        raw_metrics = actor_output.meta_info.get("metrics", {})
+        reduced = reduce_metrics(
+            {
+                key: list(value) if isinstance(value, list) else value
+                for key, value in raw_metrics.items()
+            }
+        )
+        key = "actor/support_floor_unweighted_shortfall"
+        if key not in reduced:
+            raise ValueError(f"active BSSF actor output is missing {key}")
+        observed = float(reduced[key])
+        config = self._success_support_config()
+        next_state = update_dual_state(
+            lambda_value=self._lambda,
+            violation_ema=self._violation_ema,
+            observed_constraint=observed,
+            delta=config.delta,
+            dual_lr=config.dual_lr,
+            ema_beta=config.dual_ema_beta,
+            lambda_max=config.lambda_max,
+        )
+        self._lambda = next_state.lambda_value
+        self._violation_ema = next_state.violation_ema
+        residual = observed - config.delta
+        metrics.update(
+            {
+                "support_floor/shortfall_mean": observed,
+                "support_floor/constraint_residual": residual,
+                "support_floor/primal_feasible": float(observed <= config.delta),
+                "support_floor/lambda": self._lambda,
+                "support_floor/violation_ema": self._violation_ema,
+                "support_floor/complementarity_proxy": self._lambda * max(residual, 0.0),
+                "support_floor/update_applied": 1.0,
+            }
+        )
+        for source, destination in (
+            ("actor/support_floor_log_ratio_mean", "support_floor/log_ratio_mean"),
+            ("actor/support_floor_active_fraction", "support_floor/active_fraction"),
+            ("actor/support_floor_log_ratio_p10", "support_floor/log_ratio_p10"),
+            ("actor/support_floor_log_ratio_p50", "support_floor/log_ratio_p50"),
+            ("actor/support_floor_log_ratio_p90", "support_floor/log_ratio_p90"),
+        ):
+            if source in reduced:
+                metrics[destination] = float(reduced[source])
+
+    def _state_path(self, global_step: int | None = None) -> str:
+        step = int(self.global_steps if global_step is None else global_step)
+        return os.path.join(
+            self.config.trainer.default_local_dir,
+            f"global_step_{step}",
+            "success_support_floor",
+            "state.json",
+        )
+
+    def _save_checkpoint(self):
+        super()._save_checkpoint()
+        config = self._success_support_config()
+        if config.mode == "off":
+            return
+        cache = self._success_support_cache
+        if cache is None:
+            raise RuntimeError("cannot save BSSF state without a validated cache")
+        save_state(
+            self._state_path(),
+            SuccessSupportFloorState(
+                global_step=int(self.global_steps),
+                lambda_value=float(self._lambda),
+                violation_ema=float(self._violation_ema),
+                support_update_count=int(self._support_update_count),
+                last_support_step=int(self._last_support_step),
+                cache_fingerprint=cache.fingerprint,
+                config_fingerprint=scientific_config_fingerprint(config),
+            ),
+        )
+
+    def _load_checkpoint(self):
+        result = super()._load_checkpoint()
+        config = self._success_support_config()
+        if config.mode == "off" or self.config.trainer.resume_mode == "disable":
+            return result
+        should_resume = self.config.trainer.resume_mode == "resume_path" or int(self.global_steps) > 0
+        if not should_resume:
+            return result
+        cache = self._success_support_cache
+        if cache is None:
+            raise RuntimeError("cannot restore BSSF state without a validated cache")
+        state = load_state(
+            self._state_path(),
+            expected_global_step=int(self.global_steps),
+            expected_cache_fingerprint=cache.fingerprint,
+            expected_config_fingerprint=scientific_config_fingerprint(config),
+            lambda_max=config.lambda_max,
+        )
+        if config.mode == "shadow" and state.lambda_value != 0.0:
+            raise ValueError("shadow BSSF checkpoint must have lambda=0")
+        self._lambda = state.lambda_value
+        self._violation_ema = state.violation_ema
+        self._support_update_count = state.support_update_count
+        self._last_support_step = state.last_support_step
+        return result
+
     def _compute_advantage_and_actor_update(
         self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
     ) -> tuple[DataProto, DataProto]:
-        batch, actor_output = super()._compute_advantage_and_actor_update(batch, metrics, timing_raw)
         config = self._success_support_config()
-        if config.mode == "shadow" and self._should_update_support():
-            metrics.update(self._compute_shadow_metrics())
-        elif config.mode == "dual":
-            raise NotImplementedError("dual mode is added in the active BSSF phase")
+        if config.mode != "dual":
+            batch, actor_output = super()._compute_advantage_and_actor_update(
+                batch, metrics, timing_raw
+            )
+            if config.mode == "shadow" and self._should_update_support():
+                metrics.update(self._compute_shadow_metrics())
+            return batch, actor_output
+
+        rollout_n = self.config.actor_rollout_ref.rollout.n
+        with marked_timer("adv", timing_raw, color="brown"):
+            batch = compute_advantage(
+                batch,
+                adv_estimator=self.config.algorithm.adv_estimator,
+                gamma=self.config.algorithm.gamma,
+                lam=self.config.algorithm.lam,
+                num_repeat=rollout_n,
+                norm_adv_by_std_in_grpo=self.config.algorithm.get(
+                    "norm_adv_by_std_in_grpo", True
+                ),
+                config=self.config.algorithm,
+            )
+        if not self._should_update_support():
+            with marked_timer("update_actor", timing_raw, color="red"):
+                actor_output = self._update_actor(batch)
+            metrics["support_floor/update_applied"] = 0.0
+            metrics["support_floor/lambda"] = float(self._lambda)
+            metrics["support_floor/violation_ema"] = float(self._violation_ema)
+            return batch, actor_output
+
+        prepare_started = time.perf_counter()
+        support_batch = self._build_support_batch()
+        actor_batch = build_augmented_actor_batch(
+            batch,
+            support_batch,
+            lambda_value=self._lambda,
+            alpha=config.alpha,
+            global_support_batch_size=len(support_batch),
+        )
+        metrics["perf/support_floor_prepare_seconds"] = time.perf_counter() - prepare_started
+        update_started = time.perf_counter()
+        with marked_timer("update_actor_with_support", timing_raw, color="red"):
+            actor_output = self._update_actor_augmented(
+                actor_batch,
+                rl_batch_size=len(batch),
+            )
+        metrics["perf/support_floor_forward_backward_seconds"] = (
+            time.perf_counter() - update_started
+        )
+        support_tokens = int(support_batch.batch["response_mask"].sum().item())
+        rl_tokens = int(batch.batch["response_mask"].sum().item())
+        metrics.update(
+            {
+                "support_floor/cache_protected_prompt_count": float(
+                    self._success_support_cache.manifest["protected_prompt_count"]
+                ),
+                "support_floor/cache_witness_count": float(
+                    self._success_support_cache.manifest["witness_count"]
+                ),
+                "support_floor/sample_prompt_count": float(len(support_batch)),
+                "support_floor/sample_witness_count": float(len(support_batch)),
+                "support_floor/sample_response_tokens": float(support_tokens),
+                "support_floor/sample_duplicate_prompt_rate": 0.0,
+                "support_floor/update_interval": float(config.update_interval),
+                "perf/support_floor_added_tokens": float(support_tokens),
+                "perf/support_floor_added_token_ratio": float(
+                    support_tokens / rl_tokens if rl_tokens else 0.0
+                ),
+            }
+        )
+        self._update_dual(actor_output, metrics)
         return batch, actor_output
