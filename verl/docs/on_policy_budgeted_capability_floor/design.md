@@ -12,6 +12,8 @@ f_0(x) = max(k_x - c, 0) / n_0.
 
 The event is exactly the reward pipeline's operational prefix `acc` at `B`. It does not require natural completion, EOS before `B`, a full-reward success, or an answer suffix. Prefix batches contain the current rollout's exact token IDs through position `B-1`; they are never decoded and re-encoded or continued.
 
+Offline artifacts may define `prefix_reward_<B>` differently even when they name the same verifier. Before cache construction, the event-equivalence validator therefore rebuilds a `DataProto` from frozen prompt and response token IDs, truncates those IDs at `B`, and calls the same `RewardLoopWorker.compute_score_batch` pipeline used online. It requires exact row-wise agreement and emits an attested `prefix_protocol_fingerprint`. Verifier provenance by itself is not event equivalence.
+
 For each protected retained current-policy group, OBCF computes
 
 ```text
@@ -20,9 +22,11 @@ d(x) = max(f_0(x) - q(x), 0)
 A_cap[x,i,t] = 1[d(x) > 0] * (r^B_{x,i} - q(x)) * 1[t < B].
 ```
 
-The centering is a group mean only. OBCF does not divide by group standard deviation. The actor receives `A_terminal + lambda * A_cap` in the existing `advantages` tensor, and the existing actor loss performs one normal optimizer update. Base-unsolved, below-threshold, unprotected, and inactive groups have exactly zero capability advantage. An active all-zero group has a measured deficit but zero centered signal; metrics report that absence rather than substituting a recovery mechanism.
+The centering is a group mean only. OBCF does not divide by group standard deviation. Because a sample is included in its own group mean, the same-sample centered score-function signal has the finite-group factor `(n-1)/n`. The actor receives `A_terminal + lambda * A_cap` in the existing `advantages` tensor, and the existing actor loss performs one normal optimizer update. Base-unsolved, below-threshold, unprotected, and inactive groups have exactly zero capability advantage. An active all-zero group has a measured deficit but zero centered signal; this is a preservation limitation, not a recovery branch, and metrics report it without witness rescue or another rollout.
 
-After a protected observation, the controller initializes its EMA to the first observed batch deficit. Later observations apply the configured EMA. Lambda ascent uses the configured update interval and projects onto `[0, lambda_max]`; actor composition always uses the pre-update lambda. A batch with no protected prompt does not change lambda, EMA, observation count, or last-observation step.
+With `n` current rollouts, the smallest positive empirical rate is `1/n`. Under the strict gate `q < f`, a floor can act on a mixed group only when `f > 1/n`. Consequently, Base `2/8` with tolerance 1 produces `f=1/8` and is structurally inert when current `rollout.n=8`: at `0/8` it can report a deficit but has no centered gradient, while at `1/8` the strict gate is inactive. The first active configuration uses tolerance 0, giving `f=2/8`. Tolerance 1 remains a shadow/simulator diagnostic and may enter dual mode only when every protected floor is still actionable.
+
+After a protected observation, the controller initializes its EMA to the first observed batch deficit. Later observations apply the configured EMA. Lambda ascent uses the configured update interval and projects onto `[0, lambda_max]`; actor composition always uses the pre-update lambda. `update_interval` controls lambda ascent only. Prefix scoring and capability-advantage computation occur on every training step in shadow and dual modes. A batch with no protected prompt does not change lambda, EMA, observation count, or last-observation step.
 
 `mode=off` delegates to inherited DAPO without cache or prefix scoring. `mode=shadow` performs prefix scoring and metrics without changing actor inputs or dual state. `mode=dual` composes capability advantages before the sole actor update and updates the controller afterward.
 

@@ -34,7 +34,7 @@ algorithm:
     reference_budget: 2048
     base_rollouts_per_prompt: 8
     support_threshold: 2
-    reference_tolerance_count: 1
+    reference_tolerance_count: 0
     delta: 0.05
     update_interval: 1
     lambda_init: 0.0

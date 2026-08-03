@@ -6,6 +6,9 @@ set -euo pipefail
 : "${VAL_FILE:?Set VAL_FILE to the validation parquet}"
 : "${OBCF_CACHE_PATH:?Set OBCF_CACHE_PATH to a validated capability floor cache}"
 
+OBCF_MODE="${OBCF_MODE:-shadow}"
+OBCF_REFERENCE_TOLERANCE_COUNT="${OBCF_REFERENCE_TOLERANCE_COUNT:-0}"
+
 python -m verl.experimental.on_policy_budgeted_capability_floor.main_dapo_obcf \
   --config-name=on_policy_budgeted_capability_floor_dapo_trainer \
   data.train_files="${TRAIN_FILE}" \
@@ -28,12 +31,12 @@ python -m verl.experimental.on_policy_budgeted_capability_floor.main_dapo_obcf \
   algorithm.filter_groups.enable=true \
   algorithm.filter_groups.metric=acc \
   algorithm.filter_groups.max_num_gen_batches=4 \
-  algorithm.on_policy_budgeted_capability_floor.mode=shadow \
+  algorithm.on_policy_budgeted_capability_floor.mode="${OBCF_MODE}" \
   algorithm.on_policy_budgeted_capability_floor.cache_path="${OBCF_CACHE_PATH}" \
   algorithm.on_policy_budgeted_capability_floor.reference_budget=2048 \
   algorithm.on_policy_budgeted_capability_floor.base_rollouts_per_prompt=8 \
   algorithm.on_policy_budgeted_capability_floor.support_threshold=2 \
-  algorithm.on_policy_budgeted_capability_floor.reference_tolerance_count=1 \
+  algorithm.on_policy_budgeted_capability_floor.reference_tolerance_count="${OBCF_REFERENCE_TOLERANCE_COUNT}" \
   algorithm.on_policy_budgeted_capability_floor.update_interval=1 \
   trainer.n_gpus_per_node=8 \
   trainer.nnodes=1 \

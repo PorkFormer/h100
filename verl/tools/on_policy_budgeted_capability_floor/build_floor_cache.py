@@ -270,7 +270,7 @@ def main() -> None:
     parser.add_argument("--reference-budget", type=int, default=2048)
     parser.add_argument("--base-rollouts-per-prompt", type=int, default=8)
     parser.add_argument("--support-threshold", type=int, default=2)
-    parser.add_argument("--reference-tolerance-count", type=int, default=1)
+    parser.add_argument("--reference-tolerance-count", type=int, default=0)
     parser.add_argument("--source-git-commit", required=True)
     parser.add_argument("--event-equivalence-attestation", type=Path, required=True)
     parser.add_argument(

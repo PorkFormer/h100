@@ -17,7 +17,7 @@ def _compose(overrides=None):
         )
 
 
-def test_config_composes_inert_h4096_without_reference_or_critic():
+def test_config_composes_actionable_h4096_without_reference_or_critic():
     config = _compose()
 
     obcf = config.algorithm.on_policy_budgeted_capability_floor
@@ -25,7 +25,7 @@ def test_config_composes_inert_h4096_without_reference_or_critic():
     assert obcf.reference_budget == 2048
     assert obcf.base_rollouts_per_prompt == 8
     assert obcf.support_threshold == 2
-    assert obcf.reference_tolerance_count == 1
+    assert obcf.reference_tolerance_count == 0
     assert obcf.update_interval == 1
     assert config.actor_rollout_ref.rollout.response_length == 4096
     assert config.actor_rollout_ref.rollout.name == "vllm"
@@ -98,9 +98,11 @@ def test_launchers_have_exact_scales_required_environment_and_no_extra_generatio
 
     assert "data.train_batch_size=32" in smoke_text
     assert "trainer.total_training_steps=2" in smoke_text
-    assert "algorithm.on_policy_budgeted_capability_floor.mode=shadow" in smoke_text
+    assert 'OBCF_MODE="${OBCF_MODE:-shadow}"' in smoke_text
+    assert 'OBCF_REFERENCE_TOLERANCE_COUNT="${OBCF_REFERENCE_TOLERANCE_COUNT:-0}"' in smoke_text
 
     assert "data.train_batch_size=256" in formal_text
     assert "trainer.total_training_steps=200" in formal_text
-    assert "algorithm.on_policy_budgeted_capability_floor.mode=dual" in formal_text
+    assert 'OBCF_MODE="${OBCF_MODE:-dual}"' in formal_text
+    assert 'OBCF_REFERENCE_TOLERANCE_COUNT="${OBCF_REFERENCE_TOLERANCE_COUNT:-0}"' in formal_text
     assert "algorithm.on_policy_budgeted_capability_floor.update_interval=1" in formal_text
