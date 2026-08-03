@@ -24,6 +24,7 @@ __all__ = [
     "ProbeCreditConfig",
     "ReadinessDominanceConfig",
     "RolloutCorrectionConfig",
+    "SuccessSupportFloorConfig",
 ]
 
 
@@ -61,6 +62,62 @@ class FilterGroupsConfig(BaseConfig):
     enable: bool = False
     metric: Optional[str] = None
     max_num_gen_batches: int = 0
+
+
+@dataclass
+class SuccessSupportFloorConfig(BaseConfig):
+    """Configuration for Budgeted Success-Support Floor (BSSF)."""
+
+    mode: str = "off"
+    cache_path: Optional[str] = None
+    reference_budget: int = 2048
+    support_threshold: int = 2
+    alpha: float = 0.5
+    delta: float = 0.05
+    constraint_batch_size: int = 0
+    update_interval: int = 2
+    lambda_init: float = 0.0
+    lambda_max: float = 10.0
+    dual_lr: float = 0.01
+    dual_ema_beta: float = 0.9
+    seed: int = 20260803
+    strict: bool = True
+
+    def validate(self) -> None:
+        if self.mode not in {"off", "shadow", "dual"}:
+            raise ValueError(f"success_support_floor.mode must be off, shadow, or dual, got {self.mode!r}")
+        if not 0.0 < self.alpha < 1.0:
+            raise ValueError(f"success_support_floor.alpha must be in (0, 1), got {self.alpha}")
+        if self.delta < 0.0:
+            raise ValueError(f"success_support_floor.delta must be nonnegative, got {self.delta}")
+        for name in ("reference_budget", "support_threshold", "update_interval"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"success_support_floor.{name} must be a positive integer, got {value!r}")
+        if (
+            not isinstance(self.constraint_batch_size, int)
+            or isinstance(self.constraint_batch_size, bool)
+            or self.constraint_batch_size < 0
+        ):
+            raise ValueError(
+                "success_support_floor.constraint_batch_size must be a nonnegative integer, "
+                f"got {self.constraint_batch_size!r}"
+            )
+        for name in ("lambda_init", "lambda_max", "dual_lr"):
+            value = getattr(self, name)
+            if value < 0.0:
+                raise ValueError(f"success_support_floor.{name} must be nonnegative, got {value}")
+        if self.lambda_max < self.lambda_init:
+            raise ValueError("success_support_floor.lambda_max must be >= lambda_init")
+        if not 0.0 <= self.dual_ema_beta < 1.0:
+            raise ValueError(
+                "success_support_floor.dual_ema_beta must be in [0, 1), "
+                f"got {self.dual_ema_beta}"
+            )
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError(f"success_support_floor.seed must be an integer, got {self.seed!r}")
+        if not self.strict:
+            raise ValueError("The first BSSF implementation requires strict=true")
 
 
 @dataclass
@@ -861,6 +918,9 @@ class AlgoConfig(BaseConfig):
     probe_credit: ProbeCreditConfig = field(default_factory=ProbeCreditConfig)
     readiness_dominance: ReadinessDominanceConfig = field(
         default_factory=ReadinessDominanceConfig
+    )
+    success_support_floor: SuccessSupportFloorConfig = field(
+        default_factory=SuccessSupportFloorConfig
     )
     # Rollout Correction: corrects off-policy issues (policy mismatch, model staleness, distribution shifts)
     # Set to None to disable, use RolloutCorrectionConfig presets (e.g., .tis(), .mis()), or pass dict
