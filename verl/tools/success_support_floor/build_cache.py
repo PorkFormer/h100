@@ -17,6 +17,7 @@ import pyarrow.parquet as pq
 
 from verl.experimental.success_support_floor.cache import (
     canonical_prompt_key,
+    reference_model_fingerprint,
     tokenizer_fingerprints,
     witness_is_eligible,
     write_cache,
@@ -50,10 +51,6 @@ def _file_set_fingerprint(paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
-def _json_hash(value: Any) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
 def _git_commit() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -68,6 +65,7 @@ def _args() -> argparse.Namespace:
     parser.add_argument("--prompt-manifest", required=True)
     parser.add_argument("--reference-model-path", required=True)
     parser.add_argument("--reference-budget", type=int, default=2048)
+    parser.add_argument("--base-rollouts-per-prompt", type=int, default=8)
     parser.add_argument("--support-threshold", type=int, default=2)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--tokenizer-path")
@@ -83,35 +81,63 @@ def main() -> None:
     args = _args()
     if not args.strict:
         raise ValueError("the first BSSF cache builder requires --strict")
-    if args.reference_budget <= 0 or args.support_threshold <= 0 or args.batch_size <= 0:
+    if (
+        args.reference_budget <= 0
+        or args.base_rollouts_per_prompt <= 0
+        or args.support_threshold <= 0
+        or args.batch_size <= 0
+    ):
         raise ValueError("budget, threshold, and batch size must be positive")
+    if not args.include_eos:
+        raise ValueError("the first BSSF cache convention requires --include-eos")
     rollout_files = _files(args.rollout_glob)
     score_files = _files(args.score_glob)
     prompt_file = Path(args.prompt_manifest)
     rollouts = _read(args.rollout_glob)
     scores = _read(args.score_glob)
     prompt_rows = pq.read_table(prompt_file).to_pylist()
-    score_by_key = {
-        (row.get("model_id"), int(row["prompt_id"]), int(row["rollout_index"])): row for row in scores
-    }
+    model_fp = reference_model_fingerprint(args.reference_model_path)
+    score_by_key = {}
+    for row in scores:
+        key = (row.get("model_id"), int(row["prompt_id"]), int(row["rollout_index"]))
+        if key in score_by_key:
+            raise ValueError(f"duplicate score identity {key}")
+        score_by_key[key] = row
 
     model, tokenizer, device = load_reference_model(
         args.reference_model_path, args.tokenizer_path, device=args.device
     )
     tokenizer_fp, template_fp = tokenizer_fingerprints(tokenizer)
-    prompt_by_id = {int(row["prompt_id"]): row for row in prompt_rows}
+    prompt_by_id = {}
+    for row in prompt_rows:
+        prompt_id = int(row["prompt_id"])
+        if prompt_id in prompt_by_id:
+            raise ValueError(f"duplicate prompt_id {prompt_id}")
+        prompt_by_id[prompt_id] = row
+    rollout_keys = set()
+    rollout_counts = {prompt_id: 0 for prompt_id in prompt_by_id}
     eligible_by_prompt: dict[int, list[dict[str, Any]]] = {}
     for rollout in rollouts:
         key = (rollout.get("model_id"), int(rollout["prompt_id"]), int(rollout["rollout_index"]))
+        if key in rollout_keys:
+            raise ValueError(f"duplicate rollout identity {key}")
+        rollout_keys.add(key)
+        prompt_id = int(rollout["prompt_id"])
+        if prompt_id not in prompt_by_id:
+            raise ValueError(f"rollout references unknown prompt_id {prompt_id}")
+        rollout_counts[prompt_id] += 1
         score = score_by_key.get(key)
         if score is None:
-            continue
+            raise ValueError(f"rollout is missing its score row: {key}")
+        response_tokens = [int(token) for token in rollout["response_token_ids"]]
+        if int(rollout["response_token_count"]) != len(response_tokens):
+            raise ValueError(f"response_token_count mismatch for rollout {key}")
         budget = args.reference_budget
         prefix_reward = score.get(f"prefix_reward_{budget}")
         prefix_error = score.get(f"prefix_error_{budget}")
         eligible = witness_is_eligible(
-            full_reward=score.get("full_reward") is True,
-            prefix_reward=prefix_reward is True,
+            full_reward=bool(score.get("full_reward")),
+            prefix_reward=bool(prefix_reward),
             response_token_count=int(rollout["response_token_count"]),
             reference_budget=budget,
             hit_token_cap=bool(rollout.get("hit_token_cap")),
@@ -120,7 +146,19 @@ def main() -> None:
             verifier_error=prefix_error or score.get("full_error"),
         )
         if eligible:
-            eligible_by_prompt.setdefault(int(rollout["prompt_id"]), []).append(rollout | {"_score": score})
+            eligible_by_prompt.setdefault(prompt_id, []).append(rollout | {"_score": score})
+
+    wrong_counts = {
+        prompt_id: count
+        for prompt_id, count in rollout_counts.items()
+        if count != args.base_rollouts_per_prompt
+    }
+    if wrong_counts:
+        sample = list(sorted(wrong_counts.items()))[:10]
+        raise ValueError(
+            "Base rollout count does not match --base-rollouts-per-prompt; "
+            f"first mismatches: {sample}"
+        )
 
     protected_ids = sorted(
         prompt_id for prompt_id, rows in eligible_by_prompt.items() if len(rows) >= args.support_threshold
@@ -136,7 +174,7 @@ def main() -> None:
         prompt_tokens = [int(token) for token in prompt["prompt_token_ids"]]
         prompt_key = canonical_prompt_key(tokenizer_fp, template_fp, prompt_tokens)
         rows = sorted(eligible_by_prompt[prompt_id], key=lambda row: int(row["rollout_index"]))
-        base_count = sum(int(row["prompt_id"]) == prompt_id for row in rollouts)
+        base_count = rollout_counts[prompt_id]
         cache_prompts.append(
             {
                 "prompt_key": prompt_key,
@@ -185,16 +223,13 @@ def main() -> None:
         witness["reference_seq_logprob"] = value
         witness["reference_mean_logprob"] = value / witness["response_token_count"]
 
-    model_fp = _json_hash(
-        {"name_or_path": args.reference_model_path, "config": model.config.to_dict()}
-    )
     manifest = {
         "schema_version": 1,
         "algorithm": "budgeted_success_support_floor",
         "reference_model_id": str(args.reference_model_path),
         "reference_model_hash": model_fp,
         "reference_budget": args.reference_budget,
-        "base_rollouts_per_prompt": max(row["base_rollout_count"] for row in cache_prompts),
+        "base_rollouts_per_prompt": args.base_rollouts_per_prompt,
         "support_threshold": args.support_threshold,
         "tokenizer_fingerprint": tokenizer_fp,
         "chat_template_fingerprint": template_fp,
@@ -206,6 +241,7 @@ def main() -> None:
         "include_eos": args.include_eos,
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_git_commit": _git_commit(),
+        "prompt_count": len(prompt_rows),
     }
     output = Path(args.output_dir)
     fingerprint = write_cache(output, manifest, cache_prompts, cache_witnesses)

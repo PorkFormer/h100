@@ -10,7 +10,7 @@ hashes.json
 validation_report.json
 ```
 
-`hashes.json` contains SHA-256 hashes of the three contract files and their combined cache fingerprint. Training checks hashes, schema version, algorithm name, budget, support threshold, tokenizer vocabulary/special-token fingerprint, chat-template fingerprint, log-probability temperature, EOS convention, protected-prompt counts, witness counts, rewards, natural finish reasons, lengths, and finite reference probabilities.
+`hashes.json` contains SHA-256 hashes of the three contract files and their combined cache fingerprint. Training checks hashes, schema version, algorithm name, budget, support threshold, tokenizer vocabulary/special-token fingerprint, chat-template fingerprint, log-probability temperature, EOS convention, protected-prompt counts, witness counts, rewards, natural finish reasons, lengths, and finite reference probabilities. `reference_model_hash` is computed from the local model weight bytes, not from a path or config label. The strict builder therefore requires a local Hugging Face checkpoint containing supported weight files.
 
 The prompt key is
 
@@ -26,7 +26,7 @@ A witness requires positive full and budget-prefix verifier rewards, response le
 
 ## Reference probability calibration
 
-The builder recomputes every saved witness with Base teacher forcing using the cached response tokens, response-token sum convention, configured temperature, and FP32 log-softmax/summation. Rollout `cumulative_logprob` is diagnostic only. Before Shadow mode, run the validator; defaults require mean absolute per-token error at most `1e-5`, maximum at most `1e-4`, and no non-finite/token mismatch.
+The builder recomputes every saved witness with Base teacher forcing using the cached response tokens, response-token sum convention, configured temperature, and FP32 log-softmax/summation. Rollout `cumulative_logprob` is diagnostic only. Before Shadow mode, run the validator; defaults require mean absolute per-token error at most `1e-5`, maximum at most `1e-4`, and no non-finite/token mismatch. Shadow and Dual modes refuse to start unless `validation_report.json` records a passing result for the exact cache fingerprint. The dedicated entrypoint also re-hashes the locally materialized initial model and compares it to the cache.
 
 Build and validate:
 
@@ -38,6 +38,7 @@ python tools/success_support_floor/build_cache.py \
   --reference-model-path /path/base \
   --tokenizer-path /path/base \
   --reference-budget 2048 \
+  --base-rollouts-per-prompt 8 \
   --support-threshold 2 \
   --logprob-temperature 1.0 \
   --output-dir /path/bssf-cache

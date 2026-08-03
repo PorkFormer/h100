@@ -11,6 +11,7 @@ from pathlib import Path
 from verl.experimental.success_support_floor.cache import (
     CacheExpectations,
     SuccessSupportCache,
+    reference_model_fingerprint,
     tokenizer_fingerprints,
 )
 from verl.experimental.success_support_floor.logprobs import load_reference_model, sequence_logprobs
@@ -28,6 +29,10 @@ def main() -> None:
     parser.add_argument("--mean-threshold", type=float, default=1e-5)
     parser.add_argument("--max-threshold", type=float, default=1e-4)
     args = parser.parse_args()
+    if args.sample_size <= 0 or args.batch_size <= 0:
+        raise ValueError("sample size and batch size must be positive")
+    if args.mean_threshold < 0.0 or args.max_threshold < 0.0:
+        raise ValueError("validation thresholds must be nonnegative")
     manifest = json.loads((Path(args.cache_path) / "manifest.json").read_text())
     expected = CacheExpectations(
         reference_budget=manifest["reference_budget"],
@@ -38,6 +43,9 @@ def main() -> None:
         include_eos=manifest["include_eos"],
     )
     cache = SuccessSupportCache.load(args.cache_path, expected)
+    actual_model_hash = reference_model_fingerprint(args.reference_model_path)
+    if actual_model_hash != manifest["reference_model_hash"]:
+        raise ValueError("reference model weight hash does not match cache manifest")
     generator = random.Random(args.seed)
     rows = generator.sample(cache.witnesses, min(args.sample_size, len(cache.witnesses)))
     prompt_by_key = {row["prompt_key"]: row for row in cache.prompts}
@@ -70,6 +78,7 @@ def main() -> None:
     ]
     report = {
         "cache_fingerprint": cache.fingerprint,
+        "reference_model_hash": actual_model_hash,
         "sample_count": len(rows),
         "mean_absolute_per_token_error": sum(errors) / len(errors),
         "max_absolute_per_token_error": max(errors),

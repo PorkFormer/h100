@@ -230,6 +230,8 @@ def main() -> None:
     args = parser.parse_args()
     if not 0.0 < args.alpha < 1.0:
         raise ValueError("alpha must be in (0, 1)")
+    if args.batch_size <= 0 or args.bootstrap_resamples <= 0:
+        raise ValueError("batch size and bootstrap resamples must be positive")
     checkpoints = _parse_checkpoints(args.checkpoint, args.checkpoint_path)
     root = Path(args.cache_path)
     manifest = json.loads((root / "manifest.json").read_text())

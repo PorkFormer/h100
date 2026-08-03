@@ -17,6 +17,26 @@ import pyarrow.parquet as pq
 SCHEMA_VERSION = 1
 ALGORITHM = "budgeted_success_support_floor"
 NATURAL_FINISH_REASONS = frozenset({"eos", "stop", "stop_sequence"})
+REQUIRED_MANIFEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "algorithm",
+        "reference_model_id",
+        "reference_model_hash",
+        "reference_budget",
+        "base_rollouts_per_prompt",
+        "support_threshold",
+        "tokenizer_fingerprint",
+        "chat_template_fingerprint",
+        "prompt_manifest_fingerprint",
+        "verifier_fingerprint",
+        "logprob_temperature",
+        "logprob_convention",
+        "include_eos",
+        "created_at",
+        "source_git_commit",
+    }
+)
 
 PROMPT_SCHEMA = pa.schema(
     [
@@ -73,6 +93,79 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def reference_model_fingerprint(path: str | Path) -> str:
+    """Hash local Hugging Face weight bytes, independent of the checkpoint path."""
+    root = Path(path).expanduser()
+    if root.is_file():
+        weight_files = [root]
+        relative_to = root.parent
+    elif root.is_dir():
+        patterns = (
+            "model*.safetensors",
+            "pytorch_model*.bin",
+            "adapter_model*.safetensors",
+            "adapter_model*.bin",
+            "consolidated*.pth",
+        )
+        weight_files = sorted(
+            {candidate for pattern in patterns for candidate in root.rglob(pattern)}
+        )
+        relative_to = root
+    else:
+        raise ValueError(
+            "strict BSSF model fingerprinting requires a local reference-model path"
+        )
+    if not weight_files:
+        raise ValueError(f"no supported model weight files found under {root}")
+    digest = hashlib.sha256()
+    digest.update(b"bssf-reference-model-weights-v1\0")
+    for weight_file in weight_files:
+        relative = weight_file.relative_to(relative_to).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(weight_file.stat().st_size.to_bytes(8, "big"))
+        with weight_file.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(8 << 20), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_manifest(manifest: Mapping[str, Any]) -> None:
+    missing = sorted(REQUIRED_MANIFEST_FIELDS - manifest.keys())
+    if missing:
+        raise ValueError(f"cache manifest is missing required fields {missing}")
+    if manifest["schema_version"] != SCHEMA_VERSION:
+        raise ValueError(f"unsupported schema_version {manifest['schema_version']}")
+    if manifest["algorithm"] != ALGORITHM:
+        raise ValueError(f"unexpected cache algorithm {manifest['algorithm']!r}")
+    if not str(manifest["reference_model_id"]):
+        raise ValueError("reference_model_id must be nonempty")
+    model_hash = str(manifest["reference_model_hash"])
+    if len(model_hash) != 64 or any(character not in "0123456789abcdef" for character in model_hash):
+        raise ValueError("reference_model_hash must be a lowercase SHA-256 digest")
+    for field in ("reference_budget", "base_rollouts_per_prompt", "support_threshold"):
+        value = manifest[field]
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError(f"cache {field} must be a positive integer")
+    temperature = float(manifest["logprob_temperature"])
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("cache logprob_temperature must be finite and positive")
+    if manifest["logprob_convention"] != "response-token-sum":
+        raise ValueError("cache logprob_convention must be response-token-sum")
+    if manifest["include_eos"] is not True:
+        raise ValueError("the first BSSF cache schema requires include_eos=true")
+    for field in (
+        "tokenizer_fingerprint",
+        "chat_template_fingerprint",
+        "prompt_manifest_fingerprint",
+        "verifier_fingerprint",
+        "created_at",
+        "source_git_commit",
+    ):
+        if not str(manifest[field]):
+            raise ValueError(f"cache {field} must be nonempty")
 
 
 def canonical_prompt_key(
@@ -148,6 +241,7 @@ def _validated_rows(
     prompts: Iterable[Mapping[str, Any]],
     witnesses: Iterable[Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    _validate_manifest(manifest)
     prompt_rows = sorted((dict(row) for row in prompts), key=lambda row: row["prompt_key"])
     witness_rows = sorted(
         (dict(row) for row in witnesses), key=lambda row: (row["prompt_key"], row["witness_id"])
@@ -184,8 +278,23 @@ def _validated_rows(
             raise ValueError("every cached witness must finish naturally")
     for row in prompt_rows:
         key = row["prompt_key"]
+        expected_key = canonical_prompt_key(
+            str(manifest["tokenizer_fingerprint"]),
+            str(manifest["chat_template_fingerprint"]),
+            row["prompt_token_ids"],
+        )
+        if key != expected_key:
+            raise ValueError("prompt_key does not match canonical rendered prompt tokens")
         if len(row["prompt_token_ids"]) != int(row["prompt_token_count"]):
             raise ValueError("prompt_token_count does not match token IDs")
+        base_count = int(row["base_rollout_count"])
+        eligible_count = int(row["eligible_success_count"])
+        if base_count <= 0 or eligible_count > base_count:
+            raise ValueError("prompt rollout counts are invalid")
+        if not math.isclose(
+            float(row["q_reference"]), eligible_count / base_count, abs_tol=1e-6
+        ):
+            raise ValueError("q_reference does not match prompt rollout counts")
         if witness_counts[key] < threshold:
             raise ValueError(f"protected prompt {key} has fewer than support_threshold witnesses")
         if witness_counts[key] != int(row["eligible_success_count"]):
@@ -205,12 +314,11 @@ def write_cache(
     normalized_manifest = dict(manifest)
     normalized_manifest.setdefault("schema_version", SCHEMA_VERSION)
     normalized_manifest.setdefault("algorithm", ALGORITHM)
-    if normalized_manifest["schema_version"] != SCHEMA_VERSION:
-        raise ValueError(f"unsupported schema_version {normalized_manifest['schema_version']}")
-    if normalized_manifest["algorithm"] != ALGORITHM:
-        raise ValueError(f"unexpected cache algorithm {normalized_manifest['algorithm']!r}")
+    _validate_manifest(normalized_manifest)
     prompt_rows, witness_rows = _validated_rows(normalized_manifest, prompts, witnesses)
-    normalized_manifest["prompt_count"] = len(prompt_rows)
+    normalized_manifest.setdefault("prompt_count", len(prompt_rows))
+    if int(normalized_manifest["prompt_count"]) < len(prompt_rows):
+        raise ValueError("prompt_count cannot be smaller than protected_prompt_count")
     normalized_manifest["protected_prompt_count"] = len(prompt_rows)
     normalized_manifest["witness_count"] = len(witness_rows)
 
@@ -267,10 +375,7 @@ class SuccessSupportCache:
         fingerprint = _sha256_bytes(_canonical_json(file_hashes))
         if hashes.get("cache_fingerprint") != fingerprint:
             raise ValueError("cache fingerprint mismatch")
-        if manifest.get("schema_version") != SCHEMA_VERSION:
-            raise ValueError(f"unsupported schema_version {manifest.get('schema_version')}")
-        if manifest.get("algorithm") != ALGORITHM:
-            raise ValueError("cache algorithm mismatch")
+        _validate_manifest(manifest)
         for field in (
             "reference_budget",
             "support_threshold",
@@ -289,6 +394,8 @@ class SuccessSupportCache:
         prompts, witnesses = _validated_rows(manifest, prompts, witnesses)
         if manifest.get("protected_prompt_count") != len(prompts):
             raise ValueError("protected_prompt_count does not match cache contents")
+        if int(manifest.get("prompt_count", 0)) < len(prompts):
+            raise ValueError("prompt_count cannot be smaller than protected_prompt_count")
         if manifest.get("witness_count") != len(witnesses):
             raise ValueError("witness_count does not match cache contents")
         return cls(manifest=manifest, prompts=prompts, witnesses=witnesses, fingerprint=fingerprint)

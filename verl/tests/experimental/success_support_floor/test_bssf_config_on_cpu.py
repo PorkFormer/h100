@@ -19,6 +19,7 @@ def test_defaults_are_inert_and_valid():
         ("alpha", 0.0),
         ("alpha", 1.0),
         ("delta", -0.1),
+        ("delta", float("nan")),
         ("reference_budget", 0),
         ("support_threshold", 0),
         ("constraint_batch_size", -1),
@@ -26,6 +27,7 @@ def test_defaults_are_inert_and_valid():
         ("lambda_init", -0.1),
         ("lambda_max", -0.1),
         ("dual_lr", -0.1),
+        ("dual_lr", float("inf")),
         ("dual_ema_beta", 1.0),
     ],
 )

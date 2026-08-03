@@ -66,4 +66,3 @@ def test_dual_update_uses_ema_residual_and_clamps():
 
     assert state.violation_ema == pytest.approx(0.15)
     assert state.lambda_value == pytest.approx(0.3)
-

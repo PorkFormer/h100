@@ -8,6 +8,7 @@ from verl.experimental.success_support_floor.cache import (
     CacheExpectations,
     SuccessSupportCache,
     canonical_prompt_key,
+    reference_model_fingerprint,
     witness_is_eligible,
     write_cache,
 )
@@ -19,7 +20,7 @@ def _manifest():
         "schema_version": 1,
         "algorithm": "budgeted_success_support_floor",
         "reference_model_id": "base",
-        "reference_model_hash": "model-hash",
+        "reference_model_hash": "a" * 64,
         "reference_budget": 8,
         "base_rollouts_per_prompt": 3,
         "support_threshold": 2,
@@ -118,6 +119,19 @@ def test_prompt_key_is_stable_and_template_sensitive():
     assert canonical_prompt_key("tok", "a", [1, 2]) != canonical_prompt_key("tok", "b", [1, 2])
 
 
+def test_reference_model_fingerprint_hashes_weight_content(tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    weight = model_dir / "model-00001-of-00001.safetensors"
+    weight.write_bytes(b"first")
+    first = reference_model_fingerprint(model_dir)
+    weight.write_bytes(b"second")
+    second = reference_model_fingerprint(model_dir)
+
+    assert len(first) == 64
+    assert first != second
+
+
 def test_round_trip_sets_counts_hashes_and_samples_unique_prompts(tmp_path):
     cache = _write(tmp_path)
     first = cache.sample(batch_size=3, seed=7, global_step=5, support_update_count=2)
@@ -167,6 +181,17 @@ def test_corrupt_reference_logprob_fails_closed(tmp_path):
     witnesses[0]["reference_seq_logprob"] = float("nan")
     with pytest.raises(ValueError, match="finite"):
         write_cache(tmp_path, _manifest(), prompts, witnesses)
+
+
+def test_manifest_model_hash_and_prompt_counts_fail_closed(tmp_path):
+    prompts, witnesses = _rows()
+    invalid_hash = _manifest() | {"reference_model_hash": "path-plus-config"}
+    with pytest.raises(ValueError, match="reference_model_hash"):
+        write_cache(tmp_path / "hash", invalid_hash, prompts, witnesses)
+
+    prompts[0]["q_reference"] = 0.1
+    with pytest.raises(ValueError, match="q_reference"):
+        write_cache(tmp_path / "counts", _manifest(), prompts, witnesses)
 
 
 def test_teacher_forcing_scores_only_response_tokens_in_fp32():

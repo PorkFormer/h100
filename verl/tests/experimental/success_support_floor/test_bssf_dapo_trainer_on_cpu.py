@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 from types import MethodType, SimpleNamespace
@@ -64,7 +65,7 @@ def _cache(path):
         "schema_version": 1,
         "algorithm": "budgeted_success_support_floor",
         "reference_model_id": "base",
-        "reference_model_hash": "model",
+        "reference_model_hash": "a" * 64,
         "reference_budget": 4,
         "base_rollouts_per_prompt": 2,
         "support_threshold": 2,
@@ -105,7 +106,10 @@ def _cache(path):
         }
         for index in range(2)
     ]
-    write_cache(path, manifest, prompts, witnesses)
+    fingerprint = write_cache(path, manifest, prompts, witnesses)
+    (path / "validation_report.json").write_text(
+        json.dumps({"cache_fingerprint": fingerprint, "passed": True})
+    )
     return tokenizer
 
 
@@ -132,6 +136,7 @@ def _config(cache_path, *, mode="shadow"):
     actor = SimpleNamespace(
         loss_agg_mode="token-mean",
         ppo_mini_batch_size=1,
+        ppo_epochs=1,
         use_kl_loss=False,
     )
     rollout = SimpleNamespace(
@@ -171,6 +176,28 @@ def test_shadow_validation_loads_strict_cache(tmp_path):
     trainer._validate_probe_credit_mode()
     assert trainer._success_support_cache.manifest["witness_count"] == 2
     assert trainer._lambda == 0.0
+
+
+def test_shadow_requires_passed_logprob_validation_report(tmp_path):
+    tokenizer = _cache(tmp_path)
+    (tmp_path / "validation_report.json").unlink()
+    trainer = _trainer(_config(tmp_path), tokenizer)
+
+    with pytest.raises(ValueError, match="validation report is missing"):
+        trainer._validate_probe_credit_mode()
+
+
+def test_shadow_rejects_wrong_materialized_reference_model(tmp_path):
+    cache_path = tmp_path / "cache"
+    tokenizer = _cache(cache_path)
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    (model_path / "model.safetensors").write_bytes(b"different model")
+    trainer = _trainer(_config(cache_path), tokenizer)
+    trainer._bssf_reference_model_local_path = str(model_path)
+
+    with pytest.raises(ValueError, match="weight hash mismatch"):
+        trainer._validate_probe_credit_mode()
 
 
 @pytest.mark.parametrize(
@@ -282,3 +309,46 @@ def test_active_update_orders_advantage_support_actor_then_dual(monkeypatch, tmp
     assert trainer._violation_ema == pytest.approx(0.1)
     assert trainer._lambda == pytest.approx(0.0005)
     assert metrics["support_floor/constraint_residual"] == pytest.approx(0.95)
+
+
+def test_dual_sums_optimizer_partitions_and_averages_ppo_epochs(tmp_path):
+    tokenizer = _cache(tmp_path)
+    trainer = _trainer(_config(tmp_path, mode="dual"), tokenizer)
+    trainer._validate_probe_credit_mode()
+    trainer.config.actor_rollout_ref.actor.ppo_epochs = 2
+    actor_output = DataProto.from_single_dict(
+        data={},
+        meta_info={
+            "metrics": {
+                "actor/support_floor_unweighted_shortfall": [0.2, 0.3, 0.4, 0.5],
+                "actor/support_floor_log_ratio_mean": [-0.1, -0.2, -0.3, -0.4],
+                "actor/support_floor_active_fraction": [0.2, 0.3, 0.4, 0.5],
+                "actor/support_floor_quantile_weight": [1.0, 0.0, 1.0, 0.0],
+                "actor/support_floor_log_ratio_p50": [-0.5, 0.0, -0.7, 0.0],
+            }
+        },
+    )
+    metrics = {}
+
+    trainer._update_dual(actor_output, metrics)
+
+    assert metrics["support_floor/shortfall_mean"] == pytest.approx(0.7)
+    assert metrics["support_floor/log_ratio_mean"] == pytest.approx(-0.5)
+    assert metrics["support_floor/log_ratio_p50"] == pytest.approx(-0.6)
+
+
+def test_explicit_resume_path_selects_colocated_bssf_state(tmp_path):
+    trainer = object.__new__(RayDAPOSuccessSupportFloorTrainer)
+    checkpoint = tmp_path / "external" / "global_step_7"
+    trainer.global_steps = 7
+    trainer.config = SimpleNamespace(
+        trainer=SimpleNamespace(
+            resume_mode="resume_path",
+            resume_from_path=str(checkpoint),
+            default_local_dir=str(tmp_path / "default"),
+        )
+    )
+
+    assert trainer._resume_state_path() == str(
+        checkpoint / "success_support_floor" / "state.json"
+    )

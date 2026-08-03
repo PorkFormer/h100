@@ -77,6 +77,7 @@ class SuccessSupportFloorTaskRunner(TaskRunner):
             collate_fn=collate_fn,
             train_sampler=create_rl_sampler(config.data, train_dataset),
         )
+        trainer._bssf_reference_model_local_path = local_path
         trainer.init_workers()
         trainer.fit()
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -17,6 +19,7 @@ from verl.experimental.success_support_floor.batch import (
 from verl.experimental.success_support_floor.cache import (
     CacheExpectations,
     SuccessSupportCache,
+    reference_model_fingerprint,
     tokenizer_fingerprints,
 )
 from verl.experimental.success_support_floor.math import compute_support_floor, update_dual_state
@@ -116,6 +119,19 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
                 include_eos=True,
             ),
         )
+        validation_path = Path(config.cache_path) / "validation_report.json"
+        if not validation_path.is_file():
+            raise ValueError("BSSF cache log-probability validation report is missing")
+        validation = json.loads(validation_path.read_text(encoding="utf-8"))
+        if validation.get("cache_fingerprint") != self._success_support_cache.fingerprint:
+            raise ValueError("BSSF cache validation report fingerprint mismatch")
+        if validation.get("passed") is not True:
+            raise ValueError("BSSF cache log-probability validation has not passed")
+        local_reference_path = getattr(self, "_bssf_reference_model_local_path", None)
+        if local_reference_path is not None:
+            actual_model_hash = reference_model_fingerprint(local_reference_path)
+            if actual_model_hash != self._success_support_cache.manifest["reference_model_hash"]:
+                raise ValueError("BSSF cache reference model weight hash mismatch")
         if self._constraint_batch_size() > len(self._success_support_cache.prompts):
             raise ValueError(
                 "constraint_batch_size exceeds protected prompts; replacement is not allowed"
@@ -126,6 +142,16 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         """Validate the standalone BSSF protocol before the inherited fit starts."""
         config = self._success_support_config()
         config.validate()
+        probe = _config_get(self.config.algorithm, "probe_credit")
+        if probe is not None and bool(_config_get(probe, "enable", False)):
+            raise ValueError("BSSF cannot be combined with ProbeCredit")
+        dominance = _config_get(self.config.algorithm, "readiness_dominance")
+        if dominance is not None and _config_get(dominance, "mode", "off") != "off":
+            raise ValueError("BSSF cannot be combined with ReadinessDominance")
+        if config.mode == "off":
+            super()._validate_probe_credit_mode()
+            self._load_success_support_cache()
+            return
         if self.config.algorithm.adv_estimator not in (
             "grpo",
             AdvantageEstimator.GRPO,
@@ -136,12 +162,6 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         actor = self.config.actor_rollout_ref.actor
         if rollout.name != "vllm":
             raise ValueError("BSSF supports the vLLM rollout backend only")
-        probe = _config_get(self.config.algorithm, "probe_credit")
-        if probe is not None and bool(_config_get(probe, "enable", False)):
-            raise ValueError("BSSF cannot be combined with ProbeCredit")
-        dominance = _config_get(self.config.algorithm, "readiness_dominance")
-        if dominance is not None and _config_get(dominance, "mode", "off") != "off":
-            raise ValueError("BSSF cannot be combined with ReadinessDominance")
         if _config_get(self.config.algorithm, "use_kl_in_reward", False) or bool(
             _config_get(actor, "use_kl_loss", False)
         ):
@@ -309,7 +329,17 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         key = "actor/support_floor_unweighted_shortfall"
         if key not in reduced:
             raise ValueError(f"active BSSF actor output is missing {key}")
-        observed = float(reduced[key])
+        ppo_epochs = int(self.config.actor_rollout_ref.actor.ppo_epochs)
+        if ppo_epochs <= 0:
+            raise ValueError("actor.ppo_epochs must be positive")
+
+        def summed_metric(name: str) -> float:
+            value = raw_metrics[name]
+            if isinstance(value, (list, tuple)):
+                return sum(float(item) for item in value)
+            return float(value)
+
+        observed = summed_metric(key) / ppo_epochs
         config = self._success_support_config()
         next_state = update_dual_state(
             lambda_value=self._lambda,
@@ -337,12 +367,20 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         for source, destination in (
             ("actor/support_floor_log_ratio_mean", "support_floor/log_ratio_mean"),
             ("actor/support_floor_active_fraction", "support_floor/active_fraction"),
-            ("actor/support_floor_log_ratio_p10", "support_floor/log_ratio_p10"),
-            ("actor/support_floor_log_ratio_p50", "support_floor/log_ratio_p50"),
-            ("actor/support_floor_log_ratio_p90", "support_floor/log_ratio_p90"),
         ):
-            if source in reduced:
-                metrics[destination] = float(reduced[source])
+            if source in raw_metrics:
+                metrics[destination] = summed_metric(source) / ppo_epochs
+        quantile_weight_key = "actor/support_floor_quantile_weight"
+        if quantile_weight_key in raw_metrics:
+            quantile_weight = summed_metric(quantile_weight_key)
+            if quantile_weight > 0.0:
+                for source, destination in (
+                    ("actor/support_floor_log_ratio_p10", "support_floor/log_ratio_p10"),
+                    ("actor/support_floor_log_ratio_p50", "support_floor/log_ratio_p50"),
+                    ("actor/support_floor_log_ratio_p90", "support_floor/log_ratio_p90"),
+                ):
+                    if source in raw_metrics:
+                        metrics[destination] = summed_metric(source) / quantile_weight
 
     def _state_path(self, global_step: int | None = None) -> str:
         step = int(self.global_steps if global_step is None else global_step)
@@ -352,6 +390,12 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
             "success_support_floor",
             "state.json",
         )
+
+    def _resume_state_path(self) -> str:
+        if self.config.trainer.resume_mode != "resume_path":
+            return self._state_path()
+        checkpoint_folder = os.path.abspath(self.config.trainer.resume_from_path)
+        return os.path.join(checkpoint_folder, "success_support_floor", "state.json")
 
     def _save_checkpoint(self):
         super()._save_checkpoint()
@@ -386,7 +430,7 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
         if cache is None:
             raise RuntimeError("cannot restore BSSF state without a validated cache")
         state = load_state(
-            self._state_path(),
+            self._resume_state_path(),
             expected_global_step=int(self.global_steps),
             expected_cache_fingerprint=cache.fingerprint,
             expected_config_fingerprint=scientific_config_fingerprint(config),

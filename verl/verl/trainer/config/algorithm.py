@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -88,7 +89,7 @@ class SuccessSupportFloorConfig(BaseConfig):
             raise ValueError(f"success_support_floor.mode must be off, shadow, or dual, got {self.mode!r}")
         if not 0.0 < self.alpha < 1.0:
             raise ValueError(f"success_support_floor.alpha must be in (0, 1), got {self.alpha}")
-        if self.delta < 0.0:
+        if not math.isfinite(self.delta) or self.delta < 0.0:
             raise ValueError(f"success_support_floor.delta must be nonnegative, got {self.delta}")
         for name in ("reference_budget", "support_threshold", "update_interval"):
             value = getattr(self, name)
@@ -105,7 +106,7 @@ class SuccessSupportFloorConfig(BaseConfig):
             )
         for name in ("lambda_init", "lambda_max", "dual_lr"):
             value = getattr(self, name)
-            if value < 0.0:
+            if not math.isfinite(value) or value < 0.0:
                 raise ValueError(f"success_support_floor.{name} must be nonnegative, got {value}")
         if self.lambda_max < self.lambda_init:
             raise ValueError("success_support_floor.lambda_max must be >= lambda_init")
