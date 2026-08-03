@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
+
+import torch
 
 from verl import DataProto
 from verl.experimental.capability_constraints.identity import (
     reference_model_fingerprint,
     tokenizer_fingerprints,
 )
+from verl.experimental.capability_constraints.dual import update_projected_dual
 from verl.experimental.on_policy_budgeted_capability_floor.cache import (
     CacheExpectations,
     CapabilityFloorCache,
@@ -25,6 +29,12 @@ from verl.experimental.on_policy_budgeted_capability_floor.prefix_batch import (
 )
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     extract_binary_accuracy,
+)
+from verl.experimental.on_policy_budgeted_capability_floor.state import (
+    OnPolicyBudgetedCapabilityFloorState,
+    load_state,
+    save_state,
+    scientific_config_fingerprint,
 )
 from verl.experimental.probe_credit.dapo_trainer import (
     RayDAPOProbeCreditTrainer,
@@ -76,12 +86,6 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 chat_template_fingerprint=template_fp,
             ),
         )
-        resume_mode = _config_get(_config_get(self.config, "trainer"), "resume_mode", "disable")
-        local_base_path = getattr(self, "_obcf_base_model_local_path", None)
-        if resume_mode == "disable" and local_base_path is not None:
-            actual_hash = reference_model_fingerprint(local_base_path)
-            if actual_hash != self._obcf_cache.manifest["reference_model_hash"]:
-                raise ValueError("OBCF cache Base model weight hash mismatch")
 
     def _validate_probe_credit_mode(self) -> None:
         config = self._obcf_config()
@@ -141,6 +145,8 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
             )
         ):
             raise ValueError("OBCF does not support rollout correction")
+        if _config_get(_config_get(self.config, "global_profiler"), "steps"):
+            raise ValueError("OBCF does not support configured profiling steps")
         filter_groups = _config_get(self.config.algorithm, "filter_groups")
         if not bool(_config_get(filter_groups, "enable", False)) or _config_get(
             filter_groups, "metric"
@@ -150,7 +156,40 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
 
     def _should_observe_constraint(self) -> bool:
         config = self._obcf_config()
-        return config.mode != "off" and int(self.global_steps) % config.update_interval == 0
+        return config.mode != "off"
+
+    def _should_update_dual(self) -> bool:
+        config = self._obcf_config()
+        return config.mode == "dual" and int(self.global_steps) % config.update_interval == 0
+
+    def _empty_observation_metrics(self) -> dict[str, float]:
+        return {
+            "obcf/protected_prompt_occurrences": 0.0,
+            "obcf/protected_rollout_count": 0.0,
+            "obcf/prefix_verifier_calls": 0.0,
+            "obcf/prefix_token_count": 0.0,
+            "obcf/q_current_mean": 0.0,
+            "obcf/floor_mean": 0.0,
+            "obcf/deficit_mean": 0.0,
+            "obcf/active_group_fraction": 0.0,
+            "obcf/mixed_group_fraction": 0.0,
+            "obcf/all_zero_group_fraction": 0.0,
+            "obcf/all_one_group_fraction": 0.0,
+            "obcf/nonzero_gradient_group_fraction": 0.0,
+            "obcf/capability_advantage_mean": 0.0,
+            "obcf/capability_advantage_max_abs": 0.0,
+            "obcf/capability_advantage_nonzero_fraction": 0.0,
+            "obcf/constraint_residual": 0.0,
+            "obcf/primal_feasible": 0.0,
+            "obcf/complementarity_proxy": 0.0,
+            "obcf/all_zero_active_fraction": 0.0,
+            "obcf/active_without_gradient_fraction": 0.0,
+            "obcf/update_applied": 0.0,
+            "obcf/lambda": float(self._lambda),
+            "obcf/violation_ema": float(self._violation_ema),
+            "perf/obcf_prepare_seconds": 0.0,
+            "perf/obcf_prefix_verifier_seconds": 0.0,
+        }
 
     def _observe_capability(
         self,
@@ -159,15 +198,12 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
     ) -> tuple[ProtectedGroupSelection, CapabilityAdvantageResult] | None:
         config = self._obcf_config()
         if not self._should_observe_constraint():
-            metrics.update(
-                {
-                    "obcf/update_applied": 0.0,
-                    "obcf/lambda": float(self._lambda),
-                    "obcf/violation_ema": float(self._violation_ema),
-                }
-            )
+            metrics.update(self._empty_observation_metrics())
             return None
-        if "multi_modal_data" in batch.non_tensor_batch:
+        if any(
+            key in batch.non_tensor_batch
+            for key in ("multi_modal_data", "multi_modal_inputs")
+        ):
             raise ValueError("OBCF supports text-only retained batches")
         started = time.perf_counter()
         selection = resolve_protected_groups(
@@ -175,20 +211,9 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
             cache=self._obcf_cache,
             rollout_n=int(self.config.actor_rollout_ref.rollout.n),
         )
-        metrics["perf/obcf_prepare_seconds"] = time.perf_counter() - started
         if selection is None:
-            metrics.update(
-                {
-                    "obcf/protected_prompt_occurrences": 0.0,
-                    "obcf/protected_rollout_count": 0.0,
-                    "obcf/prefix_verifier_calls": 0.0,
-                    "obcf/prefix_token_count": 0.0,
-                    "obcf/update_applied": 0.0,
-                    "obcf/lambda": float(self._lambda),
-                    "obcf/violation_ema": float(self._violation_ema),
-                    "perf/obcf_prefix_verifier_seconds": 0.0,
-                }
-            )
+            metrics.update(self._empty_observation_metrics())
+            metrics["perf/obcf_prepare_seconds"] = time.perf_counter() - started
             return None
         prefix_batch = build_exact_prefix_batch(
             batch=batch,
@@ -196,6 +221,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
             reference_budget=config.reference_budget,
             pad_token_id=int(self.tokenizer.pad_token_id),
         )
+        metrics["perf/obcf_prepare_seconds"] = time.perf_counter() - started
         verifier_started = time.perf_counter()
         reward_output = self._score_batch_with_existing_reward_pipeline(prefix_batch)
         prefix_rewards = extract_binary_accuracy(
@@ -257,7 +283,188 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 config=self.config.algorithm,
             )
             batch = self._compute_probe_credit_advantage(batch, metrics)
-        self._observe_capability(batch, metrics)
+        observation = self._observe_capability(batch, metrics)
+        if config.mode == "dual" and observation is not None:
+            selection, result = observation
+            batch.batch["terminal_advantages"] = batch.batch["advantages"].clone()
+            capability_advantages = batch.batch["advantages"].new_zeros(
+                batch.batch["advantages"].shape
+            )
+            capability_advantages[
+                selection.rollout_indices, : config.reference_budget
+            ] = result.token_advantage
+            batch.batch["capability_advantages"] = capability_advantages
+            batch.batch["advantages"] = (
+                batch.batch["terminal_advantages"]
+                + float(self._lambda) * batch.batch["capability_advantages"]
+            )
+            nonzero = capability_advantages != 0
+            metrics.update(
+                {
+                    "obcf/capability_advantage_mean": float(
+                        capability_advantages.mean().item()
+                    ),
+                    "obcf/capability_advantage_max_abs": float(
+                        capability_advantages.abs().max().item()
+                    ),
+                    "obcf/capability_advantage_nonzero_fraction": float(
+                        nonzero.float().mean().item()
+                    ),
+                }
+            )
         with marked_timer("update_actor", timing_raw, color="red"):
             actor_output = self._update_actor(batch)
+        if config.mode == "dual" and observation is not None:
+            self._update_obcf_dual(
+                observation[0],
+                observation[1],
+                metrics,
+                apply_lambda_update=self._should_update_dual(),
+            )
         return batch, actor_output
+
+    def _record_constraint_diagnostics(
+        self,
+        selection: ProtectedGroupSelection,
+        result: CapabilityAdvantageResult,
+        metrics: dict[str, float],
+        *,
+        update_applied: bool,
+    ) -> None:
+        config = self._obcf_config()
+        observed = float(result.observed_constraint.item())
+        active = result.active_group
+        all_zero_active = active & (result.q_current == 0)
+        per_rollout_nonzero = result.token_advantage.ne(0).any(dim=1).to(torch.long)
+        per_group_nonzero = torch.zeros(
+            len(selection.prompt_keys), dtype=torch.long, device=selection.group_ids.device
+        )
+        per_group_nonzero.scatter_add_(0, selection.group_ids, per_rollout_nonzero)
+        active_without_gradient = active & (per_group_nonzero == 0)
+        residual = observed - float(config.delta)
+        active_count = int(active.sum().item())
+        all_zero_active_fraction = (
+            float(all_zero_active.sum().item() / active_count) if active_count else 0.0
+        )
+        active_without_gradient_fraction = (
+            float(active_without_gradient.sum().item() / active_count) if active_count else 0.0
+        )
+        metrics.update(
+            {
+                "obcf/constraint_residual": residual,
+                "obcf/primal_feasible": float(observed <= config.delta),
+                "obcf/complementarity_proxy": float(self._lambda * max(residual, 0.0)),
+                "obcf/all_zero_active_fraction": all_zero_active_fraction,
+                "obcf/active_without_gradient_fraction": active_without_gradient_fraction,
+                "obcf/lambda": float(self._lambda),
+                "obcf/violation_ema": float(self._violation_ema),
+                "obcf/update_applied": float(update_applied),
+            }
+        )
+
+    def _update_obcf_dual(
+        self,
+        selection: ProtectedGroupSelection,
+        result: CapabilityAdvantageResult,
+        metrics: dict[str, float],
+        *,
+        apply_lambda_update: bool = True,
+    ) -> None:
+        config = self._obcf_config()
+        observed = float(result.observed_constraint.item())
+        next_state = update_projected_dual(
+            lambda_value=float(self._lambda),
+            violation_ema=float(self._violation_ema),
+            ema_initialized=bool(self._ema_initialized),
+            observed_constraint=observed,
+            delta=float(config.delta),
+            dual_lr=float(config.dual_lr) if apply_lambda_update else 0.0,
+            ema_beta=float(config.dual_ema_beta),
+            lambda_max=float(config.lambda_max),
+        )
+        self._lambda = next_state.lambda_value
+        self._violation_ema = next_state.violation_ema
+        self._ema_initialized = next_state.ema_initialized
+        self._constraint_observation_count += 1
+        self._last_constraint_step = int(self.global_steps)
+        self._record_constraint_diagnostics(
+            selection, result, metrics, update_applied=apply_lambda_update
+        )
+
+    def _state_path(self, global_step: int | None = None) -> str:
+        step = int(self.global_steps if global_step is None else global_step)
+        return os.path.join(
+            self.config.trainer.default_local_dir,
+            f"global_step_{step}",
+            "on_policy_budgeted_capability_floor",
+            "state.json",
+        )
+
+    def _resume_state_path(self) -> str:
+        if self.config.trainer.resume_mode != "resume_path":
+            return self._state_path()
+        return os.path.join(
+            os.path.abspath(self.config.trainer.resume_from_path),
+            "on_policy_budgeted_capability_floor",
+            "state.json",
+        )
+
+    def _save_checkpoint(self):
+        super()._save_checkpoint()
+        config = self._obcf_config()
+        if config.mode == "off":
+            return
+        if self._obcf_cache is None:
+            raise RuntimeError("cannot save OBCF state without a validated cache")
+        save_state(
+            self._state_path(),
+            OnPolicyBudgetedCapabilityFloorState(
+                global_step=int(self.global_steps),
+                lambda_value=float(self._lambda),
+                violation_ema=float(self._violation_ema),
+                ema_initialized=bool(self._ema_initialized),
+                constraint_observation_count=int(self._constraint_observation_count),
+                last_constraint_step=int(self._last_constraint_step),
+                cache_fingerprint=self._obcf_cache.fingerprint,
+                config_fingerprint=scientific_config_fingerprint(config),
+            ),
+        )
+
+    def _load_checkpoint(self):
+        result = super()._load_checkpoint()
+        config = self._obcf_config()
+        if config.mode != "off" and int(self.global_steps) == 0:
+            local_base_path = getattr(self, "_obcf_base_model_local_path", None)
+            if local_base_path is None:
+                raise ValueError("fresh OBCF runs require a local Base model path for hashing")
+            actual_hash = reference_model_fingerprint(local_base_path)
+            if actual_hash != self._obcf_cache.manifest["reference_model_hash"]:
+                raise ValueError("OBCF cache Base model weight hash mismatch")
+        if config.mode == "off" or self.config.trainer.resume_mode == "disable":
+            return result
+        should_resume = self.config.trainer.resume_mode == "resume_path" or int(self.global_steps) > 0
+        if not should_resume:
+            return result
+        if self._obcf_cache is None:
+            raise RuntimeError("cannot restore OBCF state without a validated cache")
+        state = load_state(
+            self._resume_state_path(),
+            expected_global_step=int(self.global_steps),
+            expected_cache_fingerprint=self._obcf_cache.fingerprint,
+            expected_config_fingerprint=scientific_config_fingerprint(config),
+            lambda_max=config.lambda_max,
+        )
+        if config.mode == "shadow" and (
+            state.lambda_value != 0.0
+            or state.violation_ema != 0.0
+            or state.ema_initialized
+            or state.constraint_observation_count != 0
+            or state.last_constraint_step != -1
+        ):
+            raise ValueError("shadow OBCF checkpoint must have unchanged dual state")
+        self._lambda = state.lambda_value
+        self._violation_ema = state.violation_ema
+        self._ema_initialized = state.ema_initialized
+        self._constraint_observation_count = state.constraint_observation_count
+        self._last_constraint_step = state.last_constraint_step
+        return result
