@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import torch
 
+from verl.experimental.capability_constraints.dual import update_projected_dual
+
 
 @dataclass(frozen=True)
 class SupportFloorResult:
@@ -76,13 +78,17 @@ def update_dual_state(
     lambda_max: float,
 ) -> DualState:
     """Apply one projected stochastic dual-ascent update."""
-    values = (lambda_value, violation_ema, observed_constraint, delta, dual_lr, lambda_max)
-    if not all(math.isfinite(value) for value in values):
-        raise ValueError("dual state and observations must be finite")
-    if lambda_value < 0.0 or delta < 0.0 or dual_lr < 0.0 or lambda_max < lambda_value:
-        raise ValueError("invalid nonnegative dual-update parameters")
-    if not 0.0 <= ema_beta < 1.0:
-        raise ValueError("ema_beta must be in [0, 1)")
-    next_ema = ema_beta * violation_ema + (1.0 - ema_beta) * observed_constraint
-    next_lambda = min(lambda_max, max(0.0, lambda_value + dual_lr * (next_ema - delta)))
-    return DualState(lambda_value=next_lambda, violation_ema=next_ema)
+    next_state = update_projected_dual(
+        lambda_value=lambda_value,
+        violation_ema=violation_ema,
+        ema_initialized=True,
+        observed_constraint=observed_constraint,
+        delta=delta,
+        dual_lr=dual_lr,
+        ema_beta=ema_beta,
+        lambda_max=lambda_max,
+    )
+    return DualState(
+        lambda_value=next_state.lambda_value,
+        violation_ema=next_state.violation_ema,
+    )
