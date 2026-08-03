@@ -68,6 +68,7 @@ class CacheExpectations:
     reference_tolerance_count: int
     tokenizer_fingerprint: str
     chat_template_fingerprint: str
+    verifier_fingerprint: str
 
 
 class _FloorRows(list[dict[str, Any]]):
@@ -139,6 +140,9 @@ def build_floor_rows(
     base_rollouts_per_prompt: int,
     support_threshold: int,
     reference_tolerance_count: int,
+    verifier_fingerprint: str | None = None,
+    source_git_commit: str | None = None,
+    require_prompt_provenance: bool = False,
 ) -> list[dict[str, Any]]:
     """Strictly join Base audit artifacts and retain only supported prompts."""
     if not model_id:
@@ -169,6 +173,11 @@ def build_floor_rows(
     histogram: Counter[int] = Counter()
     for prompt in prompt_rows:
         prompt_id = int(prompt["prompt_id"])
+        if require_prompt_provenance and (
+            prompt.get("tokenizer_fingerprint") != tokenizer_fingerprint
+            or prompt.get("chat_template_fingerprint") != chat_template_fingerprint
+        ):
+            raise ValueError("prompt tokenizer/chat-template provenance does not match")
         identities = sorted(
             (identity for identity in rollout_by_id if identity[:2] == (model_id, prompt_id)),
             key=lambda identity: identity[2],
@@ -197,8 +206,12 @@ def build_floor_rows(
                 raise ValueError(f"score is missing {prefix_field}")
             if not isinstance(score[prefix_field], bool):
                 raise ValueError(f"{prefix_field} must be boolean")
-            if score.get(error_field):
-                raise ValueError(f"nonempty {error_field} fails strict cache construction")
+            if error_field not in score or score[error_field] is not None:
+                raise ValueError(f"{error_field} must be present and explicitly empty")
+            if verifier_fingerprint is not None and score.get("verifier_fingerprint") != verifier_fingerprint:
+                raise ValueError("score verifier_fingerprint does not match the audited pipeline")
+            if source_git_commit is not None and score.get("source_git_commit") != source_git_commit:
+                raise ValueError("score source_git_commit does not match the audit provenance")
             successes += int(bool(score[prefix_field]))
         histogram[successes] += 1
         if successes < support_threshold:
@@ -237,8 +250,12 @@ def _validate_manifest(manifest: Mapping[str, Any]) -> None:
         raise ValueError(f"cache manifest is missing required fields {missing}")
     if manifest["schema_version"] != SCHEMA_VERSION or manifest["algorithm"] != ALGORITHM:
         raise ValueError("unsupported OBCF cache schema or algorithm")
-    model_hash = str(manifest["reference_model_hash"])
-    if len(model_hash) != 64 or any(char not in "0123456789abcdef" for char in model_hash):
+    model_hash = manifest["reference_model_hash"]
+    if (
+        not isinstance(model_hash, str)
+        or len(model_hash) != 64
+        or any(char not in "0123456789abcdef" for char in model_hash)
+    ):
         raise ValueError("reference_model_hash must be a lowercase SHA-256 digest")
     for name in (
         "reference_model_id",
@@ -251,8 +268,20 @@ def _validate_manifest(manifest: Mapping[str, Any]) -> None:
         "created_at",
         "source_git_commit",
     ):
-        if not str(manifest[name]):
+        if not isinstance(manifest[name], str) or not manifest[name]:
             raise ValueError(f"{name} must be nonempty")
+    source_commit = manifest["source_git_commit"]
+    if len(source_commit) != 40 or any(character not in "0123456789abcdef" for character in source_commit):
+        raise ValueError("source_git_commit must be a full lowercase Git commit digest")
+    for name in (
+        "prompt_manifest_fingerprint",
+        "rollout_fingerprint",
+        "score_fingerprint",
+        "verifier_fingerprint",
+    ):
+        digest = manifest[name]
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError(f"{name} must be a lowercase SHA-256 digest")
     for name in ("reference_budget", "base_rollouts_per_prompt", "support_threshold", "prompt_count"):
         value = manifest[name]
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -376,7 +405,14 @@ def write_cache(
 
 
 class CapabilityFloorCache:
-    def __init__(self, *, manifest: dict[str, Any], prompts: list[dict[str, Any]], audit_report: dict[str, Any], fingerprint: str) -> None:
+    def __init__(
+        self,
+        *,
+        manifest: dict[str, Any],
+        prompts: list[dict[str, Any]],
+        audit_report: dict[str, Any],
+        fingerprint: str,
+    ) -> None:
         self.manifest = manifest
         self.prompts = prompts
         self.audit_report = audit_report
@@ -417,6 +453,7 @@ class CapabilityFloorCache:
             "reference_tolerance_count",
             "tokenizer_fingerprint",
             "chat_template_fingerprint",
+            "verifier_fingerprint",
         ):
             expected = getattr(expectations, field)
             if manifest.get(field) != expected:
@@ -450,4 +487,21 @@ class CapabilityFloorCache:
             != len(prompts)
         ):
             raise ValueError("audit_report success-count histogram is inconsistent")
+        expected_protected_histogram = Counter(
+            int(row["base_prefix_success_count"]) for row in prompts
+        )
+        observed_protected_histogram = Counter(
+            {
+                key: value
+                for key, value in count_histogram.items()
+                if key >= int(manifest["support_threshold"]) and value
+            }
+        )
+        if observed_protected_histogram != expected_protected_histogram:
+            raise ValueError("audit_report success-count histogram does not match prompt rows")
+        expected_floor_histogram = Counter(int(row["floor_count"]) for row in prompts)
+        if audit.get("protected_floor_count_histogram") != {
+            str(key): int(value) for key, value in sorted(expected_floor_histogram.items())
+        }:
+            raise ValueError("audit_report floor-count histogram is inconsistent")
         return cls(manifest=manifest, prompts=prompts, audit_report=audit, fingerprint=fingerprint)

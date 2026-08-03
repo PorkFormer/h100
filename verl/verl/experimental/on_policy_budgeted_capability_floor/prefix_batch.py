@@ -141,7 +141,11 @@ def build_exact_prefix_batch(
         raise ValueError(f"batch is missing exact-token fields {missing}")
     prompt_width = batch.batch["prompts"].shape[1]
     response_width = batch.batch["responses"].shape[1]
-    if not isinstance(reference_budget, int) or isinstance(reference_budget, bool) or not 0 < reference_budget <= response_width:
+    if (
+        not isinstance(reference_budget, int)
+        or isinstance(reference_budget, bool)
+        or not 0 < reference_budget <= response_width
+    ):
         raise ValueError("reference_budget exceeds the response horizon or is invalid")
     expected_input = torch.cat((batch.batch["prompts"], batch.batch["responses"]), dim=-1)
     if not torch.equal(batch.batch["input_ids"], expected_input):

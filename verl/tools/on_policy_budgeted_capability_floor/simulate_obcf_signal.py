@@ -252,6 +252,7 @@ def main() -> None:
             reference_tolerance_count=manifest["reference_tolerance_count"],
             tokenizer_fingerprint=manifest["tokenizer_fingerprint"],
             chat_template_fingerprint=manifest["chat_template_fingerprint"],
+            verifier_fingerprint=manifest["verifier_fingerprint"],
         ),
     )
     report = simulate_obcf_signal(

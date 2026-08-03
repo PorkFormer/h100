@@ -29,6 +29,7 @@ from verl.experimental.on_policy_budgeted_capability_floor.prefix_batch import (
 )
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     extract_binary_accuracy,
+    verifier_pipeline_fingerprint,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.state import (
     OnPolicyBudgetedCapabilityFloorState,
@@ -75,6 +76,26 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
         if not config.cache_path:
             raise ValueError("OBCF cache_path is required outside off mode")
         tokenizer_fp, template_fp = tokenizer_fingerprints(self.tokenizer)
+        reward = _config_get(self.config, "reward")
+        reward_manager = _config_get(reward, "reward_manager")
+        reward_manager_module = _config_get(reward_manager, "module")
+        custom_reward = _config_get(reward, "custom_reward_function")
+        sandbox = _config_get(reward, "sandbox_fusion")
+        verifier_fp = verifier_pipeline_fingerprint(
+            reward_manager_name=str(_config_get(reward_manager, "name", "naive")),
+            reward_manager_source=str(_config_get(reward_manager, "source", "register")),
+            reward_manager_module_path=_config_get(reward_manager_module, "path"),
+            reward_manager_module_name=_config_get(reward_manager_module, "name"),
+            custom_reward_function_path=_config_get(custom_reward, "path"),
+            custom_reward_function_name=str(_config_get(custom_reward, "name", "compute_score")),
+            custom_reward_kwargs=_config_get(custom_reward, "reward_kwargs", {}),
+            reward_kwargs=_config_get(reward, "reward_kwargs", {}),
+            sandbox_fusion={
+                "url": _config_get(sandbox, "url"),
+                "max_concurrent": _config_get(sandbox, "max_concurrent", 64),
+                "memory_limit_mb": _config_get(sandbox, "memory_limit_mb", 1024),
+            },
+        )
         self._obcf_cache = CapabilityFloorCache.load(
             config.cache_path,
             CacheExpectations(
@@ -84,6 +105,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 reference_tolerance_count=config.reference_tolerance_count,
                 tokenizer_fingerprint=tokenizer_fp,
                 chat_template_fingerprint=template_fp,
+                verifier_fingerprint=verifier_fp,
             ),
         )
 
@@ -126,6 +148,12 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
             raise ValueError("OBCF reference_budget exceeds the response horizon")
         if getattr(self, "processor", None) is not None:
             raise ValueError("OBCF supports text-only batches")
+        reward_model = _config_get(_config_get(self.config, "reward"), "reward_model")
+        if bool(_config_get(reward_model, "enable", False)):
+            raise ValueError("OBCF does not support a learned reward model verifier")
+        model = _config_get(self.config.actor_rollout_ref, "model")
+        if _config_get(model, "tokenizer_path") is not None:
+            raise ValueError("OBCF does not support a separate verifier tokenizer override")
         if getattr(self, "use_reference_policy", False) or bool(
             _config_get(self.config.algorithm, "use_kl_in_reward", False)
         ) or bool(_config_get(actor, "use_kl_loss", False)):

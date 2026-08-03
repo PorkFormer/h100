@@ -57,7 +57,9 @@ def _trainer(mode="shadow", *, update_interval=1):
         actor_rollout_ref=SimpleNamespace(
             rollout=rollout,
             actor=SimpleNamespace(use_kl_loss=False),
+            model=SimpleNamespace(path="model", tokenizer_path=None),
         ),
+        reward=SimpleNamespace(reward_model=SimpleNamespace(enable=False)),
         distillation=SimpleNamespace(enabled=False),
         trainer=SimpleNamespace(resume_mode="disable"),
     )
@@ -85,6 +87,11 @@ def _trainer(mode="shadow", *, update_interval=1):
         (lambda t: setattr(t, "use_critic", True), "critic"),
         (lambda t: setattr(t, "use_teacher_policy", True), "teacher"),
         (lambda t: setattr(t.config.algorithm.filter_groups, "metric", "score"), "metric acc"),
+        (lambda t: setattr(t.config.reward.reward_model, "enable", True), "reward model"),
+        (
+            lambda t: setattr(t.config.actor_rollout_ref.model, "tokenizer_path", "other"),
+            "tokenizer override",
+        ),
     ],
 )
 def test_active_mode_rejects_unsupported_combinations(mutation, message):
@@ -93,6 +100,25 @@ def test_active_mode_rejects_unsupported_combinations(mutation, message):
     mutation(trainer)
     with pytest.raises(ValueError, match=message):
         trainer._validate_probe_credit_mode()
+
+
+def test_off_mode_delegates_before_obcf_incompatibility_checks(monkeypatch):
+    from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
+
+    trainer = _trainer("off")
+    trainer.config.algorithm.readiness_dominance.mode = "shadow"
+    trainer.config.algorithm.success_support_floor.mode = "dual"
+    calls = []
+    monkeypatch.setattr(
+        RayDAPOProbeCreditTrainer,
+        "_validate_probe_credit_mode",
+        lambda self: calls.append("inherited"),
+    )
+    trainer._load_obcf_cache = MethodType(lambda self: calls.append("off_state"), trainer)
+
+    trainer._validate_probe_credit_mode()
+
+    assert calls == ["inherited", "off_state"]
 
 
 def _retained_batch():

@@ -3,11 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from verl import DataProto
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     NormalizedRewardOutput,
     extract_binary_accuracy,
+    verifier_pipeline_fingerprint,
 )
 from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
 
@@ -80,3 +82,39 @@ def test_binary_accuracy_fails_closed_and_never_uses_shaped_reward(extra, count,
     output = NormalizedRewardOutput(torch.ones((2, 3)), extra)
     with pytest.raises(ValueError, match=message):
         extract_binary_accuracy(output, expected_count=count)
+
+
+def test_verifier_pipeline_fingerprint_is_deterministic_and_config_sensitive():
+    first = verifier_pipeline_fingerprint(reward_manager_name="naive")
+    assert len(first) == 64
+    assert first == verifier_pipeline_fingerprint(reward_manager_name="naive")
+    assert first != verifier_pipeline_fingerprint(reward_manager_name="dapo")
+    assert first != verifier_pipeline_fingerprint(
+        reward_manager_name="naive", reward_manager_source="importlib",
+        reward_manager_module_path=__file__, reward_manager_module_name="Manager",
+    )
+    importlib_first = verifier_pipeline_fingerprint(
+        reward_manager_name="naive", reward_manager_source="importlib",
+        reward_manager_module_path=__file__, reward_manager_module_name="Manager",
+    )
+    assert importlib_first != verifier_pipeline_fingerprint(
+        reward_manager_name="naive", reward_manager_source="importlib",
+        reward_manager_module_path=__file__, reward_manager_module_name="DifferentManager",
+    )
+    assert first != verifier_pipeline_fingerprint(
+        reward_manager_name="naive", custom_reward_kwargs={"pass_rate": 0.5}
+    )
+    assert first != verifier_pipeline_fingerprint(
+        reward_manager_name="naive", reward_kwargs={"num_examine": 1}
+    )
+    assert first != verifier_pipeline_fingerprint(
+        reward_manager_name="naive",
+        sandbox_fusion={"url": "https://verifier.invalid", "memory_limit_mb": 512},
+    )
+
+
+def test_verifier_pipeline_fingerprint_normalizes_hydra_list_config():
+    hydra = OmegaConf.create({"stops": ["a", "b"]})
+    assert verifier_pipeline_fingerprint(custom_reward_kwargs=hydra) == (
+        verifier_pipeline_fingerprint(custom_reward_kwargs={"stops": ["a", "b"]})
+    )
