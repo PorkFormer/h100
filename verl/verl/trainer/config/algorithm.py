@@ -132,7 +132,7 @@ class OnPolicyBudgetedCapabilityFloorConfig(BaseConfig):
     reference_budget: int = 2048
     base_rollouts_per_prompt: int = 8
     support_threshold: int = 2
-    reference_tolerance_count: int = 1
+    reference_tolerance_count: int = 0
     delta: float = 0.05
     update_interval: int = 1
     lambda_init: float = 0.0
@@ -171,6 +171,10 @@ class OnPolicyBudgetedCapabilityFloorConfig(BaseConfig):
         ):
             raise ValueError(
                 f"{prefix}.reference_tolerance_count must be in [0, base_rollouts_per_prompt]"
+            )
+        if self.reference_tolerance_count >= self.support_threshold:
+            raise ValueError(
+                "reference_tolerance_count must be smaller than support_threshold"
             )
         delta = finite_real("delta")
         if not 0.0 <= delta <= 1.0:

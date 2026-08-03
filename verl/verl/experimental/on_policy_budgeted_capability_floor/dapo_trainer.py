@@ -20,7 +20,9 @@ from verl.experimental.on_policy_budgeted_capability_floor.cache import (
 )
 from verl.experimental.on_policy_budgeted_capability_floor.math import (
     CapabilityAdvantageResult,
+    FloorActionabilityReport,
     compute_capability_advantage,
+    summarize_floor_actionability,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.prefix_batch import (
     ProtectedGroupSelection,
@@ -66,6 +68,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
     def _load_obcf_cache(self) -> None:
         config = self._obcf_config()
         self._obcf_cache = None
+        self._obcf_actionability_report = None
         self._lambda = float(config.lambda_init) if config.mode == "dual" else 0.0
         self._violation_ema = 0.0
         self._ema_initialized = False
@@ -108,6 +111,44 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
                 verifier_fingerprint=verifier_fp,
             ),
         )
+        self._validate_cache_actionability()
+
+    def _validate_cache_actionability(self) -> None:
+        """Fail closed for dual caches whose protected floors cannot act on mixed groups."""
+        config = self._obcf_config()
+        self._obcf_actionability_report: FloorActionabilityReport | None = None
+        if config.mode == "off":
+            return
+        if self._obcf_cache is None:
+            raise ValueError("OBCF cache must be loaded before actionability validation")
+        report = summarize_floor_actionability(
+            cache_rows=self._obcf_cache.prompts,
+            current_rollouts_per_prompt=int(self.config.actor_rollout_ref.rollout.n),
+        )
+        self._obcf_actionability_report = report
+        if config.mode == "dual" and report.inert_prompt_count > 0:
+            raise ValueError(
+                "dual OBCF cache contains structurally inert protected floors: "
+                f"{report.inert_prompt_count}/{report.protected_prompt_count}"
+            )
+
+    def _cache_actionability_metrics(self) -> dict[str, float]:
+        report = getattr(self, "_obcf_actionability_report", None)
+        if report is None:
+            return {
+                "obcf/cache_actionable_prompt_count": 0.0,
+                "obcf/cache_inert_prompt_count": 0.0,
+                "obcf/cache_inert_prompt_fraction": 0.0,
+                "obcf/minimum_positive_empirical_rate": 0.0,
+            }
+        return {
+            "obcf/cache_actionable_prompt_count": float(report.actionable_prompt_count),
+            "obcf/cache_inert_prompt_count": float(report.inert_prompt_count),
+            "obcf/cache_inert_prompt_fraction": float(report.inert_prompt_fraction),
+            "obcf/minimum_positive_empirical_rate": float(
+                report.minimum_positive_empirical_rate
+            ),
+        }
 
     def _validate_probe_credit_mode(self) -> None:
         config = self._obcf_config()
@@ -191,7 +232,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
         return config.mode == "dual" and int(self.global_steps) % config.update_interval == 0
 
     def _empty_observation_metrics(self) -> dict[str, float]:
-        return {
+        return self._cache_actionability_metrics() | {
             "obcf/protected_prompt_occurrences": 0.0,
             "obcf/protected_rollout_count": 0.0,
             "obcf/prefix_verifier_calls": 0.0,
@@ -225,6 +266,7 @@ class RayDAPOOnPolicyBudgetedCapabilityFloorTrainer(RayDAPOProbeCreditTrainer):
         metrics: dict[str, float],
     ) -> tuple[ProtectedGroupSelection, CapabilityAdvantageResult] | None:
         config = self._obcf_config()
+        metrics.update(self._cache_actionability_metrics())
         if not self._should_observe_constraint():
             metrics.update(self._empty_observation_metrics())
             return None

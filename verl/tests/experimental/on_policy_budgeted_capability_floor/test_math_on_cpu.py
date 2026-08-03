@@ -6,11 +6,13 @@ import torch
 from verl.experimental.on_policy_budgeted_capability_floor.math import (
     compute_capability_advantage,
     compute_capability_floor,
+    floor_is_actionable,
+    summarize_floor_actionability,
 )
 from verl.trainer.config import OnPolicyBudgetedCapabilityFloorConfig
 
 
-def test_config_scientific_defaults_are_exact_and_inert():
+def test_config_scientific_defaults_are_exact_and_actionable():
     config = OnPolicyBudgetedCapabilityFloorConfig()
     config.validate()
 
@@ -21,7 +23,7 @@ def test_config_scientific_defaults_are_exact_and_inert():
         "reference_budget": 2048,
         "base_rollouts_per_prompt": 8,
         "support_threshold": 2,
-        "reference_tolerance_count": 1,
+        "reference_tolerance_count": 0,
         "delta": 0.05,
         "update_interval": 1,
         "lambda_init": 0.0,
@@ -77,12 +79,55 @@ def test_config_lambda_max_covers_initial_value():
         OnPolicyBudgetedCapabilityFloorConfig(lambda_init=2.0, lambda_max=1.0).validate()
 
 
+def test_config_rejects_tolerance_at_or_above_support_threshold():
+    with pytest.raises(ValueError, match="smaller than support_threshold"):
+        OnPolicyBudgetedCapabilityFloorConfig(
+            support_threshold=2,
+            reference_tolerance_count=2,
+        ).validate()
+
+
 def test_capability_floor_uses_count_tolerance():
     assert compute_capability_floor(
         base_success_count=2,
         base_rollout_count=8,
         tolerance_count=1,
     ) == pytest.approx(1 / 8)
+
+
+def test_floor_actionability_uses_strict_smallest_positive_rate():
+    assert floor_is_actionable(capability_floor=1 / 8, current_rollouts_per_prompt=8) is False
+    assert floor_is_actionable(capability_floor=2 / 8, current_rollouts_per_prompt=8) is True
+
+
+def test_floor_actionability_count_space_agrees_with_float_space():
+    rows = [
+        {
+            "base_prefix_success_count": 2,
+            "base_rollout_count": 8,
+            "floor_count": 1,
+            "capability_floor": 1 / 8,
+        },
+        {
+            "base_prefix_success_count": 3,
+            "base_rollout_count": 8,
+            "floor_count": 2,
+            "capability_floor": 2 / 8,
+        },
+    ]
+
+    report = summarize_floor_actionability(
+        cache_rows=rows,
+        current_rollouts_per_prompt=8,
+    )
+
+    assert report.protected_prompt_count == 2
+    assert report.actionable_prompt_count == 1
+    assert report.inert_prompt_count == 1
+    assert report.inert_prompt_fraction == pytest.approx(0.5)
+    assert report.minimum_positive_empirical_rate == pytest.approx(1 / 8)
+    assert report.by_base_success_count[2]["inert_prompt_count"] == 1
+    assert report.by_base_success_count[3]["actionable_prompt_count"] == 1
 
 
 @pytest.mark.parametrize(

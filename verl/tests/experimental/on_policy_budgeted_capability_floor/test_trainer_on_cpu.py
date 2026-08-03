@@ -73,6 +73,70 @@ def _trainer(mode="shadow", *, update_interval=1):
     return trainer
 
 
+def test_shadow_accepts_inert_cache_and_exposes_cache_metrics():
+    trainer = _trainer("shadow")
+    trainer._obcf_cache = SimpleNamespace(
+        prompts=[
+            {
+                "base_prefix_success_count": 2,
+                "base_rollout_count": 8,
+                "floor_count": 1,
+                "capability_floor": 1 / 8,
+            }
+        ]
+    )
+
+    trainer._validate_cache_actionability()
+    metrics = trainer._cache_actionability_metrics()
+
+    assert metrics["obcf/cache_actionable_prompt_count"] == 0.0
+    assert metrics["obcf/cache_inert_prompt_count"] == 1.0
+    assert metrics["obcf/cache_inert_prompt_fraction"] == 1.0
+    assert metrics["obcf/minimum_positive_empirical_rate"] == pytest.approx(1 / 2)
+
+
+def test_dual_rejects_inert_cache_and_accepts_all_actionable_cache():
+    trainer = _trainer("dual")
+    trainer.config.actor_rollout_ref.rollout.n = 8
+    trainer._obcf_cache = SimpleNamespace(
+        prompts=[
+            {
+                "base_prefix_success_count": 2,
+                "base_rollout_count": 8,
+                "floor_count": 1,
+                "capability_floor": 1 / 8,
+            }
+        ]
+    )
+    with pytest.raises(ValueError, match="structurally inert"):
+        trainer._validate_cache_actionability()
+
+    trainer._obcf_cache = SimpleNamespace(
+        prompts=[
+            {
+                "base_prefix_success_count": 2,
+                "base_rollout_count": 8,
+                "floor_count": 2,
+                "capability_floor": 2 / 8,
+            }
+        ]
+    )
+    trainer._validate_cache_actionability()
+    assert trainer._obcf_actionability_report.inert_prompt_count == 0
+
+
+def test_off_mode_actionability_is_unaffected():
+    trainer = _trainer("off")
+    trainer._obcf_cache = None
+    trainer._validate_cache_actionability()
+    assert trainer._cache_actionability_metrics() == {
+        "obcf/cache_actionable_prompt_count": 0.0,
+        "obcf/cache_inert_prompt_count": 0.0,
+        "obcf/cache_inert_prompt_fraction": 0.0,
+        "obcf/minimum_positive_empirical_rate": 0.0,
+    }
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import math
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -19,6 +23,17 @@ class CapabilityAdvantageResult:
     all_zero_group_fraction: torch.Tensor
     all_one_group_fraction: torch.Tensor
     nonzero_gradient_group_fraction: torch.Tensor
+
+
+@dataclass(frozen=True)
+class FloorActionabilityReport:
+    current_rollouts_per_prompt: int
+    protected_prompt_count: int
+    actionable_prompt_count: int
+    inert_prompt_count: int
+    inert_prompt_fraction: float
+    minimum_positive_empirical_rate: float
+    by_base_success_count: dict[int, dict[str, float | int]]
 
 
 def _is_int(value: object) -> bool:
@@ -47,6 +62,115 @@ def compute_capability_floor(
     ):
         raise ValueError("tolerance_count must be in [0, base_rollout_count]")
     return max(base_success_count - tolerance_count, 0) / base_rollout_count
+
+
+def _validate_current_rollout_count(current_rollouts_per_prompt: int) -> None:
+    if (
+        not _is_int(current_rollouts_per_prompt)
+        or current_rollouts_per_prompt <= 0
+    ):
+        raise ValueError("current_rollouts_per_prompt must be a positive integer")
+
+
+def floor_is_actionable(
+    *,
+    capability_floor: float,
+    current_rollouts_per_prompt: int,
+) -> bool:
+    """Return whether a mixed empirical group can strictly violate the floor."""
+    _validate_current_rollout_count(current_rollouts_per_prompt)
+    if (
+        isinstance(capability_floor, bool)
+        or not isinstance(capability_floor, (int, float))
+        or not math.isfinite(float(capability_floor))
+        or not 0.0 <= float(capability_floor) <= 1.0
+    ):
+        raise ValueError("capability_floor must be finite and within [0, 1]")
+    return float(capability_floor) > (1.0 / current_rollouts_per_prompt)
+
+
+def summarize_floor_actionability(
+    *,
+    cache_rows: Iterable[Mapping[str, Any]],
+    current_rollouts_per_prompt: int,
+) -> FloorActionabilityReport:
+    """Summarize protected floors that can produce a nonzero mixed-group gradient."""
+    _validate_current_rollout_count(current_rollouts_per_prompt)
+    rows = list(cache_rows)
+    strata: dict[int, dict[str, int | float]] = defaultdict(
+        lambda: {
+            "protected_prompt_count": 0,
+            "actionable_prompt_count": 0,
+            "inert_prompt_count": 0,
+        }
+    )
+    actionable_count = 0
+    for row in rows:
+        try:
+            success_count = int(row["base_prefix_success_count"])
+            capability_floor = float(row["capability_floor"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("cache row is missing valid floor actionability fields") from error
+        if isinstance(row.get("base_prefix_success_count"), bool) or success_count < 0:
+            raise ValueError("base_prefix_success_count must be a nonnegative integer")
+        float_actionable = floor_is_actionable(
+            capability_floor=capability_floor,
+            current_rollouts_per_prompt=current_rollouts_per_prompt,
+        )
+        if "floor_count" in row or "base_rollout_count" in row:
+            try:
+                floor_count = int(row["floor_count"])
+                base_rollout_count = int(row["base_rollout_count"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("cache row count-space floor fields must be valid integers") from error
+            if (
+                isinstance(row["floor_count"], bool)
+                or isinstance(row["base_rollout_count"], bool)
+                or floor_count < 0
+                or base_rollout_count <= 0
+                or floor_count > base_rollout_count
+            ):
+                raise ValueError("cache row count-space floor fields are invalid")
+            count_actionable = (
+                floor_count * current_rollouts_per_prompt > base_rollout_count
+            )
+            if count_actionable != float_actionable or not math.isclose(
+                capability_floor,
+                floor_count / base_rollout_count,
+                rel_tol=0.0,
+                abs_tol=1e-6,
+            ):
+                raise ValueError("count-space and float-space capability floors disagree")
+            actionable = count_actionable
+        else:
+            actionable = float_actionable
+        stratum = strata[success_count]
+        stratum["protected_prompt_count"] = int(stratum["protected_prompt_count"]) + 1
+        bucket = "actionable_prompt_count" if actionable else "inert_prompt_count"
+        stratum[bucket] = int(stratum[bucket]) + 1
+        actionable_count += int(actionable)
+
+    by_success: dict[int, dict[str, float | int]] = {}
+    for success_count, values in sorted(strata.items()):
+        protected = int(values["protected_prompt_count"])
+        inert = int(values["inert_prompt_count"])
+        by_success[success_count] = {
+            "protected_prompt_count": protected,
+            "actionable_prompt_count": int(values["actionable_prompt_count"]),
+            "inert_prompt_count": inert,
+            "inert_prompt_fraction": inert / protected,
+        }
+    protected_count = len(rows)
+    inert_count = protected_count - actionable_count
+    return FloorActionabilityReport(
+        current_rollouts_per_prompt=current_rollouts_per_prompt,
+        protected_prompt_count=protected_count,
+        actionable_prompt_count=actionable_count,
+        inert_prompt_count=inert_count,
+        inert_prompt_fraction=(inert_count / protected_count if protected_count else 0.0),
+        minimum_positive_empirical_rate=1.0 / current_rollouts_per_prompt,
+        by_base_success_count=by_success,
+    )
 
 
 def _zero_scalar(device: torch.device) -> torch.Tensor:
