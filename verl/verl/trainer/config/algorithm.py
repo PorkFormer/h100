@@ -14,6 +14,7 @@
 
 import math
 from dataclasses import dataclass, field
+from numbers import Real
 from typing import Any, Optional
 
 from verl.base_config import BaseConfig
@@ -22,6 +23,7 @@ __all__ = [
     "AlgoConfig",
     "FilterGroupsConfig",
     "KLControlConfig",
+    "OnPolicyBudgetedCapabilityFloorConfig",
     "ProbeCreditConfig",
     "ReadinessDominanceConfig",
     "RolloutCorrectionConfig",
@@ -119,6 +121,77 @@ class SuccessSupportFloorConfig(BaseConfig):
             raise ValueError(f"success_support_floor.seed must be an integer, got {self.seed!r}")
         if not self.strict:
             raise ValueError("The first BSSF implementation requires strict=true")
+
+
+@dataclass
+class OnPolicyBudgetedCapabilityFloorConfig(BaseConfig):
+    """Configuration for the On-Policy Budgeted Capability Floor (OBCF)."""
+
+    mode: str = "off"
+    cache_path: Optional[str] = None
+    reference_budget: int = 2048
+    base_rollouts_per_prompt: int = 8
+    support_threshold: int = 2
+    reference_tolerance_count: int = 1
+    delta: float = 0.05
+    update_interval: int = 1
+    lambda_init: float = 0.0
+    lambda_max: float = 10.0
+    dual_lr: float = 0.01
+    dual_ema_beta: float = 0.9
+    seed: int = 20260803
+    strict: bool = True
+
+    def validate(self) -> None:
+        prefix = "on_policy_budgeted_capability_floor"
+
+        def finite_real(name: str) -> float:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                raise ValueError(f"{prefix}.{name} must be a finite real number, got {value!r}")
+            return float(value)
+
+        if self.mode not in {"off", "shadow", "dual"}:
+            raise ValueError(f"{prefix}.mode must be off, shadow, or dual, got {self.mode!r}")
+        for name in (
+            "reference_budget",
+            "base_rollouts_per_prompt",
+            "support_threshold",
+            "update_interval",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{prefix}.{name} must be a positive integer, got {value!r}")
+        if self.support_threshold > self.base_rollouts_per_prompt:
+            raise ValueError(f"{prefix}.support_threshold cannot exceed base_rollouts_per_prompt")
+        if (
+            not isinstance(self.reference_tolerance_count, int)
+            or isinstance(self.reference_tolerance_count, bool)
+            or not 0 <= self.reference_tolerance_count <= self.base_rollouts_per_prompt
+        ):
+            raise ValueError(
+                f"{prefix}.reference_tolerance_count must be in [0, base_rollouts_per_prompt]"
+            )
+        delta = finite_real("delta")
+        if not 0.0 <= delta <= 1.0:
+            raise ValueError(f"{prefix}.delta must be finite and in [0, 1]")
+        for name in ("lambda_init", "lambda_max", "dual_lr"):
+            value = finite_real(name)
+            if value < 0.0:
+                raise ValueError(f"{prefix}.{name} must be finite and nonnegative, got {value}")
+        if self.lambda_max < self.lambda_init:
+            raise ValueError(f"{prefix}.lambda_max must be >= lambda_init")
+        dual_ema_beta = finite_real("dual_ema_beta")
+        if not 0.0 <= dual_ema_beta < 1.0:
+            raise ValueError(f"{prefix}.dual_ema_beta must be finite and in [0, 1)")
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError(f"{prefix}.seed must be an integer, got {self.seed!r}")
+        if self.cache_path is not None and (
+            not isinstance(self.cache_path, str) or not self.cache_path
+        ):
+            raise ValueError(f"{prefix}.cache_path must be null or a nonempty string")
+        if self.strict is not True:
+            raise ValueError(f"{prefix}.strict must be true in the first implementation")
 
 
 @dataclass
@@ -922,6 +995,9 @@ class AlgoConfig(BaseConfig):
     )
     success_support_floor: SuccessSupportFloorConfig = field(
         default_factory=SuccessSupportFloorConfig
+    )
+    on_policy_budgeted_capability_floor: OnPolicyBudgetedCapabilityFloorConfig = field(
+        default_factory=OnPolicyBudgetedCapabilityFloorConfig
     )
     # Rollout Correction: corrects off-policy issues (policy mismatch, model staleness, distribution shifts)
     # Set to None to disable, use RolloutCorrectionConfig presets (e.g., .tis(), .mis()), or pass dict
