@@ -17,9 +17,10 @@ from verl.experimental.success_support_floor.cache import (
 )
 from verl.experimental.success_support_floor.math import compute_support_floor
 from verl.trainer.config import SuccessSupportFloorConfig
-from verl.trainer.ppo.core_algos import AdvantageEstimator
+from verl.trainer.ppo.core_algos import AdvantageEstimator, get_current_clip_ratios
 from verl.utils import tensordict_utils as tu
 from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.py_functional import rename_dict
 from verl.workers.utils.padding import left_right_2_no_padding, no_padding_2_padding
 
 
@@ -240,6 +241,47 @@ class RayDAPOSuccessSupportFloorTrainer(RayDAPOProbeCreditTrainer):
             }
         )
         return metrics
+
+    def _update_actor_augmented(self, batch: DataProto, *, rl_batch_size: int) -> DataProto:
+        """Update on an augmented batch without changing optimizer mini-batch step count."""
+        rollout = self.config.actor_rollout_ref.rollout
+        actor = self.config.actor_rollout_ref.actor
+        ppo_global_mini_batch = int(actor.ppo_mini_batch_size) * int(rollout.n)
+        if rl_batch_size <= 0 or rl_batch_size % ppo_global_mini_batch != 0:
+            raise ValueError(
+                f"RL batch size {rl_batch_size} must be divisible by PPO mini-batch {ppo_global_mini_batch}"
+            )
+        num_mini_batch = rl_batch_size // ppo_global_mini_batch
+        if len(batch) % num_mini_batch != 0:
+            raise ValueError(
+                f"augmented batch size {len(batch)} must be divisible by num_mini_batch {num_mini_batch}"
+            )
+        batch.meta_info["multi_turn"] = False
+        batch.meta_info["temperature"] = float(rollout.temperature)
+        batch_td = left_right_2_no_padding(batch.to_tensordict())
+        # Preserve full response_mask for sequence slicing, but exclude witnesses from
+        # the PPO token denominator computed by every training engine.
+        batch_td["loss_mask"] = batch_td["ppo_response_mask"]
+        calculate_entropy = bool(actor.calculate_entropy or actor.entropy_coeff != 0.0)
+        clip_ratio_low, clip_ratio_high = get_current_clip_ratios(actor, self.global_steps)
+        tu.assign_non_tensor(
+            batch_td,
+            calculate_entropy=calculate_entropy,
+            distillation_use_topk=False,
+            global_batch_size=ppo_global_mini_batch,
+            mini_batch_size=None,
+            num_mini_batch=num_mini_batch,
+            epochs=int(actor.ppo_epochs),
+            seed=int(actor.data_loader_seed),
+            dataloader_kwargs={"shuffle": bool(actor.shuffle)},
+            compute_loss=True,
+            clip_ratio_low=clip_ratio_low,
+            clip_ratio_high=clip_ratio_high,
+        )
+        output = self.actor_rollout_wg.update_actor(batch_td)
+        actor_metrics = rename_dict(tu.get(output, "metrics"), "actor/")
+        actor_metrics["perf/mfu/actor"] = actor_metrics.pop("actor/mfu")
+        return DataProto.from_single_dict(data={}, meta_info={"metrics": actor_metrics})
 
     def _compute_advantage_and_actor_update(
         self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
