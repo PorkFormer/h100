@@ -1,0 +1,59 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  max_response_length: 4096
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: true
+    metric: acc
+    max_num_gen_batches: 0
+
+  probe_credit:
+    enable: false
+    coef: 0.0
+
+  readiness_dominance:
+    _target_: verl.trainer.config.ReadinessDominanceConfig
+    mode: "off"
+
+  success_support_floor:
+    _target_: verl.trainer.config.SuccessSupportFloorConfig
+    mode: "off"
+
+  on_policy_budgeted_capability_floor:
+    _target_: verl.trainer.config.OnPolicyBudgetedCapabilityFloorConfig
+    mode: "off"
+    cache_path: null
+    reference_budget: 2048
+    base_rollouts_per_prompt: 8
+    support_threshold: 2
+    reference_tolerance_count: 1
+    delta: 0.05
+    update_interval: 1
+    lambda_init: 0.0
+    lambda_max: 10.0
+    dual_lr: 0.01
+    dual_ema_beta: 0.9
+    seed: 20260803
+    strict: true
+
+actor_rollout_ref:
+  actor:
+    loss_agg_mode: token-mean
+    use_kl_loss: false
+
+  rollout:
+    name: vllm
+
+critic:
+  enable: false
+
+distillation:
+  enabled: false
