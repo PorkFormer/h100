@@ -175,6 +175,7 @@ def build_exact_prefix_batch(
     }
     meta_info = copy.deepcopy(batch.meta_info)
     meta_info.pop("reward_extra_keys", None)
+    meta_info["obcf_prefix_scoring"] = True
     return DataProto.from_dict(
         tensors={
             "prompts": prompts,

@@ -22,6 +22,9 @@ from verl.experimental.probe_credit.dynamic_sampling import (
     filter_dapo_generation_batch,
     select_complete_prompt_groups,
 )
+from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
+    NormalizedRewardOutput,
+)
 from verl.experimental.probe_credit.probe_credit import (
     apply_probe_credit_redistribution,
     build_probe_token_correction,
@@ -372,6 +375,17 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             actor_output = self._update_actor(batch)
         return batch, actor_output
 
+    def _score_batch_with_existing_reward_pipeline(
+        self,
+        batch: DataProto,
+    ) -> NormalizedRewardOutput:
+        """Invoke and normalize the exact reward path used by synchronous DAPO."""
+        force_prefix_score = bool(batch.meta_info.get("obcf_prefix_scoring", False))
+        if "rm_scores" not in batch.batch and (self.use_rm or force_prefix_score):
+            batch.union(self._compute_reward_colocate(batch))
+        reward_tensor, extra_info = extract_reward(batch)
+        return NormalizedRewardOutput(reward_tensor=reward_tensor, extra_info=extra_info)
+
     def fit(self):
         """Run official DAPO accumulation, Probe final retained groups, then update."""
         self._validate_probe_credit_mode()
@@ -445,14 +459,12 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     total_generated_response_tokens += int(candidate.batch["response_mask"].sum().item())
 
                     with marked_timer("reward", timing_raw, color="yellow"):
-                        if self.use_rm and "rm_scores" not in candidate.batch:
-                            candidate = candidate.union(self._compute_reward_colocate(candidate))
-                        reward_tensor, reward_extra_infos = extract_reward(candidate)
-                        candidate.batch["token_level_scores"] = reward_tensor
-                        if reward_extra_infos:
-                            reward_extra_info_keys.update(reward_extra_infos)
+                        reward_output = self._score_batch_with_existing_reward_pipeline(candidate)
+                        candidate.batch["token_level_scores"] = reward_output.reward_tensor
+                        if reward_output.extra_info:
+                            reward_extra_info_keys.update(reward_output.extra_info)
                             candidate.non_tensor_batch.update(
-                                {key: np.asarray(value) for key, value in reward_extra_infos.items()}
+                                {key: np.asarray(value) for key, value in reward_output.extra_info.items()}
                             )
                         candidate.batch["token_level_rewards"] = candidate.batch["token_level_scores"]
 
