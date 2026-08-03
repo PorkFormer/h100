@@ -8,7 +8,11 @@ import json
 import random
 from pathlib import Path
 
-from verl.experimental.success_support_floor.cache import CacheExpectations, SuccessSupportCache
+from verl.experimental.success_support_floor.cache import (
+    CacheExpectations,
+    SuccessSupportCache,
+    tokenizer_fingerprints,
+)
 from verl.experimental.success_support_floor.logprobs import load_reference_model, sequence_logprobs
 
 
@@ -40,6 +44,11 @@ def main() -> None:
     model, tokenizer, device = load_reference_model(
         args.reference_model_path, args.tokenizer_path, device=args.device
     )
+    tokenizer_fp, template_fp = tokenizer_fingerprints(tokenizer)
+    if tokenizer_fp != manifest["tokenizer_fingerprint"]:
+        raise ValueError("loaded tokenizer fingerprint does not match cache")
+    if template_fp != manifest["chat_template_fingerprint"]:
+        raise ValueError("loaded chat template fingerprint does not match cache")
     recomputed: list[float] = []
     examples = [
         (prompt_by_key[row["prompt_key"]]["prompt_token_ids"], row["response_token_ids"])
