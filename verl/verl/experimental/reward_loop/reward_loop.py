@@ -270,6 +270,29 @@ class RewardLoopWorker:
         return {"reward_score": rm_score}
 
 
+def _aggregate_reward_extra_infos(
+    reward_extra_infos: list[dict],
+) -> dict[str, np.ndarray]:
+    """Preserve sparse row-level verifier failures during batch aggregation."""
+    if not reward_extra_infos:
+        return {}
+    reward_extra_keys = list(reward_extra_infos[0].keys())
+    failure_defaults = {"error": None, "timeout": False}
+    for key in failure_defaults:
+        if key not in reward_extra_keys and any(
+            key in info for info in reward_extra_infos
+        ):
+            reward_extra_keys.append(key)
+    non_tensor_batch: dict[str, np.ndarray] = {}
+    for key in reward_extra_keys:
+        if key in failure_defaults:
+            values = [info.get(key, failure_defaults[key]) for info in reward_extra_infos]
+        else:
+            values = [info[key] for info in reward_extra_infos]
+        non_tensor_batch[key] = np.array(values)
+    return non_tensor_batch
+
+
 class RewardLoopManager:
     """
     RewardLoopManager run in single controller.
@@ -339,10 +362,8 @@ class RewardLoopManager:
         batch = TensorDict({"rm_scores": rm_scores}, batch_size=len(data))
 
         reward_extra_infos = [output.get("reward_extra_info", {}) for output in outputs_flat]
-        reward_extra_keys = list(reward_extra_infos[0].keys())
-        non_tensor_batch = {}
-        for key in reward_extra_keys:
-            non_tensor_batch[key] = np.array([info[key] for info in reward_extra_infos])
+        non_tensor_batch = _aggregate_reward_extra_infos(reward_extra_infos)
+        reward_extra_keys = list(non_tensor_batch)
 
         if self.reward_model_manager is not None:
             self.reward_model_manager.sleep()

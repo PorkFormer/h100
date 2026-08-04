@@ -12,6 +12,7 @@ from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import
     verifier_pipeline_fingerprint,
 )
 from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
+from verl.experimental.reward_loop.reward_loop import _aggregate_reward_extra_infos
 
 
 def _scored_batch():
@@ -103,6 +104,22 @@ def test_binary_accuracy_accepts_explicit_numpy_false_timeout_flags():
         {"acc": [0, 1], "timeout": np.asarray([False, False])},
     )
     assert extract_binary_accuracy(output, expected_count=2).tolist() == [0.0, 1.0]
+
+
+def test_later_reward_loop_failure_metadata_reaches_obcf_adapter():
+    extra = _aggregate_reward_extra_infos(
+        [
+            {"acc": 1.0},
+            {"acc": 0.0, "error": "verifier crashed", "timeout": True},
+        ]
+    )
+    assert extra["error"].tolist() == [None, "verifier crashed"]
+    assert extra["timeout"].tolist() == [False, True]
+    with pytest.raises(ValueError, match="error|timeout"):
+        extract_binary_accuracy(
+            NormalizedRewardOutput(torch.ones((2, 3)), extra),
+            expected_count=2,
+        )
 
 
 def test_verifier_pipeline_fingerprint_is_deterministic_and_config_sensitive():

@@ -141,7 +141,9 @@ def _normalize_legacy_artifacts(
         if identity in rollouts_by_identity:
             raise ValueError(f"duplicate rollout identity {identity}")
         computed_response_hash = _response_token_hash(row.get("response_token_ids"))
-        row.setdefault("response_hash", computed_response_hash)
+        if "response_hash" in row and row["response_hash"] != computed_response_hash:
+            raise ValueError(f"rollout identity {identity} has response_hash mismatch")
+        row["response_hash"] = computed_response_hash
         rollouts_by_identity[identity] = row
         rollouts.append(row)
 

@@ -192,6 +192,14 @@ def test_legacy_artifacts_are_normalized_without_mutating_sources():
         == normalized_rollouts[0]["response_hash"]
     )
 
+    rollouts[0]["response_hash"] = "not-the-token-hash"
+    with pytest.raises(ValueError, match="response_hash"):
+        _normalize_legacy_artifacts(
+            prompt_rows=prompts,
+            rollout_rows=rollouts,
+            historical_rows=historical,
+        )
+
 
 def test_protocol_fingerprint_binds_budget_and_reward_pipeline():
     kwargs = dict(
