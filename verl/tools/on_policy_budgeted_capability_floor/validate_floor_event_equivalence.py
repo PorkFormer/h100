@@ -45,6 +45,10 @@ def extract_binary_acc_from_reward_result(result: Mapping[str, Any]) -> bool:
     extra = result.get("reward_extra_info")
     if not isinstance(extra, Mapping) or "acc" not in extra:
         raise ValueError("reward result is missing verifier acc")
+    for failure_field in ("error", "timeout"):
+        failure = extra.get(failure_field)
+        if failure is not None and failure != "" and failure is not False:
+            raise ValueError(f"reward result contains verifier {failure_field}")
     acc = extra["acc"]
     if isinstance(acc, bool):
         return acc
@@ -56,6 +60,118 @@ def extract_binary_acc_from_reward_result(result: Mapping[str, Any]) -> bool:
     ):
         raise ValueError("reward result must contain finite binary acc")
     return bool(acc)
+
+
+def _response_token_hash(response_token_ids: Any) -> str:
+    if not isinstance(response_token_ids, (list, tuple)):
+        raise ValueError("response_token_ids must be a token list")
+    normalized: list[int] = []
+    for token_id in response_token_ids:
+        if not isinstance(token_id, int) or isinstance(token_id, bool) or token_id < 0:
+            raise ValueError("response_token_ids must contain nonnegative integers")
+        normalized.append(token_id)
+    digest = hashlib.sha256()
+    digest.update(b"obcf-response-token-ids-v1\0")
+    digest.update(json.dumps(normalized, separators=(",", ":")).encode())
+    return digest.hexdigest()
+
+
+def _artifact_identity(row: Mapping[str, Any]) -> tuple[str, int, int]:
+    try:
+        identity = (row["model_id"], row["prompt_id"], row["rollout_index"])
+    except KeyError as error:
+        raise ValueError(f"artifact row is missing identity field {error.args[0]}") from error
+    model_id, prompt_id, rollout_index = identity
+    if not isinstance(model_id, str) or not model_id:
+        raise ValueError("model_id must be a nonempty string")
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in (prompt_id, rollout_index)
+    ):
+        raise ValueError("prompt_id and rollout_index must be nonnegative integers")
+    return identity
+
+
+def _normalize_legacy_artifacts(
+    *,
+    prompt_rows: Sequence[Mapping[str, Any]],
+    rollout_rows: Sequence[Mapping[str, Any]],
+    historical_rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Deterministically enrich immutable legacy rows for the strict event contract."""
+    prompts: list[dict[str, Any]] = []
+    prompt_ids: set[int] = set()
+    for source in prompt_rows:
+        row = dict(source)
+        prompt_id = row.get("prompt_id")
+        if not isinstance(prompt_id, int) or isinstance(prompt_id, bool) or prompt_id < 0:
+            raise ValueError("prompt_id must be a nonnegative integer")
+        if prompt_id in prompt_ids:
+            raise ValueError(f"duplicate prompt identity {prompt_id}")
+        prompt_ids.add(prompt_id)
+        if "raw_prompt" not in row:
+            if "canonical_prompt" not in row:
+                raise ValueError("legacy prompt row is missing raw_prompt/canonical_prompt")
+            raw_prompt = row["canonical_prompt"]
+            if isinstance(raw_prompt, str):
+                try:
+                    raw_prompt = json.loads(raw_prompt)
+                except json.JSONDecodeError as error:
+                    raise ValueError("canonical_prompt must contain valid JSON") from error
+            if not isinstance(raw_prompt, list):
+                raise ValueError("canonical_prompt must describe a chat-message list")
+            row["raw_prompt"] = raw_prompt
+        if "extra_info" not in row:
+            raw_extra_info = row.get("extra_info_json", "{}")
+            if isinstance(raw_extra_info, str):
+                try:
+                    raw_extra_info = json.loads(raw_extra_info)
+                except json.JSONDecodeError as error:
+                    raise ValueError("extra_info_json must contain valid JSON") from error
+            if not isinstance(raw_extra_info, Mapping):
+                raise ValueError("extra_info must be a mapping")
+            row["extra_info"] = dict(raw_extra_info)
+        prompts.append(row)
+
+    rollouts: list[dict[str, Any]] = []
+    rollouts_by_identity: dict[tuple[str, int, int], dict[str, Any]] = {}
+    for source in rollout_rows:
+        row = dict(source)
+        identity = _artifact_identity(row)
+        if identity in rollouts_by_identity:
+            raise ValueError(f"duplicate rollout identity {identity}")
+        computed_response_hash = _response_token_hash(row.get("response_token_ids"))
+        row.setdefault("response_hash", computed_response_hash)
+        rollouts_by_identity[identity] = row
+        rollouts.append(row)
+
+    historical: list[dict[str, Any]] = []
+    historical_ids: set[tuple[str, int, int]] = set()
+    for source in historical_rows:
+        row = dict(source)
+        identity = _artifact_identity(row)
+        if identity in historical_ids:
+            raise ValueError(f"duplicate historical identity {identity}")
+        historical_ids.add(identity)
+        rollout = rollouts_by_identity.get(identity)
+        if rollout is None:
+            raise ValueError(f"historical identity {identity} has no rollout artifact")
+        for field in (
+            "prompt_hash",
+            "response_hash",
+            "response_token_count",
+            "sampling_seed",
+        ):
+            value = rollout.get(field)
+            if field == "response_token_count" and value is None:
+                value = len(rollout["response_token_ids"])
+            if value is None:
+                raise ValueError(f"rollout identity {identity} is missing {field}")
+            if field in row and row[field] != value:
+                raise ValueError(f"historical identity {identity} has {field} mismatch")
+            row[field] = value
+        historical.append(row)
+    return prompts, rollouts, historical
 
 
 def _select(config: Any, path: str, default: Any = None) -> Any:
@@ -308,9 +424,11 @@ def main() -> None:
         verifier_fingerprint=verifier_fp,
     )
 
-    prompts = _rows(args.prompts)
-    rollouts = _rows(args.rollouts)
-    historical = _rows(args.historical_scores)
+    prompts, rollouts, historical = _normalize_legacy_artifacts(
+        prompt_rows=_rows(args.prompts),
+        rollout_rows=_rows(args.rollouts),
+        historical_rows=_rows(args.historical_scores),
+    )
     full_batch = build_full_rollout_batch_from_artifacts(
         prompt_rows=prompts,
         rollout_rows=rollouts,
@@ -351,6 +469,12 @@ def main() -> None:
         "resolved_config": _file_hash(args.resolved_config),
         "recomputed_scores": _sha256(recomputed_path),
     }
+    artifact_row_counts = {
+        "prompts": len(prompts),
+        "rollouts": len(rollouts),
+        "historical_scores": len(historical),
+        "recomputed_scores": len(recomputed),
+    }
     attestation = {
         "schema_version": 1,
         "passed": report.passed,
@@ -365,6 +489,7 @@ def main() -> None:
         "historical_score_fingerprint": artifact_hashes["historical_scores"],
         "score_fingerprint": artifact_hashes["historical_scores"],
         "artifact_hashes": artifact_hashes,
+        "artifact_row_counts": artifact_row_counts,
         **asdict(report),
         "mismatches": _mismatch_details(
             historical,

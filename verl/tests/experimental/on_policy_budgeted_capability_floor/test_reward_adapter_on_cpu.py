@@ -84,6 +84,27 @@ def test_binary_accuracy_fails_closed_and_never_uses_shaped_reward(extra, count,
         extract_binary_accuracy(output, expected_count=count)
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"acc": [0, 1], "error": ["verifier crashed", None]},
+        {"acc": [0, 1], "timeout": [True, False]},
+    ],
+)
+def test_binary_accuracy_rejects_rowwise_verifier_failures(extra):
+    output = NormalizedRewardOutput(torch.ones((2, 3)), extra)
+    with pytest.raises(ValueError, match="error|timeout"):
+        extract_binary_accuracy(output, expected_count=2)
+
+
+def test_binary_accuracy_accepts_explicit_numpy_false_timeout_flags():
+    output = NormalizedRewardOutput(
+        torch.ones((2, 3)),
+        {"acc": [0, 1], "timeout": np.asarray([False, False])},
+    )
+    assert extract_binary_accuracy(output, expected_count=2).tolist() == [0.0, 1.0]
+
+
 def test_verifier_pipeline_fingerprint_is_deterministic_and_config_sensitive():
     first = verifier_pipeline_fingerprint(reward_manager_name="naive")
     assert len(first) == 64

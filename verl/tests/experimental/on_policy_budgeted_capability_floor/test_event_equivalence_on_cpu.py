@@ -10,6 +10,7 @@ from verl.experimental.on_policy_budgeted_capability_floor.event_equivalence imp
     prefix_protocol_fingerprint,
 )
 from tools.on_policy_budgeted_capability_floor.validate_floor_event_equivalence import (
+    _normalize_legacy_artifacts,
     extract_binary_acc_from_reward_result,
 )
 
@@ -118,6 +119,78 @@ def test_nonbinary_acc_fails_without_shaped_reward_fallback():
         )
     with pytest.raises(ValueError, match="acc"):
         extract_binary_acc_from_reward_result({"reward_score": 1.0})
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"acc": 0, "error": "verifier crashed"},
+        {"acc": 0, "timeout": True},
+    ],
+)
+def test_reward_pipeline_errors_are_not_treated_as_false_events(extra):
+    with pytest.raises(ValueError, match="error|timeout"):
+        extract_binary_acc_from_reward_result(
+            {"reward_score": 0.0, "reward_extra_info": extra}
+        )
+
+
+def test_legacy_artifacts_are_normalized_without_mutating_sources():
+    prompts = [
+        {
+            "prompt_id": 7,
+            "prompt_hash": "prompt-hash",
+            "prompt_token_ids": [10, 11],
+            "canonical_prompt": '[{"role":"user","content":"question"}]',
+            "data_source": "math",
+            "ground_truth": "42",
+            "extra_info_json": '{"split":"audit"}',
+        }
+    ]
+    rollouts = [
+        {
+            "model_id": "base",
+            "prompt_id": 7,
+            "rollout_index": 0,
+            "prompt_hash": "prompt-hash",
+            "sampling_seed": 100,
+            "prompt_token_ids": [10, 11],
+            "response_token_ids": [20, 21],
+            "response_token_count": 2,
+        }
+    ]
+    historical = [
+        {
+            "model_id": "base",
+            "prompt_id": 7,
+            "rollout_index": 0,
+            "prompt_hash": "prompt-hash",
+            "sampling_seed": 100,
+            "response_token_count": 2,
+            f"prefix_reward_{BUDGET}": False,
+            f"prefix_error_{BUDGET}": None,
+        }
+    ]
+    original = copy.deepcopy((prompts, rollouts, historical))
+
+    normalized_prompts, normalized_rollouts, normalized_historical = (
+        _normalize_legacy_artifacts(
+            prompt_rows=prompts,
+            rollout_rows=rollouts,
+            historical_rows=historical,
+        )
+    )
+
+    assert (prompts, rollouts, historical) == original
+    assert normalized_prompts[0]["raw_prompt"] == [
+        {"role": "user", "content": "question"}
+    ]
+    assert normalized_prompts[0]["extra_info"] == {"split": "audit"}
+    assert normalized_rollouts[0]["response_hash"]
+    assert (
+        normalized_historical[0]["response_hash"]
+        == normalized_rollouts[0]["response_hash"]
+    )
 
 
 def test_protocol_fingerprint_binds_budget_and_reward_pipeline():

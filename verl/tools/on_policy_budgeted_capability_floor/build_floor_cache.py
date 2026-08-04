@@ -186,6 +186,7 @@ def _validate_event_equivalence_attestation(
     chat_template_fingerprint: str,
     verifier_fingerprint: str,
     artifact_fingerprints: dict[str, str],
+    artifact_row_counts: dict[str, int],
 ) -> str:
     expected_protocol = prefix_protocol_fingerprint(
         reference_budget=reference_budget,
@@ -226,6 +227,9 @@ def _validate_event_equivalence_attestation(
     ):
         if attestation.get(field) != 0:
             raise ValueError(f"event-equivalence attestation {field} must be zero")
+    attested_row_counts = attestation.get("artifact_row_counts")
+    if attested_row_counts != artifact_row_counts:
+        raise ValueError("event-equivalence attestation artifact row counts mismatch")
     row_count = attestation.get("row_count")
     exact_match_count = attestation.get("exact_match_count")
     if (
@@ -233,6 +237,9 @@ def _validate_event_equivalence_attestation(
         or isinstance(row_count, bool)
         or row_count <= 0
         or exact_match_count != row_count
+        or row_count != artifact_row_counts.get("rollouts")
+        or row_count != artifact_row_counts.get("historical_scores")
+        or row_count != artifact_row_counts.get("recomputed_scores")
     ):
         raise ValueError("event-equivalence attestation row counts do not exactly match")
     source_commit = attestation.get("source_git_commit")
@@ -318,6 +325,15 @@ def main() -> None:
         "rollout_fingerprint": _file_hash(args.rollouts),
         "score_fingerprint": _file_hash(args.scores),
     }
+    prompts = _rows(args.prompts)
+    rollouts = _rows(args.rollouts)
+    scores = _rows(args.scores)
+    artifact_row_counts = {
+        "prompts": len(prompts),
+        "rollouts": len(rollouts),
+        "historical_scores": len(scores),
+        "recomputed_scores": len(scores),
+    }
     event_attestation = _load_event_equivalence_attestation(
         args.event_equivalence_attestation
     )
@@ -328,10 +344,8 @@ def main() -> None:
         chat_template_fingerprint=template_fp,
         verifier_fingerprint=verifier_fp,
         artifact_fingerprints=artifact_fingerprints,
+        artifact_row_counts=artifact_row_counts,
     )
-    prompts = _rows(args.prompts)
-    rollouts = _rows(args.rollouts)
-    scores = _rows(args.scores)
     if args.legacy_artifact_attestation is not None:
         attestation = json.loads(args.legacy_artifact_attestation.read_text())
         if not isinstance(attestation, dict):

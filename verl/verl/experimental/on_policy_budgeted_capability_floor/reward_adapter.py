@@ -129,6 +129,17 @@ def extract_binary_accuracy(
         raise ValueError("expected_count must be a nonnegative integer")
     if metric_name not in reward_output.extra_info:
         raise ValueError(f"reward output is missing required verifier metric {metric_name!r}")
+    for failure_field in ("error", "timeout"):
+        if failure_field not in reward_output.extra_info:
+            continue
+        failures = np.asarray(
+            reward_output.extra_info[failure_field], dtype=object
+        ).reshape(-1)
+        if any(
+            failure is not None and failure != "" and failure is not False
+            for failure in failures
+        ):
+            raise ValueError(f"reward output contains verifier {failure_field}")
     value = reward_output.extra_info[metric_name]
     try:
         accuracy = torch.as_tensor(value, device=reward_output.reward_tensor.device)

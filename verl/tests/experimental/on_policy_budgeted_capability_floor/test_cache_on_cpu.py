@@ -420,6 +420,12 @@ def _event_attestation(artifact_fingerprints=None, **overrides):
             "resolved_config": "1" * 64,
             "recomputed_scores": "2" * 64,
         },
+        "artifact_row_counts": {
+            "prompts": 3,
+            "rollouts": 24,
+            "historical_scores": 24,
+            "recomputed_scores": 24,
+        },
         "row_count": 24,
         "exact_match_count": 24,
         "mismatch_count": 0,
@@ -449,6 +455,12 @@ def test_event_attestation_is_required_and_valid_attestation_passes(tmp_path):
             "prompt_manifest_fingerprint": "b" * 64,
             "rollout_fingerprint": "c" * 64,
             "score_fingerprint": "d" * 64,
+        },
+        artifact_row_counts={
+            "prompts": 3,
+            "rollouts": 24,
+            "historical_scores": 24,
+            "recomputed_scores": 24,
         },
     )
     assert protocol == prefix_protocol_fingerprint(
@@ -483,6 +495,34 @@ def test_event_attestation_mismatch_fails_closed(overrides, match):
                 "prompt_manifest_fingerprint": "b" * 64,
                 "rollout_fingerprint": "c" * 64,
                 "score_fingerprint": "d" * 64,
+            },
+            artifact_row_counts={
+                "prompts": 3,
+                "rollouts": 24,
+                "historical_scores": 24,
+                "recomputed_scores": 24,
+            },
+        )
+
+
+def test_event_attestation_row_counts_bind_every_source_artifact():
+    with pytest.raises(ValueError, match="row count"):
+        builder._validate_event_equivalence_attestation(
+            attestation=_event_attestation(row_count=1, exact_match_count=1),
+            reference_budget=2048,
+            tokenizer_fingerprint="tok",
+            chat_template_fingerprint="tmpl",
+            verifier_fingerprint="e" * 64,
+            artifact_fingerprints={
+                "prompt_manifest_fingerprint": "b" * 64,
+                "rollout_fingerprint": "c" * 64,
+                "score_fingerprint": "d" * 64,
+            },
+            artifact_row_counts={
+                "prompts": 3,
+                "rollouts": 24,
+                "historical_scores": 24,
+                "recomputed_scores": 24,
             },
         )
 
