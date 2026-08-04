@@ -116,6 +116,21 @@ def test_optional_retained_delayed_lost_breakdown_is_prompt_level():
         "delayed": {"count": 1, "fraction": pytest.approx(0.25)},
         "lost": {"count": 0, "fraction": pytest.approx(0.0)},
     }
+    assert report["by_base_success_count"]["2"]["retained_delayed_lost"] == {
+        "retained": {"count": 2, "fraction": pytest.approx(1.0)},
+        "delayed": {"count": 0, "fraction": pytest.approx(0.0)},
+        "lost": {"count": 0, "fraction": pytest.approx(0.0)},
+    }
+    assert report["by_base_success_count"]["4"]["retained_delayed_lost"] == {
+        "retained": {"count": 0, "fraction": pytest.approx(0.0)},
+        "delayed": {"count": 1, "fraction": pytest.approx(1.0)},
+        "lost": {"count": 0, "fraction": pytest.approx(0.0)},
+    }
+    assert report["by_base_success_count"]["8"]["retained_delayed_lost"] == {
+        "retained": {"count": 1, "fraction": pytest.approx(1.0)},
+        "delayed": {"count": 0, "fraction": pytest.approx(0.0)},
+        "lost": {"count": 0, "fraction": pytest.approx(0.0)},
+    }
 
 
 def test_all_zero_active_groups_fail_the_engineering_gate_honestly():

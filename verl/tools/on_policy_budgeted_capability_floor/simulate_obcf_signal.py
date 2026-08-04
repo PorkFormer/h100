@@ -291,6 +291,9 @@ def simulate_obcf_signal(
         raise ValueError("full_reward must be present for every row when breakdown is requested")
     if full_present and all(full_present):
         categories = {"retained": 0, "delayed": 0, "lost": 0}
+        categories_by_base_success_count: dict[int, dict[str, int]] = defaultdict(
+            lambda: {"retained": 0, "delayed": 0, "lost": 0}
+        )
         for prompt_id in protected_ids:
             rows = grouped[prompt_id]
             if any(not isinstance(row["full_reward"], bool) for row in rows):
@@ -300,17 +303,35 @@ def simulate_obcf_signal(
             prefix_any = any(bool(row[prefix_field]) for row in rows)
             full_any = any(bool(row["full_reward"]) for row in rows)
             if prefix_any:
-                categories["retained"] += 1
+                category = "retained"
             elif full_any:
-                categories["delayed"] += 1
+                category = "delayed"
             else:
-                categories["lost"] += 1
+                category = "lost"
+            categories[category] += 1
+            base_success_count = int(
+                protected_by_id[prompt_id]["base_prefix_success_count"]
+            )
+            categories_by_base_success_count[base_success_count][category] += 1
         if sum(categories.values()) != len(protected_ids):
             raise AssertionError("retained/delayed/lost must partition protected prompts")
         report["retained_delayed_lost"] = {
             name: {"count": count, "fraction": count / len(protected_ids)}
             for name, count in categories.items()
         }
+        for base_success_count, stratum_categories in sorted(
+            categories_by_base_success_count.items()
+        ):
+            stratum = stratum_report[str(base_success_count)]
+            prompt_count = int(stratum["prompt_count"])
+            if sum(stratum_categories.values()) != prompt_count:
+                raise AssertionError(
+                    "retained/delayed/lost must partition each Base success-count stratum"
+                )
+            stratum["retained_delayed_lost"] = {
+                name: {"count": count, "fraction": count / prompt_count}
+                for name, count in stratum_categories.items()
+            }
     return report
 
 
