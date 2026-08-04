@@ -134,7 +134,7 @@ def summarize_floor_actionability(
             count_actionable = (
                 floor_count * current_rollouts_per_prompt > base_rollout_count
             )
-            if count_actionable != float_actionable or not math.isclose(
+            if not math.isclose(
                 capability_floor,
                 floor_count / base_rollout_count,
                 rel_tol=0.0,

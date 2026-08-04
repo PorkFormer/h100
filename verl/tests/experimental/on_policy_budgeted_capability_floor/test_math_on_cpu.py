@@ -130,6 +130,25 @@ def test_floor_actionability_count_space_agrees_with_float_space():
     assert report.by_base_success_count[3]["actionable_prompt_count"] == 1
 
 
+def test_floor_actionability_uses_exact_counts_at_float32_boundary():
+    rounded_floor = torch.tensor(1 / 10, dtype=torch.float32).item()
+
+    report = summarize_floor_actionability(
+        cache_rows=[
+            {
+                "base_prefix_success_count": 1,
+                "base_rollout_count": 10,
+                "floor_count": 1,
+                "capability_floor": rounded_floor,
+            }
+        ],
+        current_rollouts_per_prompt=10,
+    )
+
+    assert report.actionable_prompt_count == 0
+    assert report.inert_prompt_count == 1
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
