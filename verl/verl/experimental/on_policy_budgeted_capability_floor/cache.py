@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -167,7 +167,13 @@ def build_floor_rows(
     if len(prompt_ids) != len(set(prompt_ids)):
         raise ValueError("duplicate prompt identity")
     known_ids = set(prompt_ids)
-    foreign = [identity for identity in rollout_by_id if identity[0] != model_id or identity[1] not in known_ids]
+    identities_by_prompt: dict[int, list[tuple[str, int, int]]] = defaultdict(list)
+    foreign = []
+    for identity in rollout_by_id:
+        if identity[0] != model_id or identity[1] not in known_ids:
+            foreign.append(identity)
+        else:
+            identities_by_prompt[identity[1]].append(identity)
     if foreign:
         raise ValueError("rollout identity references the wrong model or an unknown prompt")
 
@@ -181,7 +187,7 @@ def build_floor_rows(
         ):
             raise ValueError("prompt tokenizer/chat-template provenance does not match")
         identities = sorted(
-            (identity for identity in rollout_by_id if identity[:2] == (model_id, prompt_id)),
+            identities_by_prompt[prompt_id],
             key=lambda identity: identity[2],
         )
         if len(identities) != base_rollouts_per_prompt or [item[2] for item in identities] != list(

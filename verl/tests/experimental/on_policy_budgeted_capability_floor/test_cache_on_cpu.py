@@ -132,6 +132,34 @@ def test_prefix_only_threshold_and_floor_derivation():
     assert rows[1]["capability_floor"] == pytest.approx(7 / 8)
 
 
+def test_floor_builder_indexes_rollout_identities_once(monkeypatch):
+    original = build_floor_rows.__globals__["_unique_by_identity"]
+    observed = {}
+
+    class CountingIdentityMap(dict):
+        iteration_count = 0
+
+        def __iter__(self):
+            self.iteration_count += 1
+            return super().__iter__()
+
+    def counting_unique(rows, name):
+        indexed = original(rows, name)
+        if name == "rollout":
+            indexed = CountingIdentityMap(indexed)
+            observed["rollouts"] = indexed
+        return indexed
+
+    monkeypatch.setitem(
+        build_floor_rows.__globals__,
+        "_unique_by_identity",
+        counting_unique,
+    )
+
+    assert [row["prompt_id"] for row in _rows()] == [0, 2]
+    assert observed["rollouts"].iteration_count == 1
+
+
 @pytest.mark.parametrize("missing_from", ["rollouts", "scores"])
 def test_missing_identity_fails_closed(missing_from):
     prompts, rollouts, scores = _source_rows()
