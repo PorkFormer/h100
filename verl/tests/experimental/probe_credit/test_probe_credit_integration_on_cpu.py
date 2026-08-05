@@ -16,6 +16,7 @@ from verl.experimental.probe_credit.probe_credit import (
     compute_probe_pseudo_rewards,
     compute_probe_temporal_returns,
 )
+from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
 from verl.trainer.ppo.core_algos import compute_grpo_vectorized_outcome_advantage
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -93,3 +94,47 @@ def test_entrypoint_and_launcher_are_dedicated_and_do_not_submit_slurm():
     assert "RayPPOTrainer(" not in entrypoint
     assert "PROBE_CREDIT_COEF" in launcher
     assert "sbatch" not in launcher and "srun" not in launcher
+
+
+def test_gate_equivalence_dump_is_disabled_by_default(tmp_path):
+    trainer = RayDAPOProbeCreditTrainer.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = {"trainer": {}}
+    trainer.global_steps = 1
+    batch = DataProto.from_dict(tensors={"responses": torch.tensor([[1, 2]])})
+
+    trainer._dump_gate_equivalence_batch(batch)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_gate_equivalence_dump_round_trips_exact_batch_and_writes_manifest(tmp_path):
+    trainer = RayDAPOProbeCreditTrainer.__new__(RayDAPOProbeCreditTrainer)
+    trainer.config = {"trainer": {"diagnostic_dump_dir": str(tmp_path)}}
+    trainer.global_steps = 7
+    batch = DataProto.from_dict(
+        tensors={
+            "responses": torch.tensor([[1, 2], [3, 4]], dtype=torch.long),
+            "old_log_probs": torch.tensor([[0.1, 0.2], [0.3, 0.4]]),
+            "advantages": torch.tensor([[1.0, -1.0], [0.5, -0.5]]),
+            "response_mask": torch.tensor([[1, 1], [1, 0]], dtype=torch.bool),
+        },
+        non_tensors={"prompt_id": np.asarray(["p0", "p1"], dtype=object)},
+        meta_info={"protocol": "gate-d-v1"},
+    )
+
+    trainer._dump_gate_equivalence_batch(batch)
+
+    dump_path = tmp_path / "step_000007.dp"
+    manifest_path = tmp_path / "step_000007.manifest.json"
+    restored = DataProto.load_from_disk(dump_path)
+    assert restored.meta_info == batch.meta_info
+    assert restored.non_tensor_batch["prompt_id"].tolist() == ["p0", "p1"]
+    for key in batch.batch.keys():
+        assert torch.equal(restored.batch[key], batch.batch[key])
+    assert manifest_path.is_file()
+    manifest = __import__("json").loads(manifest_path.read_text())
+    assert manifest["schema_version"] == "gate-equivalence-batch-v1"
+    assert manifest["global_step"] == 7
+    assert manifest["row_count"] == 2
+    assert manifest["tensor_fields"]["responses"] == {"dtype": "torch.int64", "shape": [2, 2]}
+    assert manifest["sha256"] == __import__("hashlib").sha256(dump_path.read_bytes()).hexdigest()

@@ -8,8 +8,12 @@ and actor APIs; the positive-std selection and accumulation semantics are unchan
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
+import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -86,6 +90,52 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             )
             self._typed_probe_credit_config = cached
         return cached
+
+    def _dump_gate_equivalence_batch(self, batch: DataProto) -> None:
+        """Persist the post-update DataProto for opt-in Gate D equivalence checks."""
+        dump_root = _config_get(
+            _config_get(self.config, "trainer"),
+            "diagnostic_dump_dir",
+        )
+        if not dump_root:
+            return
+        output_dir = Path(str(dump_root))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"step_{int(self.global_steps):06d}"
+        dump_path = output_dir / f"{stem}.dp"
+        manifest_path = output_dir / f"{stem}.manifest.json"
+        if dump_path.exists() or manifest_path.exists():
+            raise FileExistsError(f"refusing to overwrite Gate equivalence diagnostic for {stem}")
+        temporary_dump = output_dir / f".{stem}.{os.getpid()}.dp.tmp"
+        temporary_manifest = output_dir / f".{stem}.{os.getpid()}.manifest.json.tmp"
+        try:
+            batch.save_to_disk(temporary_dump)
+            hasher = hashlib.sha256()
+            with temporary_dump.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+            digest = hasher.hexdigest()
+            tensor_fields = {
+                str(key): {"dtype": str(value.dtype), "shape": list(value.shape)}
+                for key, value in batch.batch.items()
+            }
+            manifest = {
+                "schema_version": "gate-equivalence-batch-v1",
+                "global_step": int(self.global_steps),
+                "row_count": len(batch),
+                "tensor_fields": tensor_fields,
+                "non_tensor_fields": sorted(str(key) for key in batch.non_tensor_batch),
+                "sha256": digest,
+            }
+            temporary_manifest.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.replace(temporary_dump, dump_path)
+            os.replace(temporary_manifest, manifest_path)
+        finally:
+            temporary_dump.unlink(missing_ok=True)
+            temporary_manifest.unlink(missing_ok=True)
 
     def _validate_probe_credit_mode(self) -> None:
         probe = self._probe_config()
@@ -524,6 +574,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         metrics.update(correction_metrics)
                     batch, actor_output = self._compute_advantage_and_actor_update(batch, metrics, timing_raw)
                     metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
+                    self._dump_gate_equivalence_batch(batch)
                     step_rollout_policy_version = self._rollout_policy_version
                     retained_reward_extra_infos = {
                         key: batch.non_tensor_batch[key]
