@@ -149,6 +149,9 @@ def test_mode_off_requires_all_obcf_side_effect_counters_zero(tmp_path):
     assert result["constraint_observation_count"] == 0
     assert result["lambda_update_count"] == 0
     assert result["capability_batch_field_count"] == 0
+    assert result["cache_path"] is None
+    assert result["extra_rollout_request_count"] == 0
+    assert result["extra_actor_update_count"] == 0
 
 
 def test_mode_shadow_records_prefix_diagnostics_without_changing_total_advantage(tmp_path):

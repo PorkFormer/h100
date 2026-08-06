@@ -39,6 +39,7 @@ class FrozenBatchHarnessConfig:
     run_id: str
     protocol_fingerprint: str
     cache_fingerprint: str | None = None
+    cache_path: Path | str | None = None
 
 
 def _sha256_file(path: Path) -> str:
@@ -192,6 +193,12 @@ class FrozenBatchHarness:
                 raise ValueError(f"off mode has OBCF side effects: {nonzero}")
             if capability_fields:
                 raise ValueError(f"off mode added capability batch fields: {capability_fields}")
+            if result.get("cache_path") is not None:
+                raise ValueError("off mode cache_path must be null")
+            if int(result.get("extra_rollout_request_count", -1)) != 0:
+                raise ValueError("off mode added rollout requests")
+            if int(result.get("extra_actor_update_count", -1)) != 0:
+                raise ValueError("off mode added actor updates")
         if self.config.mode == "shadow":
             if float(result.get("lambda_before", float("nan"))) != 0.0:
                 raise ValueError("shadow lambda_before must be exactly zero")
@@ -238,6 +245,13 @@ class FrozenBatchHarness:
         update_result = self._actor_update(batch, self.config.mode)
         if not isinstance(update_result, dict):
             raise TypeError("actor_update must return a result dictionary")
+        update_result.setdefault("cache_path", _jsonable(self.config.cache_path))
+        update_result.setdefault(
+            "extra_rollout_request_count", int(update_result.get("rollout_request_count", -1))
+        )
+        update_result.setdefault(
+            "extra_actor_update_count", int(update_result.get("actor_update_count", -1)) - 1
+        )
         total_advantage_after = batch.batch.get("advantages")
         total_advantage_unchanged = total_advantage_after is not None and torch.equal(
             total_advantage_before, total_advantage_after

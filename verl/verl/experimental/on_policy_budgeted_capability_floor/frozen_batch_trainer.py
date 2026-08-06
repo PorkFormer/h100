@@ -297,6 +297,10 @@ class FrozenBatchTrainerMixin:
                     if self._frozen_mode() == "shadow"
                     else None
                 ),
+                cache_path=_config_get(
+                    _config_get(self.config.algorithm, "on_policy_budgeted_capability_floor"),
+                    "cache_path",
+                ),
             ),
             initial_state_identity=self._initial_state_identity,
             actor_update=self._run_frozen_actor_update,
