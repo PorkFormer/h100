@@ -146,6 +146,15 @@ class FrozenBatchHarness:
         manifest = _load_json_object(
             Path(self.config.initial_state_manifest_path), "initial state manifest"
         )
+        if manifest.get("schema_version") != "obcf-frozen-initial-state-v2":
+            raise ValueError("initial state manifest schema_version mismatch")
+        source_commit = manifest.get("source_git_commit")
+        if not (
+            isinstance(source_commit, str)
+            and len(source_commit) == 40
+            and all(character in "0123456789abcdef" for character in source_commit.lower())
+        ):
+            raise ValueError("initial state manifest requires a valid source_git_commit")
         expected = manifest.get("identities")
         if not isinstance(expected, dict) or not expected:
             raise ValueError("initial state manifest requires nonempty identities")

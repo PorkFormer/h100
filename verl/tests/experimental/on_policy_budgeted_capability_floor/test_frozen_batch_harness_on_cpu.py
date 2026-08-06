@@ -56,6 +56,7 @@ def _write_inputs(tmp_path: Path, *, wrong_batch_hash: bool = False):
     batch_manifest_path.write_text(json.dumps(batch_manifest))
     initial_state = {
         "schema_version": "obcf-frozen-initial-state-v2",
+        "source_git_commit": "a" * 40,
         "identities": {
             "actor": "model-identity",
             "optimizer": "optimizer-identity",
@@ -131,6 +132,25 @@ def test_initial_checkpoint_optimizer_scheduler_mismatch_refuses_to_run(tmp_path
 
     with pytest.raises(ValueError, match="initial state identity mismatch"):
         harness.run()
+
+
+def test_initial_state_without_commit_binding_refuses_to_run(tmp_path):
+    config = _config(tmp_path)
+    manifest_path = Path(config.initial_state_manifest_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["source_git_commit"] = None
+    manifest_path.write_text(json.dumps(manifest))
+    calls = []
+    harness = FrozenBatchHarness(
+        config,
+        initial_state_identity=_identity,
+        actor_update=lambda batch, mode: calls.append(mode) or _update_result(),
+    )
+
+    with pytest.raises(ValueError, match="source_git_commit"):
+        harness.run()
+
+    assert calls == []
 
 
 def test_mode_off_requires_all_obcf_side_effect_counters_zero(tmp_path):

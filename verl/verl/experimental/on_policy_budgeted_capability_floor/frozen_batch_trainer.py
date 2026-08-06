@@ -134,11 +134,17 @@ class FrozenBatchTrainerMixin:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         if manifest_path.exists():
             raise FileExistsError(f"refusing to overwrite initial state manifest: {manifest_path}")
+        source_git_commit = self._required_diagnostic_git_commit()
         manifest = {
             "checkpoint_path": str(checkpoint_path.resolve()),
             "identities": self._initial_state_identity(checkpoint_path),
+            "protocol_fingerprint": str(_config_get(raw, "protocol_fingerprint")),
+            "resolved_config_sha256": _canonical_sha256(
+                OmegaConf.to_container(self.config, resolve=True)
+            ),
+            "run_id": self._frozen_run_id(),
             "schema_version": "obcf-frozen-initial-state-v2",
-            "source_git_commit": os.environ.get("OBCF_DIAGNOSTIC_GIT_COMMIT"),
+            "source_git_commit": source_git_commit,
         }
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{manifest_path.name}.", suffix=".tmp", dir=manifest_path.parent
@@ -153,6 +159,17 @@ class FrozenBatchTrainerMixin:
         finally:
             temporary_path.unlink(missing_ok=True)
         return manifest_path
+
+    @staticmethod
+    def _required_diagnostic_git_commit() -> str:
+        value = os.environ.get("OBCF_DIAGNOSTIC_GIT_COMMIT")
+        if not (
+            isinstance(value, str)
+            and len(value) == 40
+            and all(character in "0123456789abcdef" for character in value.lower())
+        ):
+            raise ValueError("OBCF_DIAGNOSTIC_GIT_COMMIT must be a full 40-character commit")
+        return value
 
     def _write_actor_input_manifest(self, batch: DataProto) -> Path:
         output_dir = self._frozen_output_dir()
@@ -254,6 +271,7 @@ class FrozenBatchTrainerMixin:
     def _prepare_initial_state(self) -> None:
         if self.config.trainer.resume_mode != "disable":
             raise ValueError("initial frozen state preparation requires trainer.resume_mode=disable")
+        self._required_diagnostic_git_commit()
         self.global_steps = 0
         self._save_checkpoint()
         checkpoint_path = Path(str(self.config.trainer.default_local_dir)) / "global_step_0"
