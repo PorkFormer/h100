@@ -219,3 +219,27 @@ def test_boundary_zero_handles_agent_loop_non_tensor_batch_with_exact_prompt_ove
     assert [record["prompt_token_count"] for record in records] == [3, 3]
     assert records[0]["prompt_token_hash"] == records[1]["prompt_token_hash"]
     assert records[0]["prompt_token_identity_status"] == "EXACT_TOKEN_IDS"
+
+
+def test_missing_negative_one_prompt_identity_falls_back_to_token_hash_for_reward_groups(tmp_path):
+    batch = _batch()
+    del batch.non_tensor_batch["prompt_id"]
+    del batch.non_tensor_batch["dataset_row_id"]
+    del batch.non_tensor_batch["uid"]
+    batch.non_tensor_batch["extra_info"] = np.asarray(
+        [{"index": -1}, {"index": -1}], dtype=object
+    )
+    batch.batch["prompts"][1] = torch.tensor([0, 41, 42])
+    writer = _enabled(tmp_path)
+
+    _capture(writer, 2, batch)
+
+    records_path = next(tmp_path.rglob("records.jsonl"))
+    records = [json.loads(line) for line in records_path.read_text().splitlines()]
+    assert records[0]["prompt_id"] == records[0]["prompt_token_hash"]
+    assert records[1]["prompt_id"] == records[1]["prompt_token_hash"]
+    assert records[0]["prompt_id"] != records[1]["prompt_id"]
+    assert records[0]["dataset_row_id"] is None
+    assert records[1]["dataset_row_id"] is None
+    assert records[0]["group_reward_pattern"] == [1.0]
+    assert records[1]["group_reward_pattern"] == [-1.0]

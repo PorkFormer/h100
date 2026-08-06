@@ -192,13 +192,23 @@ def _terminal_reward(batch: DataProto, index: int) -> float | None:
     return None
 
 
+def _missing_identity(value: Any) -> bool:
+    """Treat negative integral dataset sentinels as absent, never as group IDs."""
+
+    return value is None or (
+        isinstance(value, (int, np.integer))
+        and not isinstance(value, (bool, np.bool_))
+        and int(value) < 0
+    )
+
+
 def _prompt_id(batch: DataProto, index: int, prompt_token_hash: str) -> Any:
     for name in ("prompt_id", "dataset_row_id", "index", "uid"):
         value = _array_item(batch, name, index)
-        if value is not None:
+        if not _missing_identity(value):
             return value
         value = _extra_info_item(batch, name, index)
-        if value is not None:
+        if not _missing_identity(value):
             return _jsonable(value)
     return prompt_token_hash
 
@@ -206,10 +216,10 @@ def _prompt_id(batch: DataProto, index: int, prompt_token_hash: str) -> Any:
 def _dataset_row_id(batch: DataProto, index: int) -> Any:
     for name in ("dataset_row_id", "index", "row_id"):
         value = _array_item(batch, name, index)
-        if value is not None:
+        if not _missing_identity(value):
             return value
         value = _extra_info_item(batch, name, index)
-        if value is not None:
+        if not _missing_identity(value):
             return _jsonable(value)
     return None
 
