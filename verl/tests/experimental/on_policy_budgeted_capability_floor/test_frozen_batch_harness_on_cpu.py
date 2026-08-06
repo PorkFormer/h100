@@ -15,6 +15,7 @@ from verl.experimental.frozen_batch_harness import (
     FrozenBatchHarnessConfig,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.frozen_batch_trainer import (
+    RayDAPOFrozenBatchOBCFTrainer,
     FrozenBatchTrainerMixin,
 )
 from verl.experimental.nondeterminism_diagnostics import data_proto_semantic_hash
@@ -277,3 +278,11 @@ def test_frozen_entrypoint_does_not_materialize_scientific_datasets_that_it_neve
 
     assert "create_rl_dataset(" not in source
     assert "FrozenPlaceholderDataset" in source
+
+
+def test_shadow_frozen_replay_loads_baseline_step_zero_without_requiring_obcf_resume_state():
+    source = inspect.getsource(RayDAPOFrozenBatchOBCFTrainer._load_frozen_initial_checkpoint)
+
+    assert "RayDAPOProbeCreditTrainer._load_checkpoint(self)" in source
+    assert "reference_model_fingerprint" in source
+    assert "shadow frozen replay requires zero dual state" in source

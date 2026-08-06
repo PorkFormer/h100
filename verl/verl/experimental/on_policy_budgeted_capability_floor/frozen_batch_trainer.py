@@ -259,6 +259,11 @@ class FrozenBatchTrainerMixin:
         checkpoint_path = Path(str(self.config.trainer.default_local_dir)) / "global_step_0"
         self._write_initial_state_manifest(checkpoint_path)
 
+    def _load_frozen_initial_checkpoint(self):
+        """Load the attested step-zero state for one diagnostic replay."""
+
+        return self._load_checkpoint()
+
     def fit(self):
         """Prepare an initial state or replay exactly one frozen actor update."""
 
@@ -273,7 +278,7 @@ class FrozenBatchTrainerMixin:
         if self.config.trainer.resume_mode != "resume_path":
             raise ValueError("frozen-batch runs require trainer.resume_mode=resume_path")
         self.global_steps = 0
-        self._load_checkpoint()
+        self._load_frozen_initial_checkpoint()
         if int(self.global_steps) != 0:
             raise ValueError("frozen-batch initial checkpoint must have global step zero")
 
@@ -308,3 +313,32 @@ class RayDAPOFrozenBatchOBCFTrainer(
     FrozenBatchTrainerMixin, RayDAPOOnPolicyBudgetedCapabilityFloorTrainer
 ):
     """OBCF off/shadow entrypoint adapter for one frozen update."""
+
+    def _load_frozen_initial_checkpoint(self):
+        if self._frozen_mode() != "shadow":
+            return super()._load_frozen_initial_checkpoint()
+
+        # Gate D2 intentionally starts shadow from the exact baseline step-zero
+        # checkpoint, which has no OBCF state sidecar.  Load only the shared
+        # actor/optimizer/scheduler state, then independently validate the cache
+        # binding and the freshly initialized, exactly-zero shadow dual state.
+        result = RayDAPOProbeCreditTrainer._load_checkpoint(self)
+        if self._obcf_cache is None:
+            raise RuntimeError("shadow frozen replay requires a validated cache")
+        base_model_path = getattr(self, "_obcf_base_model_local_path", None)
+        if not base_model_path:
+            raise ValueError("shadow frozen replay requires the resolved Base model path")
+        actual_hash = reference_model_fingerprint(str(base_model_path))
+        if actual_hash != self._obcf_cache.manifest["reference_model_hash"]:
+            raise ValueError("shadow frozen replay cache Base model weight hash mismatch")
+        if any(
+            (
+                float(self._lambda) != 0.0,
+                float(self._violation_ema) != 0.0,
+                bool(self._ema_initialized),
+                int(self._constraint_observation_count) != 0,
+                int(self._last_constraint_step) != -1,
+            )
+        ):
+            raise ValueError("shadow frozen replay requires zero dual state")
+        return result
