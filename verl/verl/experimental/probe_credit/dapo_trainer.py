@@ -12,6 +12,7 @@ import hashlib
 import inspect
 import json
 import os
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,10 @@ from verl import DataProto
 from verl.experimental.probe_credit.dynamic_sampling import (
     filter_dapo_generation_batch,
     select_complete_prompt_groups,
+)
+from verl.experimental.nondeterminism_diagnostics import (
+    DiagnosticsConfig,
+    NondeterminismDiagnostics,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     NormalizedRewardOutput,
@@ -90,6 +95,109 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             )
             self._typed_probe_credit_config = cached
         return cached
+
+    def _get_nondeterminism_diagnostics(self) -> NondeterminismDiagnostics:
+        """Resolve the opt-in writer once; the absent/default configuration is inert."""
+        cached = getattr(self, "_nondeterminism_diagnostics_writer", None)
+        if cached is not None:
+            return cached
+        trainer_config = _config_get(self.config, "trainer", {})
+        raw = _config_get(trainer_config, "nondeterminism_diagnostics", {})
+        enabled = bool(_config_get(raw, "enabled", False))
+        if not enabled:
+            cached = NondeterminismDiagnostics(DiagnosticsConfig(enabled=False))
+            self._nondeterminism_diagnostics_writer = cached
+            return cached
+
+        resolved_config = OmegaConf.to_container(self.config, resolve=True)
+        config_payload = json.dumps(
+            resolved_config,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+        config_sha256 = hashlib.sha256(config_payload).hexdigest()
+        git_commit = os.environ.get("OBCF_DIAGNOSTIC_GIT_COMMIT")
+        if not git_commit:
+            completed = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                cwd=Path(__file__).resolve().parents[4],
+                text=True,
+            )
+            git_commit = completed.stdout.strip()
+
+        ray_actor_identity = None
+        try:
+            import ray
+
+            context = ray.get_runtime_context()
+            ray_actor_identity = f"actor={context.get_actor_id()};node={context.get_node_id()}"
+        except Exception:
+            ray_actor_identity = None
+
+        server_addresses: list[str] = []
+        manager = getattr(self, "llm_server_manager", None)
+        for address in getattr(manager, "server_addresses", ()) or ():
+            server_addresses.append(str(address))
+        vllm_engine_identity = (
+            hashlib.sha256("\n".join(sorted(server_addresses)).encode("utf-8")).hexdigest()
+            if server_addresses
+            else None
+        )
+        rollout = _config_get(_config_get(self.config, "actor_rollout_ref"), "rollout")
+        tp_size = _config_get(rollout, "tensor_model_parallel_size")
+        tp_group_identity = (
+            f"tp={int(tp_size)};replicas={len(server_addresses)}" if tp_size is not None else None
+        )
+
+        sampler_hash = None
+        train_dataloader = getattr(self, "train_dataloader", None)
+        sampler = getattr(train_dataloader, "sampler", None)
+        generator = getattr(sampler, "generator", None)
+        if generator is not None and hasattr(generator, "get_state"):
+            generator_state = generator.get_state().detach().cpu().contiguous()
+            sampler_hash = hashlib.sha256(generator_state.numpy().tobytes()).hexdigest()
+
+        actor = _config_get(_config_get(self.config, "actor_rollout_ref"), "actor")
+        cached = NondeterminismDiagnostics(
+            DiagnosticsConfig(
+                enabled=True,
+                output_dir=_config_get(raw, "output_dir"),
+                run_id=_config_get(raw, "run_id", _config_get(trainer_config, "experiment_name")),
+                config_sha256=config_sha256,
+                git_commit=git_commit,
+                rank=int(os.environ.get("RANK", "0")),
+                ray_actor_identity=ray_actor_identity,
+                vllm_engine_identity=vllm_engine_identity,
+                tp_group_identity=tp_group_identity,
+                dataloader_base_seed=_config_get(actor, "data_loader_seed"),
+                sampler_generator_hash=sampler_hash,
+            )
+        )
+        self._nondeterminism_diagnostics_writer = cached
+        return cached
+
+    def _capture_nondeterminism_boundary(
+        self,
+        boundary: int,
+        batch: DataProto,
+        *,
+        generation_batch_index: int,
+        filter_metric: str | None = None,
+        effective_training_batch: bool = False,
+    ) -> None:
+        self._get_nondeterminism_diagnostics().capture(
+            boundary=boundary,
+            batch=batch,
+            global_step=int(self.global_steps),
+            generation_batch_index=int(generation_batch_index),
+            rollout_n=int(self.config.actor_rollout_ref.rollout.n),
+            filter_metric=filter_metric,
+            effective_training_batch=effective_training_batch,
+        )
 
     def _dump_gate_equivalence_batch(self, batch: DataProto) -> None:
         """Persist the post-update DataProto for opt-in Gate D equivalence checks."""
@@ -489,12 +597,23 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 is_last_step = self.global_steps >= self.total_training_steps
                 num_gen_batches += 1
 
+                self._capture_nondeterminism_boundary(
+                    0,
+                    gen_input,
+                    generation_batch_index=num_gen_batches,
+                )
+
                 with marked_timer("step", timing_raw):
                     with marked_timer("gen", timing_raw, color="red"):
                         gen_output = self.async_rollout_manager.generate_sequences(gen_input)
                         _accumulate_timing(timing_raw, gen_output.meta_info.get("timing", {}))
                         gen_output.meta_info.pop("timing", None)
                     candidate = candidate.repeat(repeat_times=rollout_n, interleave=True).union(gen_output)
+                    self._capture_nondeterminism_boundary(
+                        1,
+                        candidate,
+                        generation_batch_index=num_gen_batches,
+                    )
                     total_generated_trajectory_count += len(candidate)
                     self._capture_actual_rollout_policy_version(candidate)
                     ordinals: dict[str, int] = {}
@@ -518,6 +637,18 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                             )
                         candidate.batch["token_level_rewards"] = candidate.batch["token_level_scores"]
 
+                    metric_name = (
+                        self.config.algorithm.filter_groups.metric
+                        if self.config.algorithm.filter_groups.enable
+                        else None
+                    )
+                    self._capture_nondeterminism_boundary(
+                        2,
+                        candidate,
+                        generation_batch_index=num_gen_batches,
+                        filter_metric=metric_name,
+                    )
+
                     if self.config.algorithm.use_kl_in_reward:
                         candidate = self._compute_old_and_reference(candidate, metrics, timing_raw)
                         candidate, kl_metrics = apply_kl_penalty(
@@ -526,7 +657,6 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         metrics.update(kl_metrics)
 
                     if self.config.algorithm.filter_groups.enable:
-                        metric_name = self.config.algorithm.filter_groups.metric
                         if metric_name == "seq_final_reward":
                             candidate.non_tensor_batch[metric_name] = (
                                 candidate.batch["token_level_rewards"].sum(-1).cpu().numpy()
@@ -536,6 +666,11 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                                 candidate.batch["token_level_scores"].sum(-1).cpu().numpy()
                             )
                         filtered = filter_dapo_generation_batch(candidate, metric_name)
+                        self._capture_nondeterminism_boundary(
+                            3,
+                            filtered,
+                            generation_batch_index=num_gen_batches,
+                        )
                         kept_count = len(dict.fromkeys(filtered.non_tensor_batch["uid"].tolist()))
                         total_kept_prompt_count += kept_count
                         total_filtered_prompt_count += generated_prompt_count - kept_count
@@ -553,9 +688,21 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                                 )
                             continue
                         batch = select_complete_prompt_groups(retained_batch, prompt_bsz, rollout_n)
+                        self._capture_nondeterminism_boundary(
+                            3,
+                            batch,
+                            generation_batch_index=num_gen_batches,
+                            effective_training_batch=True,
+                        )
                     else:
                         batch = candidate
                         total_kept_prompt_count += generated_prompt_count
+                        self._capture_nondeterminism_boundary(
+                            3,
+                            batch,
+                            generation_batch_index=num_gen_batches,
+                            effective_training_batch=True,
+                        )
 
                     batch = self._prepare_final_retained_batch(batch, metrics, timing_raw)
                     if self.config.trainer.balance_batch:
