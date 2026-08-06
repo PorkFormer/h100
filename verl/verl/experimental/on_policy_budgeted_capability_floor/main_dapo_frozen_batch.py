@@ -14,16 +14,32 @@ if __package__ in (None, ""):
 import hydra
 import ray
 from omegaconf import OmegaConf
+from torch.utils.data import Dataset
 
 from verl.experimental.on_policy_budgeted_capability_floor.frozen_batch_trainer import (
     RayDAPOFrozenBatchBaselineTrainer,
     RayDAPOFrozenBatchOBCFTrainer,
 )
 from verl.experimental.reward_loop import migrate_legacy_reward_impl
-from verl.trainer.main_ppo import TaskRunner, create_rl_dataset, create_rl_sampler, run_ppo
+from verl.trainer.main_ppo import TaskRunner, create_rl_sampler, run_ppo
 from verl.utils.config import validate_config
 from verl.utils.device import auto_set_device
 from verl.utils.fs import copy_to_local
+
+
+class FrozenPlaceholderDataset(Dataset):
+    """Non-iterated shape placeholder for the diagnostic trainer constructor."""
+
+    def __init__(self, length: int):
+        if int(length) <= 0:
+            raise ValueError("frozen placeholder dataset length must be positive")
+        self._length = int(length)
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __getitem__(self, index):
+        raise RuntimeError("frozen-batch harness must never iterate its placeholder dataset")
 
 
 class FrozenBatchTaskRunner(TaskRunner):
@@ -59,22 +75,14 @@ class FrozenBatchTaskRunner(TaskRunner):
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
         processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
         resource_pool_manager = self.init_resource_pool_mgr(config)
-        train_dataset = create_rl_dataset(
-            config.data.train_files,
-            config.data,
-            tokenizer,
-            processor,
-            is_train=True,
-            max_samples=config.data.get("train_max_samples", -1),
+        # Frozen replay never reads a dataloader.  Materializing the scientific
+        # parquet datasets would only repeat their expensive filter pass and
+        # cannot affect the already attested DataProto supplied to the harness.
+        generation_batch_size = config.data.get(
+            "gen_batch_size", config.data.train_batch_size
         )
-        val_dataset = create_rl_dataset(
-            config.data.val_files,
-            config.data,
-            tokenizer,
-            processor,
-            is_train=False,
-            max_samples=config.data.get("val_max_samples", -1),
-        )
+        train_dataset = FrozenPlaceholderDataset(generation_batch_size)
+        val_dataset = FrozenPlaceholderDataset(1)
         trainer = trainer_class(
             config=config,
             tokenizer=tokenizer,

@@ -263,3 +263,17 @@ def test_frozen_entrypoint_routes_baseline_and_obcf_without_training_loop_calls(
     assert "trainer.fit()" in source
     assert "generate_sequences" not in source
     assert "filter_dapo_generation_batch" not in source
+
+
+def test_frozen_entrypoint_does_not_materialize_scientific_datasets_that_it_never_iterates():
+    entrypoint = (
+        Path(__file__).resolve().parents[3]
+        / "verl"
+        / "experimental"
+        / "on_policy_budgeted_capability_floor"
+        / "main_dapo_frozen_batch.py"
+    )
+    source = entrypoint.read_text()
+
+    assert "create_rl_dataset(" not in source
+    assert "FrozenPlaceholderDataset" in source
