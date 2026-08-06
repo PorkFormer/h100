@@ -105,8 +105,9 @@ def data_proto_semantic_hash(batch: DataProto) -> str:
 
     hasher = hashlib.sha256()
     hasher.update(b"obcf-gate-d-dataproto-semantic-hash-v1\0")
-    for name, tensor in batch.batch.items():
-        _update_tensor_hash(hasher, str(name), tensor)
+    if batch.batch is not None:
+        for name, tensor in batch.batch.items():
+            _update_tensor_hash(hasher, str(name), tensor)
     hasher.update(b"\0non-tensors\0")
     for name, value in batch.non_tensor_batch.items():
         hasher.update(str(name).encode("utf-8"))
@@ -135,7 +136,15 @@ def _extra_info_item(batch: DataProto, key: str, index: int, default: Any = None
     return default
 
 
-def _prompt_tokens(batch: DataProto, index: int) -> list[int]:
+def _prompt_tokens(
+    batch: DataProto,
+    index: int,
+    prompt_token_ids_override: Sequence[Sequence[int]] | None = None,
+) -> list[int]:
+    if prompt_token_ids_override is not None:
+        return [int(token) for token in prompt_token_ids_override[index]]
+    if batch.batch is None:
+        return []
     prompts = batch.batch.get("prompts")
     if prompts is None:
         input_ids = batch.batch.get("input_ids")
@@ -154,6 +163,8 @@ def _prompt_tokens(batch: DataProto, index: int) -> list[int]:
 
 
 def _response_tokens(batch: DataProto, index: int) -> list[int]:
+    if batch.batch is None:
+        return []
     responses = batch.batch.get("responses")
     if responses is None:
         return []
@@ -165,6 +176,8 @@ def _response_tokens(batch: DataProto, index: int) -> list[int]:
 
 
 def _terminal_reward(batch: DataProto, index: int) -> float | None:
+    if batch.batch is None:
+        return None
     for name in ("token_level_scores", "token_level_rewards", "rm_scores"):
         values = batch.batch.get(name)
         if values is not None:
@@ -224,8 +237,9 @@ class NondeterminismDiagnostics:
         global_step: int,
         generation_batch_index: int,
         rollout_n: int,
+        prompt_token_ids_override: Sequence[Sequence[int]] | None,
     ) -> dict[str, Any]:
-        prompt_tokens = _prompt_tokens(batch, index)
+        prompt_tokens = _prompt_tokens(batch, index, prompt_token_ids_override)
         prompt_token_hash = _sha256_tokens(prompt_tokens)
         prompt_id = _prompt_id(batch, index, prompt_token_hash)
         rollout_index = _array_item(batch, "rollout_index", index)
@@ -244,6 +258,9 @@ class NondeterminismDiagnostics:
             "prompt_hash": hashlib.sha256(_canonical_json_bytes(prompt_id)).hexdigest(),
             "prompt_token_hash": prompt_token_hash,
             "prompt_token_count": len(prompt_tokens),
+            "prompt_token_identity_status": (
+                "EXACT_TOKEN_IDS" if prompt_token_ids_override is not None or prompt_tokens else "NOT_AVAILABLE"
+            ),
             "rollout_index": int(rollout_index),
             "request_id": str(request_id),
             "dataloader_base_seed": self.config.dataloader_base_seed,
@@ -265,6 +282,7 @@ class NondeterminismDiagnostics:
         filter_metric: str | None,
         completion_order: Sequence[int] | None,
         effective_training_batch: bool,
+        prompt_token_ids_override: Sequence[Sequence[int]] | None,
     ) -> list[dict[str, Any]]:
         records = [
             self._common_record(
@@ -273,6 +291,7 @@ class NondeterminismDiagnostics:
                 global_step=global_step,
                 generation_batch_index=generation_batch_index,
                 rollout_n=rollout_n,
+                prompt_token_ids_override=prompt_token_ids_override,
             )
             for index in range(len(batch))
         ]
@@ -390,6 +409,7 @@ class NondeterminismDiagnostics:
         filter_metric: str | None = None,
         completion_order: Sequence[int] | None = None,
         effective_training_batch: bool = False,
+        prompt_token_ids_override: Sequence[Sequence[int]] | None = None,
     ) -> None:
         """Capture one boundary; disabled diagnostics return before any work."""
 
@@ -401,6 +421,8 @@ class NondeterminismDiagnostics:
             raise ValueError("rollout_n must be positive")
         if completion_order is not None and len(completion_order) != len(batch):
             raise ValueError("completion_order length does not match batch")
+        if prompt_token_ids_override is not None and len(prompt_token_ids_override) != len(batch):
+            raise ValueError("prompt_token_ids_override length does not match batch")
 
         before_hash = data_proto_semantic_hash(batch)
         records = self._records(
@@ -412,6 +434,7 @@ class NondeterminismDiagnostics:
             filter_metric=filter_metric,
             completion_order=completion_order,
             effective_training_batch=effective_training_batch,
+            prompt_token_ids_override=prompt_token_ids_override,
         )
         self._audit_unique_identities(records)
         after_record_hash = data_proto_semantic_hash(batch)

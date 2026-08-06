@@ -186,3 +186,36 @@ def test_dapo_fit_captures_four_boundaries_in_scientific_control_flow_order():
     assert source.index("union(gen_output)") < positions[1] < source.index("_score_batch_with_existing_reward_pipeline")
     assert source.index('candidate.batch["token_level_rewards"]') < positions[2]
     assert source.index("filter_dapo_generation_batch") < positions[3]
+
+
+def test_boundary_zero_handles_agent_loop_non_tensor_batch_with_exact_prompt_override(tmp_path):
+    batch = DataProto(
+        batch=None,
+        non_tensor_batch={
+            "uid": np.asarray(["group-0", "group-0"], dtype=object),
+            "raw_prompt": np.asarray(
+                [
+                    [{"role": "user", "content": "one"}],
+                    [{"role": "user", "content": "one"}],
+                ],
+                dtype=object,
+            ),
+        },
+        meta_info={"global_steps": 3},
+    )
+    writer = _enabled(tmp_path)
+
+    writer.capture(
+        boundary=0,
+        batch=batch,
+        global_step=3,
+        generation_batch_index=1,
+        rollout_n=2,
+        prompt_token_ids_override=[[101, 102, 103], [101, 102, 103]],
+    )
+
+    records_path = next(tmp_path.rglob("records.jsonl"))
+    records = [json.loads(line) for line in records_path.read_text().splitlines()]
+    assert [record["prompt_token_count"] for record in records] == [3, 3]
+    assert records[0]["prompt_token_hash"] == records[1]["prompt_token_hash"]
+    assert records[0]["prompt_token_identity_status"] == "EXACT_TOKEN_IDS"

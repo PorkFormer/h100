@@ -189,7 +189,30 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         filter_metric: str | None = None,
         effective_training_batch: bool = False,
     ) -> None:
-        self._get_nondeterminism_diagnostics().capture(
+        writer = self._get_nondeterminism_diagnostics()
+        prompt_token_ids_override = None
+        if writer.config.enabled and boundary == 0:
+            from verl.utils.chat_template import apply_chat_template
+            from verl.utils.tokenizer import normalize_token_ids
+
+            raw_prompts = batch.non_tensor_batch.get("raw_prompt")
+            if raw_prompts is None or len(raw_prompts) != len(batch):
+                raise ValueError("Boundary 0 requires raw_prompt for exact token identity")
+            apply_kwargs = dict(_config_get(_config_get(self.config, "data"), "apply_chat_template_kwargs", {}))
+            prompt_length = int(self.config.actor_rollout_ref.rollout.prompt_length)
+            prompt_token_ids_override = []
+            for raw_prompt in raw_prompts:
+                token_ids = normalize_token_ids(
+                    apply_chat_template(
+                        self.tokenizer,
+                        list(raw_prompt),
+                        add_generation_prompt=True,
+                        tokenize=True,
+                        **apply_kwargs,
+                    )
+                )
+                prompt_token_ids_override.append(token_ids[-prompt_length:])
+        writer.capture(
             boundary=boundary,
             batch=batch,
             global_step=int(self.global_steps),
@@ -197,6 +220,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             rollout_n=int(self.config.actor_rollout_ref.rollout.n),
             filter_metric=filter_metric,
             effective_training_batch=effective_training_batch,
+            prompt_token_ids_override=prompt_token_ids_override,
         )
 
     def _dump_gate_equivalence_batch(self, batch: DataProto) -> None:
