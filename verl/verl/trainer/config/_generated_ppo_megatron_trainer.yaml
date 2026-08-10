@@ -332,9 +332,11 @@ actor_rollout_ref:
       instruction: '
 
 
-        Now stop reasoning and provide only the final answer in the required format.'
+        Provide only the final answer in this exact format: Answer: <final answer>'
+      correctness_key: acc
+      correctness_threshold: 0.5
       success_threshold: 0.0
-      high_confidence_threshold: 0.5
+      high_confidence_threshold: 1.0
       save_examples: false
       max_examples_per_step: 8
       examples_dir: null
