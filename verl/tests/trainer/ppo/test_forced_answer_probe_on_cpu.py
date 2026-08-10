@@ -104,6 +104,7 @@ def test_probe_disabled_does_not_call_generation():
         tokenizer=_Tokenizer(),
         client=client,
         max_response_length=4,
+        max_model_len=128,
         global_step=3,
     )
     assert result is None
@@ -118,6 +119,7 @@ def test_probe_filters_to_only_hit_cap_trajectories():
         tokenizer=_Tokenizer(),
         client=client,
         max_response_length=4,
+        max_model_len=128,
         global_step=3,
     )
     assert capture.hit_response_cap.tolist() == [False, True]
@@ -134,12 +136,15 @@ def test_k_sample_aggregation():
     ]
     diagnostics = aggregate_probe_diagnostics(
         hit_response_cap=[True],
+        probe_attempted=[True],
+        context_overflow=[False],
         generations=generations,
         probe_correctness=[1.0, 0.0],
         original_correctness=[0.0],
         probe_shaped_rewards=[1.0, 0.0],
         original_shaped_rewards=[0.0],
         original_generated_tokens=4,
+        probe_input_tokens=1,
         num_samples=2,
         correctness_threshold=0.5,
         high_confidence_threshold=1.0,
@@ -159,11 +164,20 @@ def test_probe_generation_and_reward_batch_do_not_mutate_training_tensors():
         tokenizer=_Tokenizer(),
         client=client,
         max_response_length=4,
+        max_model_len=128,
         global_step=5,
     )
     reward_batch = build_probe_reward_batch(original, capture.generations, pad_token_id=0)
 
-    for key in ("responses", "response_mask", "old_log_probs", "advantages"):
+    for key in (
+        "responses",
+        "response_mask",
+        "old_log_probs",
+        "advantages",
+        "input_ids",
+        "attention_mask",
+        "position_ids",
+    ):
         assert torch.equal(original.batch[key], tensor_snapshot[key])
     assert reward_batch.batch["responses"].shape[0] == 2
     assert reward_batch.batch["responses"].data_ptr() != original.batch["responses"].data_ptr()
@@ -179,12 +193,15 @@ def test_logging_statistics_false_negative_and_token_overhead():
     ]
     diagnostics = aggregate_probe_diagnostics(
         hit_response_cap=[False, True, True],
+        probe_attempted=[False, True, True],
+        context_overflow=[False, False, False],
         generations=generations,
         probe_correctness=[1.0, 0.0, 1.0, 1.0],
         original_correctness=[1.0, 0.0, 1.0],
         probe_shaped_rewards=[1.0, 0.0, 1.0, 1.0],
         original_shaped_rewards=[1.0, 0.0, 1.0],
         original_generated_tokens=12,
+        probe_input_tokens=2,
         num_samples=2,
         correctness_threshold=0.5,
         high_confidence_threshold=1.0,
@@ -212,12 +229,15 @@ def test_shaped_reward_does_not_contaminate_correctness():
     ]
     diagnostics = aggregate_probe_diagnostics(
         hit_response_cap=[True],
+        probe_attempted=[True],
+        context_overflow=[False],
         generations=generations,
         probe_correctness=[1.0, 1.0],
         original_correctness=[1.0],
         probe_shaped_rewards=[1.0, 1.0],
         original_shaped_rewards=[-0.2],
         original_generated_tokens=4,
+        probe_input_tokens=1,
         num_samples=2,
         correctness_threshold=0.5,
         high_confidence_threshold=1.0,
@@ -239,12 +259,15 @@ def test_raw_correctness_controls_recovery_and_high_confidence(
     ]
     diagnostics = aggregate_probe_diagnostics(
         hit_response_cap=[True],
+        probe_attempted=[True],
+        context_overflow=[False],
         generations=generations,
         probe_correctness=probe_correctness,
         original_correctness=[0.0],
         probe_shaped_rewards=[-10.0, -10.0],
         original_shaped_rewards=[10.0],
         original_generated_tokens=4,
+        probe_input_tokens=1,
         num_samples=2,
         correctness_threshold=0.5,
         high_confidence_threshold=1.0,
@@ -264,12 +287,15 @@ def test_conditional_recovery_excludes_originally_correct_trajectories():
     ]
     diagnostics = aggregate_probe_diagnostics(
         hit_response_cap=[True] * 4,
+        probe_attempted=[True] * 4,
+        context_overflow=[False] * 4,
         generations=generations,
         probe_correctness=[1, 0, 1, 0, 0, 0, 1, 1],
         original_correctness=[0, 0, 0, 1],
         probe_shaped_rewards=[0.0] * 8,
         original_shaped_rewards=[0.0] * 4,
         original_generated_tokens=16,
+        probe_input_tokens=4,
         num_samples=2,
         correctness_threshold=0.5,
         high_confidence_threshold=1.0,
@@ -288,7 +314,10 @@ def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
     )
     capture = ForcedAnswerProbeCapture(
         hit_response_cap=np.asarray([False, True]),
+        probe_attempted=np.asarray([False, True]),
+        context_overflow=np.asarray([False, False]),
         generations=generations,
+        probe_input_tokens=1,
     )
     reward_batch = build_probe_reward_batch(original, generations, pad_token_id=0)
 
@@ -342,7 +371,10 @@ def test_missing_correctness_key_fails_closed():
     )
     capture = ForcedAnswerProbeCapture(
         hit_response_cap=np.asarray([False, True]),
+        probe_attempted=np.asarray([False, True]),
+        context_overflow=np.asarray([False, False]),
         generations=generations,
+        probe_input_tokens=1,
     )
     reward_batch = build_probe_reward_batch(original, generations, pad_token_id=0)
 
@@ -379,3 +411,121 @@ def test_forced_answer_probe_config_correctness_defaults_and_validation():
         ForcedAnswerProbeConfig(correctness_key="").validate()
     with pytest.raises(ValueError, match="correctness_threshold"):
         ForcedAnswerProbeConfig(correctness_threshold=float("nan")).validate()
+
+
+def test_context_overflow_is_skipped_before_client_generation():
+    client = _Client()
+    capture = run_forced_answer_probe(
+        config=ForcedAnswerProbeConfig(enable=True, max_new_tokens=94),
+        rollout_batch=_rollout_batch(),
+        tokenizer=_Tokenizer(),
+        client=client,
+        max_response_length=4,
+        max_model_len=100,
+        global_step=7,
+    )
+    assert capture.hit_response_cap.tolist() == [False, True]
+    assert capture.context_overflow.tolist() == [False, True]
+    assert capture.probe_attempted.tolist() == [False, False]
+    assert capture.probe_input_tokens == 0
+    assert capture.generations == ()
+    assert client.calls == []
+
+
+def test_mixed_context_batch_skips_only_overflow_requests():
+    prompts = torch.tensor(
+        [[0, 0, 0, 11], [21, 22, 23, 24], [0, 0, 31, 32]], dtype=torch.long
+    )
+    responses = torch.tensor(
+        [[41, 42, 0, 0], [51, 52, 53, 54], [61, 62, 63, 0]], dtype=torch.long
+    )
+    attention_mask = torch.tensor(
+        [
+            [0, 0, 0, 1, 1, 1, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 1, 1, 1, 1, 1, 0],
+        ],
+        dtype=torch.long,
+    )
+    rollout_batch = DataProto(
+        batch=TensorDict(
+            {
+                "prompts": prompts,
+                "responses": responses,
+                "input_ids": torch.cat((prompts, responses), dim=-1),
+                "attention_mask": attention_mask,
+                "position_ids": torch.clamp(attention_mask.cumsum(-1) - 1, min=0),
+            },
+            batch_size=3,
+        ),
+        non_tensor_batch={
+            "uid": np.asarray(["a", "b", "c"], dtype=object),
+            "finish_reason": np.asarray(["length"] * 3, dtype=object),
+        },
+    )
+    client = _Client()
+    capture = run_forced_answer_probe(
+        config=ForcedAnswerProbeConfig(enable=True, max_new_tokens=4),
+        rollout_batch=rollout_batch,
+        tokenizer=_Tokenizer(),
+        client=client,
+        max_response_length=4,
+        max_model_len=12,
+        global_step=8,
+    )
+    assert capture.hit_response_cap.tolist() == [True, True, True]
+    assert capture.context_overflow.tolist() == [False, True, False]
+    assert capture.probe_attempted.tolist() == [True, False, True]
+    assert len(client.calls) == 2
+    assert {generation.parent_index for generation in capture.generations} == {0, 2}
+
+    diagnostics = aggregate_probe_diagnostics(
+        hit_response_cap=capture.hit_response_cap,
+        probe_attempted=capture.probe_attempted,
+        context_overflow=capture.context_overflow,
+        generations=capture.generations,
+        probe_correctness=[1.0] * 4,
+        original_correctness=[0.0] * 3,
+        probe_shaped_rewards=[1.0] * 4,
+        original_shaped_rewards=[0.0] * 3,
+        original_generated_tokens=9,
+        probe_input_tokens=capture.probe_input_tokens,
+        num_samples=2,
+        correctness_threshold=0.5,
+        high_confidence_threshold=1.0,
+    )
+    assert diagnostics.metrics["probe/context_overflow_count"] == 1.0
+    assert diagnostics.metrics["probe/context_overflow_rate"] == pytest.approx(1 / 3)
+    assert diagnostics.metrics["probe/probe_attempted_count"] == 2.0
+    assert diagnostics.metrics["probe/probe_coverage_rate"] == pytest.approx(2 / 3)
+
+
+def test_grouped_request_token_accounting_counts_prefill_once():
+    generations = [
+        ForcedAnswerGeneration(0, 0, tuple(range(2050)), tuple(range(10))),
+        ForcedAnswerGeneration(0, 1, tuple(range(2050)), tuple(range(20))),
+        ForcedAnswerGeneration(1, 0, tuple(range(2100)), tuple(range(15))),
+        ForcedAnswerGeneration(1, 1, tuple(range(2100)), tuple(range(25))),
+    ]
+    diagnostics = aggregate_probe_diagnostics(
+        hit_response_cap=[True, True],
+        probe_attempted=[True, True],
+        context_overflow=[False, False],
+        generations=generations,
+        probe_correctness=[0.0] * 4,
+        original_correctness=[0.0, 0.0],
+        probe_shaped_rewards=[0.0] * 4,
+        original_shaped_rewards=[0.0, 0.0],
+        original_generated_tokens=100,
+        probe_input_tokens=4150,
+        num_samples=2,
+        correctness_threshold=0.5,
+        high_confidence_threshold=1.0,
+    )
+    metrics = diagnostics.metrics
+    assert metrics["probe/extra_input_tokens"] == 4150.0
+    assert metrics["probe/extra_generated_tokens"] == 70.0
+    assert metrics["probe/extra_total_tokens"] == 4220.0
+    assert metrics["probe/extra_generated_token_ratio"] == pytest.approx(0.7)
+    assert metrics["probe/extra_total_token_ratio"] == pytest.approx(42.2)
+    assert metrics["probe/extra_token_ratio"] == metrics["probe/extra_generated_token_ratio"]

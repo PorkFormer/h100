@@ -47,7 +47,10 @@ class ForcedAnswerGeneration:
 @dataclass(frozen=True)
 class ForcedAnswerProbeCapture:
     hit_response_cap: np.ndarray
+    probe_attempted: np.ndarray
+    context_overflow: np.ndarray
     generations: tuple[ForcedAnswerGeneration, ...]
+    probe_input_tokens: int
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,7 @@ async def run_forced_answer_probe(
     tokenizer: Any,
     client: Any,
     max_response_length: int,
+    max_model_len: int,
     global_step: int,
 ) -> ForcedAnswerProbeCapture | None:
     """Detect cap hits and generate only their short answer branches.
@@ -194,8 +198,27 @@ async def run_forced_answer_probe(
         global_step=global_step,
         base_seed=config.seed,
     )
+    probe_attempted = np.zeros(len(rollout_batch), dtype=bool)
+    context_overflow = np.zeros(len(rollout_batch), dtype=bool)
+    runnable_requests: list[ForcedAnswerRequest] = []
+    probe_input_tokens = 0
+    for request in requests:
+        required_context = len(request.prompt_token_ids) + config.max_new_tokens
+        if required_context > max_model_len:
+            context_overflow[request.parent_index] = True
+            continue
+        probe_attempted[request.parent_index] = True
+        probe_input_tokens += len(request.prompt_token_ids)
+        runnable_requests.append(request)
+    requests = runnable_requests
     if not requests:
-        return ForcedAnswerProbeCapture(hit_response_cap=hit_cap, generations=())
+        return ForcedAnswerProbeCapture(
+            hit_response_cap=hit_cap,
+            probe_attempted=probe_attempted,
+            context_overflow=context_overflow,
+            generations=(),
+            probe_input_tokens=0,
+        )
 
     semaphore = asyncio.Semaphore(config.max_concurrent_requests)
 
@@ -242,7 +265,13 @@ async def run_forced_answer_probe(
 
     grouped = await asyncio.gather(*(generate_one(request) for request in requests))
     generations = tuple(generation for request_results in grouped for generation in request_results)
-    return ForcedAnswerProbeCapture(hit_response_cap=hit_cap, generations=generations)
+    return ForcedAnswerProbeCapture(
+        hit_response_cap=hit_cap,
+        probe_attempted=probe_attempted,
+        context_overflow=context_overflow,
+        generations=generations,
+        probe_input_tokens=probe_input_tokens,
+    )
 
 
 def build_probe_reward_batch(
@@ -295,22 +324,35 @@ def build_probe_reward_batch(
 def aggregate_probe_diagnostics(
     *,
     hit_response_cap: Sequence[bool],
+    probe_attempted: Sequence[bool],
+    context_overflow: Sequence[bool],
     generations: Sequence[ForcedAnswerGeneration],
     probe_correctness: Sequence[float],
     original_correctness: Sequence[float],
     probe_shaped_rewards: Sequence[float],
     original_shaped_rewards: Sequence[float],
     original_generated_tokens: int,
+    probe_input_tokens: int,
     num_samples: int,
     correctness_threshold: float,
     high_confidence_threshold: float,
 ) -> ForcedAnswerProbeDiagnostics:
     """Aggregate raw correctness separately from shaped-reward telemetry."""
     hit_cap = np.asarray(hit_response_cap, dtype=bool)
+    attempted = np.asarray(probe_attempted, dtype=bool)
+    overflow = np.asarray(context_overflow, dtype=bool)
     original_correct = np.asarray(original_correctness, dtype=np.float64)
     original_shaped = np.asarray(original_shaped_rewards, dtype=np.float64)
     probe_correct = np.asarray(probe_correctness, dtype=np.float64)
     probe_shaped = np.asarray(probe_shaped_rewards, dtype=np.float64)
+    if len(attempted) != len(hit_cap):
+        raise ValueError("probe_attempted must align with hit_response_cap")
+    if len(overflow) != len(hit_cap):
+        raise ValueError("context_overflow must align with hit_response_cap")
+    if np.any(attempted & ~hit_cap) or np.any(overflow & ~hit_cap):
+        raise ValueError("probe state may only be set for truncated trajectories")
+    if np.any(attempted & overflow):
+        raise ValueError("context-overflow trajectories cannot be attempted")
     if len(original_correct) != len(hit_cap):
         raise ValueError("original_correctness must align with hit_response_cap")
     if len(original_shaped) != len(hit_cap):
@@ -328,6 +370,8 @@ def aggregate_probe_diagnostics(
     ):
         if not hit_cap[generation.parent_index]:
             raise ValueError("probe generation points to a non-truncated trajectory")
+        if not attempted[generation.parent_index]:
+            raise ValueError("probe generation points to an unattempted trajectory")
         shaped_by_parent.setdefault(generation.parent_index, []).append(
             (generation.branch_id, float(shaped_reward))
         )
@@ -340,7 +384,7 @@ def aggregate_probe_diagnostics(
 
     ordered_rewards: dict[int, tuple[float, ...]] = {}
     successes: dict[int, tuple[bool, ...]] = {}
-    for parent_index in np.flatnonzero(hit_cap).tolist():
+    for parent_index in np.flatnonzero(attempted).tolist():
         shaped_branches = sorted(shaped_by_parent.get(parent_index, []))
         correctness_branches = sorted(correctness_by_parent.get(parent_index, []))
         expected_branches = list(range(num_samples))
@@ -356,6 +400,8 @@ def aggregate_probe_diagnostics(
         successes[parent_index] = tuple(value >= correctness_threshold for value in parent_correctness)
 
     truncated_count = int(hit_cap.sum())
+    attempted_count = int(attempted.sum())
+    overflow_count = int(overflow.sum())
     total_count = len(hit_cap)
     extra_tokens = int(sum(tokens_by_parent.values()))
     success_rates = [float(np.mean(successes[parent])) for parent in sorted(successes)]
@@ -373,19 +419,35 @@ def aggregate_probe_diagnostics(
         for parent in sorted(successes)
     ]
     truncated_failures = [
-        parent for parent in sorted(successes) if original_correct[parent] < correctness_threshold
+        parent
+        for parent in np.flatnonzero(hit_cap & attempted).tolist()
+        if original_correct[parent] < correctness_threshold
     ]
     recovered_failures = sum(any(successes[parent]) for parent in truncated_failures)
 
     denominator = float(truncated_count) if truncated_count else 1.0
+    extra_total_tokens = probe_input_tokens + extra_tokens
     metrics = {
         "probe/hit_cap_rate": float(truncated_count / total_count) if total_count else 0.0,
         "probe/num_truncated_trajectories": float(truncated_count),
         "probe/num_probe_generations": float(len(generations)),
+        "probe/context_overflow_count": float(overflow_count),
+        "probe/context_overflow_rate": float(overflow_count / denominator),
+        "probe/probe_attempted_count": float(attempted_count),
+        "probe/probe_coverage_rate": float(attempted_count / denominator),
         "probe/success_rate_mean": float(np.mean(success_rates)) if success_rates else 0.0,
         "probe/p_any_success": float(np.mean(any_success)) if any_success else 0.0,
         "probe/p_all_success": float(np.mean(all_success)) if all_success else 0.0,
+        "probe/extra_input_tokens": float(probe_input_tokens),
         "probe/extra_generated_tokens": float(extra_tokens),
+        "probe/extra_total_tokens": float(extra_total_tokens),
+        "probe/extra_generated_token_ratio": (
+            float(extra_tokens / original_generated_tokens) if original_generated_tokens > 0 else 0.0
+        ),
+        "probe/extra_total_token_ratio": (
+            float(extra_total_tokens / original_generated_tokens) if original_generated_tokens > 0 else 0.0
+        ),
+        # Legacy dashboard alias for generated-token ratio.
         "probe/extra_token_ratio": (
             float(extra_tokens / original_generated_tokens) if original_generated_tokens > 0 else 0.0
         ),

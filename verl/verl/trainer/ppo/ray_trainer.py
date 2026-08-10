@@ -627,12 +627,17 @@ class RayPPOTrainer:
         if self.config.actor_rollout_ref.rollout.multi_turn.enable:
             raise ValueError("forced_answer_probe Step 2 currently supports single-turn rollouts only")
         probe_config = omega_conf_to_dataclass(raw_config)
+        rollout_config = self.config.actor_rollout_ref.rollout
+        max_model_len = rollout_config.max_model_len or (
+            rollout_config.prompt_length + rollout_config.response_length
+        )
         return run_forced_answer_probe(
             config=probe_config,
             rollout_batch=rollout_batch,
             tokenizer=self.tokenizer,
             client=self.llm_server_manager.get_client(),
-            max_response_length=self.config.actor_rollout_ref.rollout.response_length,
+            max_response_length=rollout_config.response_length,
+            max_model_len=max_model_len,
             global_step=self.global_steps,
         )
 
@@ -692,12 +697,15 @@ class RayPPOTrainer:
         original_generated_tokens = int(batch.batch["attention_mask"][:, prompt_width:].sum().item())
         diagnostics = aggregate_probe_diagnostics(
             hit_response_cap=capture.hit_response_cap,
+            probe_attempted=capture.probe_attempted,
+            context_overflow=capture.context_overflow,
             generations=capture.generations,
             probe_correctness=probe_correctness,
             original_correctness=original_correctness,
             probe_shaped_rewards=probe_shaped_rewards,
             original_shaped_rewards=original_shaped_rewards,
             original_generated_tokens=original_generated_tokens,
+            probe_input_tokens=capture.probe_input_tokens,
             num_samples=probe_config.num_samples,
             correctness_threshold=probe_config.correctness_threshold,
             high_confidence_threshold=probe_config.high_confidence_threshold,
