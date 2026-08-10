@@ -306,7 +306,9 @@ def test_conditional_recovery_excludes_originally_correct_trajectories():
 def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
     original = _rollout_batch()
     original.batch["rm_scores"] = torch.zeros_like(original.batch["responses"], dtype=torch.float32)
-    original.non_tensor_batch["__forced_answer_probe_parent_index__"] = np.arange(2, dtype=np.int64)
+    # Simulate _balance_batch(): current rows 0,1 came from pre-balance rows 1,0.
+    original.non_tensor_batch["__forced_answer_probe_parent_index__"] = np.asarray([1, 0])
+    original.non_tensor_batch["hit_response_cap"] = np.asarray([True, False])
     tensor_snapshot = {key: value.clone() for key, value in original.batch.items()}
     generations = (
         ForcedAnswerGeneration(1, 0, (1,), (40,)),
@@ -351,20 +353,25 @@ def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
         capture=capture,
         probe_reward_batch=reward_batch,
         original_reward_tensor=original.batch["rm_scores"],
-        original_reward_extra_infos={"acc": np.asarray([0.0, 0.0])},
+        # Current row 0 (pre-balance parent 1) is incorrect; row 1 is correct.
+        original_reward_extra_infos={"acc": np.asarray([0.0, 1.0])},
     )
 
     assert trainer.reward_loop_manager.observed_batch_sizes == [4]
     assert metrics["probe/num_probe_generations"] == 2.0
     assert metrics["probe/success_rate_mean"] == pytest.approx(0.5)
+    assert metrics["probe/recovery_rate_given_truncated_failure"] == 1.0
     for key, snapshot in tensor_snapshot.items():
         assert torch.equal(original.batch[key], snapshot)
+    assert "hit_response_cap" not in original.non_tensor_batch
+    assert "__forced_answer_probe_parent_index__" not in original.non_tensor_batch
 
 
 def test_missing_correctness_key_fails_closed():
     original = _rollout_batch()
     original.batch["rm_scores"] = torch.zeros_like(original.batch["responses"], dtype=torch.float32)
     original.non_tensor_batch["__forced_answer_probe_parent_index__"] = np.arange(2, dtype=np.int64)
+    original.non_tensor_batch["hit_response_cap"] = np.asarray([False, True])
     generations = (
         ForcedAnswerGeneration(1, 0, (1,), (40,)),
         ForcedAnswerGeneration(1, 1, (1,), (41,)),
@@ -400,6 +407,8 @@ def test_missing_correctness_key_fails_closed():
             original_reward_tensor=original.batch["rm_scores"],
             original_reward_extra_infos={"acc": np.asarray([0.0, 0.0])},
         )
+    assert "hit_response_cap" not in original.non_tensor_batch
+    assert "__forced_answer_probe_parent_index__" not in original.non_tensor_batch
 
 
 def test_forced_answer_probe_config_correctness_defaults_and_validation():
@@ -529,3 +538,34 @@ def test_grouped_request_token_accounting_counts_prefill_once():
     assert metrics["probe/extra_generated_token_ratio"] == pytest.approx(0.7)
     assert metrics["probe/extra_total_token_ratio"] == pytest.approx(42.2)
     assert metrics["probe/extra_token_ratio"] == metrics["probe/extra_generated_token_ratio"]
+
+
+def test_probe_generation_exception_still_cleans_up_rollout_replicas():
+    class _CheckpointManager:
+        def __init__(self):
+            self.sleep_calls = 0
+
+        def sleep_replicas(self):
+            self.sleep_calls += 1
+
+    class _ServerManager:
+        def __init__(self):
+            self.stop_profile_calls = 0
+
+        def stop_profile(self):
+            self.stop_profile_calls += 1
+
+    trainer = RayPPOTrainer.__new__(RayPPOTrainer)
+    trainer.checkpoint_manager = _CheckpointManager()
+    trainer.llm_server_manager = _ServerManager()
+
+    def raise_probe_error(_rollout_batch):
+        raise RuntimeError("probe generation failed")
+
+    trainer._generate_forced_answer_probe = raise_probe_error
+    with pytest.raises(RuntimeError, match="probe generation failed"):
+        trainer._generate_forced_answer_probe_with_replica_cleanup(
+            _rollout_batch(), curr_step_profile=True
+        )
+    assert trainer.checkpoint_manager.sleep_calls == 1
+    assert trainer.llm_server_manager.stop_profile_calls == 1

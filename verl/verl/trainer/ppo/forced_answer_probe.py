@@ -453,6 +453,12 @@ def aggregate_probe_diagnostics(
         ),
         "probe/raw_correctness_mean": float(np.mean(probe_correct)) if len(probe_correct) else 0.0,
         "probe/shaped_reward_mean": float(np.mean(probe_shaped)) if len(probe_shaped) else 0.0,
+        "probe/original_truncated_raw_correctness_mean": (
+            float(np.mean(original_correct[hit_cap])) if truncated_count else 0.0
+        ),
+        "probe/original_truncated_shaped_reward_mean": (
+            float(np.mean(original_shaped[hit_cap])) if truncated_count else 0.0
+        ),
         # Backward-compatible telemetry alias; never used to determine correctness.
         "probe/reward_mean": float(np.mean(probe_shaped)) if len(probe_shaped) else 0.0,
         "probe/truncation_false_negative_candidate_rate": float(sum(candidate) / denominator),

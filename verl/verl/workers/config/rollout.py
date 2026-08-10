@@ -73,7 +73,7 @@ class ForcedAnswerProbeConfig(BaseConfig):
     max_new_tokens: int = 64
     temperature: float = 1.0
     top_p: float = 1.0
-    instruction: str = "\n\nNow stop reasoning and provide only the final answer in the required format."
+    instruction: str = "\n\nProvide only the final answer in this exact format: Answer: <final answer>"
     correctness_key: str = "acc"
     correctness_threshold: float = 0.5
     success_threshold: float = 0.0
