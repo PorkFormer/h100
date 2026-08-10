@@ -296,28 +296,44 @@ def aggregate_probe_diagnostics(
     *,
     hit_response_cap: Sequence[bool],
     generations: Sequence[ForcedAnswerGeneration],
-    probe_rewards: Sequence[float],
-    original_rewards: Sequence[float],
+    probe_correctness: Sequence[float],
+    original_correctness: Sequence[float],
+    probe_shaped_rewards: Sequence[float],
+    original_shaped_rewards: Sequence[float],
     original_generated_tokens: int,
     num_samples: int,
-    success_threshold: float,
+    correctness_threshold: float,
     high_confidence_threshold: float,
 ) -> ForcedAnswerProbeDiagnostics:
-    """Aggregate per-trajectory correctness and token-overhead diagnostics."""
+    """Aggregate raw correctness separately from shaped-reward telemetry."""
     hit_cap = np.asarray(hit_response_cap, dtype=bool)
-    original = np.asarray(original_rewards, dtype=np.float64)
-    rewards = np.asarray(probe_rewards, dtype=np.float64)
-    if len(original) != len(hit_cap):
-        raise ValueError("original_rewards must align with hit_response_cap")
-    if len(generations) != len(rewards):
-        raise ValueError("probe_rewards must align with generations")
+    original_correct = np.asarray(original_correctness, dtype=np.float64)
+    original_shaped = np.asarray(original_shaped_rewards, dtype=np.float64)
+    probe_correct = np.asarray(probe_correctness, dtype=np.float64)
+    probe_shaped = np.asarray(probe_shaped_rewards, dtype=np.float64)
+    if len(original_correct) != len(hit_cap):
+        raise ValueError("original_correctness must align with hit_response_cap")
+    if len(original_shaped) != len(hit_cap):
+        raise ValueError("original_shaped_rewards must align with hit_response_cap")
+    if len(generations) != len(probe_correct):
+        raise ValueError("probe_correctness must align with generations")
+    if len(generations) != len(probe_shaped):
+        raise ValueError("probe_shaped_rewards must align with generations")
 
-    rewards_by_parent: dict[int, list[tuple[int, float]]] = {}
+    shaped_by_parent: dict[int, list[tuple[int, float]]] = {}
+    correctness_by_parent: dict[int, list[tuple[int, float]]] = {}
     tokens_by_parent: dict[int, int] = {}
-    for generation, reward in zip(generations, rewards, strict=True):
+    for generation, correctness, shaped_reward in zip(
+        generations, probe_correct, probe_shaped, strict=True
+    ):
         if not hit_cap[generation.parent_index]:
             raise ValueError("probe generation points to a non-truncated trajectory")
-        rewards_by_parent.setdefault(generation.parent_index, []).append((generation.branch_id, float(reward)))
+        shaped_by_parent.setdefault(generation.parent_index, []).append(
+            (generation.branch_id, float(shaped_reward))
+        )
+        correctness_by_parent.setdefault(generation.parent_index, []).append(
+            (generation.branch_id, float(correctness))
+        )
         tokens_by_parent[generation.parent_index] = tokens_by_parent.get(generation.parent_index, 0) + len(
             generation.response_token_ids
         )
@@ -325,12 +341,19 @@ def aggregate_probe_diagnostics(
     ordered_rewards: dict[int, tuple[float, ...]] = {}
     successes: dict[int, tuple[bool, ...]] = {}
     for parent_index in np.flatnonzero(hit_cap).tolist():
-        branches = sorted(rewards_by_parent.get(parent_index, []))
-        if len(branches) != num_samples or [branch for branch, _ in branches] != list(range(num_samples)):
+        shaped_branches = sorted(shaped_by_parent.get(parent_index, []))
+        correctness_branches = sorted(correctness_by_parent.get(parent_index, []))
+        expected_branches = list(range(num_samples))
+        if (
+            len(shaped_branches) != num_samples
+            or [branch for branch, _ in shaped_branches] != expected_branches
+            or [branch for branch, _ in correctness_branches] != expected_branches
+        ):
             raise ValueError(f"trajectory {parent_index} does not have exactly {num_samples} probe branches")
-        parent_rewards = tuple(reward for _, reward in branches)
+        parent_rewards = tuple(reward for _, reward in shaped_branches)
+        parent_correctness = tuple(value for _, value in correctness_branches)
         ordered_rewards[parent_index] = parent_rewards
-        successes[parent_index] = tuple(reward > success_threshold for reward in parent_rewards)
+        successes[parent_index] = tuple(value >= correctness_threshold for value in parent_correctness)
 
     truncated_count = int(hit_cap.sum())
     total_count = len(hit_cap)
@@ -339,15 +362,20 @@ def aggregate_probe_diagnostics(
     any_success = [any(successes[parent]) for parent in sorted(successes)]
     all_success = [all(successes[parent]) for parent in sorted(successes)]
     candidate = [
-        bool(original[parent] <= success_threshold and any(successes[parent])) for parent in sorted(successes)
+        bool(original_correct[parent] < correctness_threshold and any(successes[parent]))
+        for parent in sorted(successes)
     ]
     high_confidence = [
         bool(
-            original[parent] <= success_threshold
+            original_correct[parent] < correctness_threshold
             and float(np.mean(successes[parent])) >= high_confidence_threshold
         )
         for parent in sorted(successes)
     ]
+    truncated_failures = [
+        parent for parent in sorted(successes) if original_correct[parent] < correctness_threshold
+    ]
+    recovered_failures = sum(any(successes[parent]) for parent in truncated_failures)
 
     denominator = float(truncated_count) if truncated_count else 1.0
     metrics = {
@@ -361,9 +389,15 @@ def aggregate_probe_diagnostics(
         "probe/extra_token_ratio": (
             float(extra_tokens / original_generated_tokens) if original_generated_tokens > 0 else 0.0
         ),
-        "probe/reward_mean": float(np.mean(rewards)) if len(rewards) else 0.0,
+        "probe/raw_correctness_mean": float(np.mean(probe_correct)) if len(probe_correct) else 0.0,
+        "probe/shaped_reward_mean": float(np.mean(probe_shaped)) if len(probe_shaped) else 0.0,
+        # Backward-compatible telemetry alias; never used to determine correctness.
+        "probe/reward_mean": float(np.mean(probe_shaped)) if len(probe_shaped) else 0.0,
         "probe/truncation_false_negative_candidate_rate": float(sum(candidate) / denominator),
         "probe/truncation_high_confidence_recoverable_rate": float(sum(high_confidence) / denominator),
+        "probe/recovery_rate_given_truncated_failure": (
+            float(recovered_failures / len(truncated_failures)) if truncated_failures else 0.0
+        ),
     }
     return ForcedAnswerProbeDiagnostics(
         metrics=metrics,

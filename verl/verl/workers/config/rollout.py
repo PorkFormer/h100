@@ -74,8 +74,10 @@ class ForcedAnswerProbeConfig(BaseConfig):
     temperature: float = 1.0
     top_p: float = 1.0
     instruction: str = "\n\nNow stop reasoning and provide only the final answer in the required format."
+    correctness_key: str = "acc"
+    correctness_threshold: float = 0.5
     success_threshold: float = 0.0
-    high_confidence_threshold: float = 0.5
+    high_confidence_threshold: float = 1.0
     save_examples: bool = False
     max_examples_per_step: int = 8
     examples_dir: Optional[str] = None
@@ -99,6 +101,10 @@ class ForcedAnswerProbeConfig(BaseConfig):
             raise ValueError("forced_answer_probe.top_p must be in (0, 1]")
         if not self.instruction:
             raise ValueError("forced_answer_probe.instruction must be nonempty")
+        if not self.correctness_key:
+            raise ValueError("forced_answer_probe.correctness_key must be nonempty")
+        if not math.isfinite(self.correctness_threshold):
+            raise ValueError("forced_answer_probe.correctness_threshold must be finite")
         if not math.isfinite(self.success_threshold):
             raise ValueError("forced_answer_probe.success_threshold must be finite")
         if not 0.0 <= self.high_confidence_threshold <= 1.0:

@@ -643,15 +643,31 @@ class RayPPOTrainer:
         capture: ForcedAnswerProbeCapture,
         probe_reward_batch: DataProto | None,
         original_reward_tensor: torch.Tensor,
+        original_reward_extra_infos: dict[str, Any],
     ) -> dict[str, float]:
         """Score and aggregate probes without unioning their data into the training batch."""
         raw_config = self._forced_answer_probe_raw_config()
         assert raw_config is not None
         probe_config = omega_conf_to_dataclass(raw_config)
         parent_indices = batch.non_tensor_batch["__forced_answer_probe_parent_index__"].astype(np.int64)
-        original_rewards_reordered = original_reward_tensor.sum(-1).detach().cpu().numpy()
-        original_rewards = np.empty(len(batch), dtype=np.float64)
-        original_rewards[parent_indices] = original_rewards_reordered
+        correctness_key = probe_config.correctness_key
+        if correctness_key not in original_reward_extra_infos:
+            raise RuntimeError(
+                "forced_answer_probe requires raw verifier correctness field "
+                f"{correctness_key!r}; refusing to infer correctness from shaped rm_scores"
+            )
+        original_shaped_reordered = original_reward_tensor.sum(-1).detach().cpu().numpy()
+        original_correctness_reordered = np.asarray(
+            original_reward_extra_infos[correctness_key], dtype=np.float64
+        )
+        if len(original_correctness_reordered) != len(batch):
+            raise RuntimeError(
+                f"forced_answer_probe correctness field {correctness_key!r} must align with the rollout batch"
+            )
+        original_shaped_rewards = np.empty(len(batch), dtype=np.float64)
+        original_correctness = np.empty(len(batch), dtype=np.float64)
+        original_shaped_rewards[parent_indices] = original_shaped_reordered
+        original_correctness[parent_indices] = original_correctness_reordered
 
         if capture.generations:
             assert probe_reward_batch is not None
@@ -661,19 +677,29 @@ class RayPPOTrainer:
             )
             probe_reward_output = self._compute_reward_colocate(padded_probe_reward_batch)
             probe_reward_output = unpad_dataproto(probe_reward_output, pad_size=probe_pad_size)
-            probe_rewards = probe_reward_output.batch["rm_scores"].sum(-1).detach().cpu().tolist()
+            probe_reward_tensor, probe_reward_extra_infos = extract_reward(probe_reward_output)
+            if correctness_key not in probe_reward_extra_infos:
+                raise RuntimeError(
+                    "forced_answer_probe requires raw verifier correctness field "
+                    f"{correctness_key!r}; refusing to infer correctness from shaped rm_scores"
+                )
+            probe_correctness = np.asarray(probe_reward_extra_infos[correctness_key], dtype=np.float64)
+            probe_shaped_rewards = probe_reward_tensor.sum(-1).detach().cpu().numpy()
         else:
-            probe_rewards = []
+            probe_correctness = np.asarray([], dtype=np.float64)
+            probe_shaped_rewards = np.asarray([], dtype=np.float64)
         prompt_width = batch.batch["prompts"].shape[-1]
         original_generated_tokens = int(batch.batch["attention_mask"][:, prompt_width:].sum().item())
         diagnostics = aggregate_probe_diagnostics(
             hit_response_cap=capture.hit_response_cap,
             generations=capture.generations,
-            probe_rewards=probe_rewards,
-            original_rewards=original_rewards,
+            probe_correctness=probe_correctness,
+            original_correctness=original_correctness,
+            probe_shaped_rewards=probe_shaped_rewards,
+            original_shaped_rewards=original_shaped_rewards,
             original_generated_tokens=original_generated_tokens,
             num_samples=probe_config.num_samples,
-            success_threshold=probe_config.success_threshold,
+            correctness_threshold=probe_config.correctness_threshold,
             high_confidence_threshold=probe_config.high_confidence_threshold,
         )
         if probe_config.save_examples and capture.generations:
@@ -1656,6 +1682,7 @@ class RayPPOTrainer:
                                     capture=probe_capture,
                                     probe_reward_batch=probe_reward_batch,
                                     original_reward_tensor=reward_tensor,
+                                    original_reward_extra_infos=reward_extra_infos_dict,
                                 )
                             )
                         batch.non_tensor_batch.pop("__forced_answer_probe_parent_index__")
