@@ -41,6 +41,13 @@ from verl.trainer.config import AlgoConfig
 from verl.trainer.distillation.losses import is_distillation_enabled
 from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss, get_current_clip_ratios
+from verl.trainer.ppo.forced_answer_probe import (
+    ForcedAnswerProbeCapture,
+    aggregate_probe_diagnostics,
+    build_probe_reward_batch,
+    run_forced_answer_probe,
+    save_probe_examples,
+)
 from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
     compute_throughout_metrics,
@@ -595,6 +602,96 @@ class RayPPOTrainer:
         assert self.reward_loop_manager is not None, "RewardLoopManager is None"
         batch_reward = self.reward_loop_manager.compute_rm_score(batch)
         return batch_reward
+
+    def _forced_answer_probe_raw_config(self) -> Any | None:
+        rollout_config = self.config.actor_rollout_ref.rollout
+        if hasattr(rollout_config, "get"):
+            return rollout_config.get("forced_answer_probe", None)
+        return getattr(rollout_config, "forced_answer_probe", None)
+
+    def _forced_answer_probe_enabled(self) -> bool:
+        raw_config = self._forced_answer_probe_raw_config()
+        if raw_config is None:
+            return False
+        if hasattr(raw_config, "get"):
+            return bool(raw_config.get("enable", False))
+        return bool(getattr(raw_config, "enable", False))
+
+    def _generate_forced_answer_probe(self, rollout_batch: DataProto) -> ForcedAnswerProbeCapture | None:
+        """Run auxiliary inference while the current-policy rollout replicas are awake."""
+        raw_config = self._forced_answer_probe_raw_config()
+        if not self._forced_answer_probe_enabled():
+            return None
+        if self.config.actor_rollout_ref.rollout.name != "vllm":
+            raise ValueError("forced_answer_probe currently requires actor_rollout_ref.rollout.name=vllm")
+        if self.config.actor_rollout_ref.rollout.multi_turn.enable:
+            raise ValueError("forced_answer_probe Step 2 currently supports single-turn rollouts only")
+        probe_config = omega_conf_to_dataclass(raw_config)
+        return run_forced_answer_probe(
+            config=probe_config,
+            rollout_batch=rollout_batch,
+            tokenizer=self.tokenizer,
+            client=self.llm_server_manager.get_client(),
+            max_response_length=self.config.actor_rollout_ref.rollout.response_length,
+            global_step=self.global_steps,
+        )
+
+    def _score_forced_answer_probe(
+        self,
+        *,
+        batch: DataProto,
+        capture: ForcedAnswerProbeCapture,
+        probe_reward_batch: DataProto | None,
+        original_reward_tensor: torch.Tensor,
+    ) -> dict[str, float]:
+        """Score and aggregate probes without unioning their data into the training batch."""
+        raw_config = self._forced_answer_probe_raw_config()
+        assert raw_config is not None
+        probe_config = omega_conf_to_dataclass(raw_config)
+        parent_indices = batch.non_tensor_batch["__forced_answer_probe_parent_index__"].astype(np.int64)
+        original_rewards_reordered = original_reward_tensor.sum(-1).detach().cpu().numpy()
+        original_rewards = np.empty(len(batch), dtype=np.float64)
+        original_rewards[parent_indices] = original_rewards_reordered
+
+        if capture.generations:
+            assert probe_reward_batch is not None
+            reward_divisor = len(self.reward_loop_manager.reward_loop_workers)
+            padded_probe_reward_batch, probe_pad_size = pad_dataproto_to_divisor(
+                probe_reward_batch, reward_divisor
+            )
+            probe_reward_output = self._compute_reward_colocate(padded_probe_reward_batch)
+            probe_reward_output = unpad_dataproto(probe_reward_output, pad_size=probe_pad_size)
+            probe_rewards = probe_reward_output.batch["rm_scores"].sum(-1).detach().cpu().tolist()
+        else:
+            probe_rewards = []
+        prompt_width = batch.batch["prompts"].shape[-1]
+        original_generated_tokens = int(batch.batch["attention_mask"][:, prompt_width:].sum().item())
+        diagnostics = aggregate_probe_diagnostics(
+            hit_response_cap=capture.hit_response_cap,
+            generations=capture.generations,
+            probe_rewards=probe_rewards,
+            original_rewards=original_rewards,
+            original_generated_tokens=original_generated_tokens,
+            num_samples=probe_config.num_samples,
+            success_threshold=probe_config.success_threshold,
+            high_confidence_threshold=probe_config.high_confidence_threshold,
+        )
+        if probe_config.save_examples and capture.generations:
+            output_dir = probe_config.examples_dir or os.path.join(
+                self.config.trainer.default_local_dir, "forced_answer_probe_examples"
+            )
+            save_probe_examples(
+                output_dir=output_dir,
+                global_step=self.global_steps,
+                original_batch=batch,
+                generations=capture.generations,
+                diagnostics=diagnostics,
+                tokenizer=self.tokenizer,
+                max_examples=probe_config.max_examples_per_step,
+                response_tail_chars=probe_config.response_tail_chars,
+                parent_indices=parent_indices,
+            )
+        return diagnostics.metrics
 
     def _validate(self, merged: bool = False):
         data_source_lst = []
@@ -1468,21 +1565,30 @@ class RayPPOTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
                 with marked_timer("step", timing_raw):
+                    forced_answer_probe_enabled = self._forced_answer_probe_enabled()
                     # generate a batch
                     with marked_timer("gen", timing_raw, color="red"):
                         if curr_step_profile:
                             self.llm_server_manager.start_profile()
                         combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
-                        self.checkpoint_manager.sleep_replicas()
-                        if curr_step_profile:
-                            self.llm_server_manager.stop_profile()
-
+                        if not forced_answer_probe_enabled:
+                            self.checkpoint_manager.sleep_replicas()
+                            if curr_step_profile:
+                                self.llm_server_manager.stop_profile()
                         timing_raw.update(combined_gen_output.meta_info["timing"])
                         combined_gen_output.meta_info.pop("timing", None)
 
                     gen_batch_output = combined_gen_output.slice(0, num_sampled_prompts)
                     if "__do_sample__" in gen_batch_output.non_tensor_batch:
                         gen_batch_output.pop(non_tensor_batch_keys=["__do_sample__"])
+
+                    probe_capture = None
+                    if forced_answer_probe_enabled:
+                        with marked_timer("forced_answer_probe_generation", timing_raw, color="magenta"):
+                            probe_capture = self._generate_forced_answer_probe(gen_batch_output)
+                        self.checkpoint_manager.sleep_replicas()
+                        if curr_step_profile:
+                            self.llm_server_manager.stop_profile()
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         gen_baseline_output = combined_gen_output.slice(num_sampled_prompts, None)
@@ -1501,6 +1607,19 @@ class RayPPOTrainer:
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
+
+                    probe_reward_batch = None
+                    if probe_capture is not None:
+                        batch.non_tensor_batch["hit_response_cap"] = probe_capture.hit_response_cap.copy()
+                        batch.non_tensor_batch["__forced_answer_probe_parent_index__"] = np.arange(
+                            len(batch), dtype=np.int64
+                        )
+                        if probe_capture.generations:
+                            probe_reward_batch = build_probe_reward_batch(
+                                batch,
+                                probe_capture.generations,
+                                pad_token_id=self.tokenizer.pad_token_id,
+                            )
 
                     if "response_mask" not in batch.batch.keys():
                         batch.batch["response_mask"] = compute_response_mask(batch)
@@ -1528,6 +1647,18 @@ class RayPPOTrainer:
 
                         # extract reward_tensor and reward_extra_infos_dict for training
                         reward_tensor, reward_extra_infos_dict = extract_reward(batch)
+
+                    if probe_capture is not None:
+                        with marked_timer("forced_answer_probe_reward", timing_raw, color="magenta"):
+                            metrics.update(
+                                self._score_forced_answer_probe(
+                                    batch=batch,
+                                    capture=probe_capture,
+                                    probe_reward_batch=probe_reward_batch,
+                                    original_reward_tensor=reward_tensor,
+                                )
+                            )
+                        batch.non_tensor_batch.pop("__forced_answer_probe_parent_index__")
 
                     # Operating Mode Selection:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)

@@ -285,6 +285,26 @@ actor_rollout_ref:
       temperature: 0
       'n': 1
       do_sample: false
+    forced_answer_probe:
+      _target_: verl.workers.config.ForcedAnswerProbeConfig
+      enable: false
+      num_samples: 2
+      max_new_tokens: 64
+      temperature: 1.0
+      top_p: 1.0
+      instruction: '
+
+
+        Now stop reasoning and provide only the final answer in the required format.'
+      success_threshold: 0.0
+      high_confidence_threshold: 0.5
+      save_examples: false
+      max_examples_per_step: 8
+      examples_dir: null
+      response_tail_chars: 512
+      max_concurrent_requests: 128
+      strict: true
+      seed: 0
     multi_turn:
       _target_: verl.workers.config.MultiTurnConfig
       enable: false

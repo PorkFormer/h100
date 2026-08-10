@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional
@@ -32,6 +33,7 @@ __all__ = [
     "PrometheusConfig",
     "RolloutConfig",
     "CheckpointEngineConfig",
+    "ForcedAnswerProbeConfig",
     "SkipConfig",
 ]
 
@@ -60,6 +62,69 @@ class SamplingConfig(BaseConfig):
     top_p: float = 1.0
     do_sample: bool = True
     n: int = 1
+
+
+@dataclass
+class ForcedAnswerProbeConfig(BaseConfig):
+    """Diagnostic forced-answer generation for response-cap trajectories."""
+
+    enable: bool = False
+    num_samples: int = 2
+    max_new_tokens: int = 64
+    temperature: float = 1.0
+    top_p: float = 1.0
+    instruction: str = "\n\nNow stop reasoning and provide only the final answer in the required format."
+    success_threshold: float = 0.0
+    high_confidence_threshold: float = 0.5
+    save_examples: bool = False
+    max_examples_per_step: int = 8
+    examples_dir: Optional[str] = None
+    response_tail_chars: int = 512
+    max_concurrent_requests: int = 128
+    strict: bool = True
+    seed: int = 0
+
+    def validate(self) -> None:
+        if not isinstance(self.num_samples, int) or isinstance(self.num_samples, bool) or self.num_samples <= 0:
+            raise ValueError("forced_answer_probe.num_samples must be a positive integer")
+        if (
+            not isinstance(self.max_new_tokens, int)
+            or isinstance(self.max_new_tokens, bool)
+            or self.max_new_tokens <= 0
+        ):
+            raise ValueError("forced_answer_probe.max_new_tokens must be a positive integer")
+        if not math.isfinite(self.temperature) or self.temperature < 0.0:
+            raise ValueError("forced_answer_probe.temperature must be nonnegative")
+        if not 0.0 < self.top_p <= 1.0:
+            raise ValueError("forced_answer_probe.top_p must be in (0, 1]")
+        if not self.instruction:
+            raise ValueError("forced_answer_probe.instruction must be nonempty")
+        if not math.isfinite(self.success_threshold):
+            raise ValueError("forced_answer_probe.success_threshold must be finite")
+        if not 0.0 <= self.high_confidence_threshold <= 1.0:
+            raise ValueError("forced_answer_probe.high_confidence_threshold must be in [0, 1]")
+        if (
+            not isinstance(self.max_examples_per_step, int)
+            or isinstance(self.max_examples_per_step, bool)
+            or self.max_examples_per_step < 0
+        ):
+            raise ValueError("forced_answer_probe.max_examples_per_step must be nonnegative")
+        if (
+            not isinstance(self.response_tail_chars, int)
+            or isinstance(self.response_tail_chars, bool)
+            or self.response_tail_chars < 0
+        ):
+            raise ValueError("forced_answer_probe.response_tail_chars must be nonnegative")
+        if (
+            not isinstance(self.max_concurrent_requests, int)
+            or isinstance(self.max_concurrent_requests, bool)
+            or self.max_concurrent_requests <= 0
+        ):
+            raise ValueError("forced_answer_probe.max_concurrent_requests must be a positive integer")
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError("forced_answer_probe.seed must be an integer")
+        if not self.strict:
+            raise ValueError("The first forced_answer_probe implementation requires strict=true")
 
 
 @dataclass
@@ -207,6 +272,8 @@ class RolloutConfig(BaseConfig):
     # train_sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
 
     val_kwargs: SamplingConfig = field(default_factory=SamplingConfig)
+
+    forced_answer_probe: ForcedAnswerProbeConfig = field(default_factory=ForcedAnswerProbeConfig)
 
     max_model_len: Optional[int] = None
     max_num_seqs: int = 1024
