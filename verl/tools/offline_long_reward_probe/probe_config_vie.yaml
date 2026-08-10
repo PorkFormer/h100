@@ -59,7 +59,7 @@ forced_answer:
   tail_offsets: [1024, 512, 256]
   cues:
     - name: final_answer
-      text: "\nProvide only the final answer in this exact format: Answer: <final answer>"
+      text: "\n\nProvide only the final answer in this exact format: Answer: <final answer>"
   n: 4
   max_tokens: 128
   temperature: 0.7

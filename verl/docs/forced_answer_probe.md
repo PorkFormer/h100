@@ -44,46 +44,126 @@ forced_answer_probe:
   max_new_tokens: 64
   temperature: 1.0
   top_p: 1.0
-  instruction: "\n\nNow stop reasoning and provide only the final answer in the required format."
+  instruction: "\n\nProvide only the final answer in this exact format: Answer: <final answer>"
+  correctness_key: acc
+  correctness_threshold: 0.5
   success_threshold: 0.0
-  high_confidence_threshold: 0.5
+  high_confidence_threshold: 1.0
   save_examples: false
   max_examples_per_step: 8
   examples_dir: null
 ```
 
-`success_threshold` follows the existing verifier convention: a reward strictly
-above it is a successful probe. `high_confidence_threshold` is applied to each
-truncated trajectory's mean binary probe success. If qualitative examples are
-enabled, at most `max_examples_per_step` records are written; each retains only
-the original response tail rather than its full prefix.
+Recoverability metrics use raw verifier correctness (`acc` by default), not
+DAPO shaped reward. Values at or above `correctness_threshold` are correct.
+`success_threshold` is retained only for shaped-reward telemetry and backward
+configuration compatibility; it does not classify answer correctness.
+`high_confidence_threshold` is applied to each attempted trajectory's mean
+binary raw-correctness result. With the online defaults, K=2 therefore requires
+2/2 correct branches: neither 0/2 nor 1/2 is high confidence.
 
-The first online implementation supports single-turn vLLM rollouts. The model
-context length must accommodate the original prompt, capped response, forced
-instruction, and `max_new_tokens` without truncating the retained prefix.
+If qualitative examples are enabled, at most `max_examples_per_step` records
+are written; each retains only the original response tail rather than its full
+prefix.
+
+The first online implementation supports single-turn vLLM rollouts. Before a
+request is sent, it checks whether the model context can accommodate the
+original prompt, capped response, forced instruction, and `max_new_tokens`.
+Overflow probes are skipped without truncating the prompt or response prefix,
+and are excluded from attempted-probe denominators. They are unobserved, not
+incorrect.
+
+## Correctness and DAPO shaping
+
+DAPO may add an overlong penalty to the raw verifier score. Consequently, a
+correct capped trajectory can have raw `acc = 1` but a shaped reward of zero or
+less. Both original and forced-answer correctness are read from the configured
+reward extra-info field after the normal `extract_reward()` path. Missing raw
+correctness fails closed; the probe never infers correctness from `rm_scores`.
+
+Shaped rewards remain visible as telemetry so a run can directly compare raw
+answer correctness with the DAPO training reward. Neither signal is written
+back into training credit by this diagnostic.
 
 ## Metrics
 
 - `probe/hit_cap_rate`
 - `probe/num_truncated_trajectories`
 - `probe/num_probe_generations`
+- `probe/context_overflow_count`
+- `probe/context_overflow_rate`
+- `probe/probe_attempted_count`
+- `probe/probe_coverage_rate`
 - `probe/success_rate_mean`
 - `probe/p_any_success`
 - `probe/p_all_success`
+- `probe/extra_input_tokens`
 - `probe/extra_generated_tokens`
+- `probe/extra_total_tokens`
+- `probe/extra_generated_token_ratio`
+- `probe/extra_total_token_ratio`
 - `probe/extra_token_ratio`
-- `probe/reward_mean`
+- `probe/raw_correctness_mean`
+- `probe/shaped_reward_mean`
 - `probe/truncation_false_negative_candidate_rate`
 - `probe/truncation_high_confidence_recoverable_rate`
+- `probe/recovery_rate_given_truncated_failure`
 
-The two recoverability rates use truncated trajectories as their denominator.
-The candidate rate requires an unsuccessful original reward and at least one
-successful probe. The high-confidence rate additionally requires the configured
-per-trajectory success-rate threshold.
+Success-rate, any-success, and all-success aggregates use attempted probes.
+`context_overflow_rate` and `probe_coverage_rate` divide by all truncated
+trajectories and return zero when none are truncated.
 
-## Example
+The key conditional metric is:
 
-For an H=2048 experiment, append overrides such as:
+```text
+probe/recovery_rate_given_truncated_failure =
+P(
+  forced-answer any-success
+  | response-cap truncation,
+    original raw verifier incorrect,
+    probe successfully attempted
+)
+```
+
+Its denominator excludes originally correct trajectories and skipped overflow
+probes. By contrast, `truncation_false_negative_candidate_rate` retains all
+truncated trajectories as its denominator; its numerator requires an attempted,
+originally raw-incorrect trajectory with at least one correct probe branch.
+The high-confidence rate has the same all-truncated denominator but requires
+the configured branch success fraction.
+
+Input-token overhead counts each grouped parent request's shared prefill once,
+not once per sampled branch. Generated overhead sums every branch. The legacy
+`probe/extra_token_ratio` is an alias for
+`probe/extra_generated_token_ratio`.
+
+## Recommended protocols
+
+Online fast diagnostic (the low-cost default when enabled):
+
+```yaml
+forced_answer_probe:
+  enable: true
+  num_samples: 2
+  max_new_tokens: 64
+  temperature: 1.0
+  top_p: 1.0
+  high_confidence_threshold: 1.0
+```
+
+Canonical paper diagnostic (not the online default):
+
+```yaml
+forced_answer_probe:
+  enable: true
+  num_samples: 4
+  max_new_tokens: 128
+  temperature: 0.7
+  top_p: 0.95
+  high_confidence_threshold: 0.75
+```
+
+For an H=2048 diagnostic run, append overrides such as:
 
 ```bash
 data.max_response_length=2048 \

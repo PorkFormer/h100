@@ -175,7 +175,7 @@ def test_default_cue_and_real_math_dapo_reward_adapter(monkeypatch):
     assert Path(sys.modules[f"{package_name}.math_dapo"].__file__) == MATH_DAPO_PATH
     assert config["forced_answer"]["cues"][0] == {
         "name": "final_answer",
-        "text": "\nProvide only the final answer in this exact format: Answer: <final answer>",
+        "text": "\n\nProvide only the final answer in this exact format: Answer: <final answer>",
     }
 
 
