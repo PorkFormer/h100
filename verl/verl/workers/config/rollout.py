@@ -33,6 +33,7 @@ __all__ = [
     "PrometheusConfig",
     "RolloutConfig",
     "CheckpointEngineConfig",
+    "ForcedAnswerTrainingCreditConfig",
     "ForcedAnswerProbeConfig",
     "SkipConfig",
 ]
@@ -65,11 +66,29 @@ class SamplingConfig(BaseConfig):
 
 
 @dataclass
+class ForcedAnswerTrainingCreditConfig(BaseConfig):
+    """Optional training-time credit correction from forced-answer probes."""
+
+    enable: bool = False
+    activation_threshold: float = 0.75
+    reward_mode: str = "centered_pfa"
+
+    def validate(self) -> None:
+        if not math.isfinite(self.activation_threshold) or not 0.0 <= self.activation_threshold <= 1.0:
+            raise ValueError("forced_answer_probe.training_credit.activation_threshold must be in [0, 1]")
+        if self.reward_mode != "centered_pfa":
+            raise ValueError(
+                "forced_answer_probe.training_credit.reward_mode must be 'centered_pfa'; "
+                f"got {self.reward_mode!r}"
+            )
+
+
+@dataclass
 class ForcedAnswerProbeConfig(BaseConfig):
     """Diagnostic forced-answer generation for response-cap trajectories."""
 
     enable: bool = False
-    num_samples: int = 2
+    num_samples: int = 4
     max_new_tokens: int = 64
     temperature: float = 1.0
     top_p: float = 1.0
@@ -85,8 +104,12 @@ class ForcedAnswerProbeConfig(BaseConfig):
     max_concurrent_requests: int = 128
     strict: bool = True
     seed: int = 0
+    training_credit: ForcedAnswerTrainingCreditConfig = field(default_factory=ForcedAnswerTrainingCreditConfig)
 
     def validate(self) -> None:
+        self.training_credit.validate()
+        if self.training_credit.enable and not self.enable:
+            raise ValueError("FA-TR training credit requires forced_answer_probe.enable=true")
         if not isinstance(self.num_samples, int) or isinstance(self.num_samples, bool) or self.num_samples <= 0:
             raise ValueError("forced_answer_probe.num_samples must be a positive integer")
         if (

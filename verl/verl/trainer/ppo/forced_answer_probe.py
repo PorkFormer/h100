@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +59,217 @@ class ForcedAnswerProbeDiagnostics:
     metrics: dict[str, float]
     rewards_by_parent: dict[int, tuple[float, ...]]
     successes_by_parent: dict[int, tuple[bool, ...]]
+
+
+@dataclass(frozen=True)
+class ForcedAnswerCreditTargets:
+    """Pure parent-keyed eligibility and activation decision."""
+
+    eligible_parent_indices: tuple[int, ...]
+    target_reward_by_parent: dict[int, float]
+
+
+@dataclass(frozen=True)
+class ForcedAnswerTrainingCreditResult:
+    """Effective PPO reward plus auditable FA-TR intervention metadata."""
+
+    effective_reward_tensor: torch.Tensor
+    corrected_parent_indices: tuple[int, ...]
+    pfa_by_parent: dict[int, float]
+    target_reward_by_parent: dict[int, float]
+    metrics: dict[str, float]
+
+
+@dataclass(frozen=True)
+class ForcedAnswerProbeScoreResult:
+    """Keep probe diagnostics separate from the optional training intervention."""
+
+    diagnostics: ForcedAnswerProbeDiagnostics
+    training_credit: ForcedAnswerTrainingCreditResult
+
+
+def compute_pfa_by_parent(successes_by_parent: Mapping[int, Sequence[bool]]) -> dict[int, float]:
+    """Compute raw-verifier forced-answer success frequency for each parent."""
+    pfa_by_parent: dict[int, float] = {}
+    for parent, successes in successes_by_parent.items():
+        if not successes:
+            raise ValueError(f"trajectory {parent} has no forced-answer branches")
+        pfa_by_parent[int(parent)] = float(np.mean(np.asarray(successes, dtype=np.float64)))
+    return pfa_by_parent
+
+
+def compute_fa_tr_credit_targets(
+    *,
+    hit_response_cap: Sequence[bool],
+    probe_attempted: Sequence[bool],
+    context_overflow: Sequence[bool],
+    original_correctness: Sequence[float],
+    pfa_by_parent: Mapping[int, float],
+    correctness_threshold: float,
+    activation_threshold: float,
+) -> ForcedAnswerCreditTargets:
+    """Select high-confidence answerable truncated failures and compute ``2*pFA-1`` targets."""
+    hit_cap = np.asarray(hit_response_cap, dtype=bool)
+    attempted = np.asarray(probe_attempted, dtype=bool)
+    overflow = np.asarray(context_overflow, dtype=bool)
+    original_correct = np.asarray(original_correctness, dtype=np.float64)
+    if not (len(hit_cap) == len(attempted) == len(overflow) == len(original_correct)):
+        raise ValueError("FA-TR parent arrays must have equal length")
+    if not math.isfinite(activation_threshold) or not 0.0 <= activation_threshold <= 1.0:
+        raise ValueError("activation_threshold must be in [0, 1]")
+
+    eligible: list[int] = []
+    targets: dict[int, float] = {}
+    for parent in range(len(hit_cap)):
+        is_eligible = bool(
+            hit_cap[parent]
+            and original_correct[parent] < correctness_threshold
+            and attempted[parent]
+            and not overflow[parent]
+        )
+        if not is_eligible:
+            continue
+        if parent not in pfa_by_parent:
+            raise ValueError(f"eligible trajectory {parent} has no pFA")
+        eligible.append(parent)
+        pfa = float(pfa_by_parent[parent])
+        if not math.isfinite(pfa) or not 0.0 <= pfa <= 1.0:
+            raise ValueError(f"trajectory {parent} pFA must be in [0, 1]")
+        if pfa >= activation_threshold:
+            targets[parent] = 2.0 * pfa - 1.0
+    return ForcedAnswerCreditTargets(tuple(eligible), targets)
+
+
+def apply_terminal_reward_targets(
+    *,
+    original_reward_tensor: torch.Tensor,
+    response_mask: torch.Tensor,
+    current_row_to_parent: Sequence[int],
+    target_reward_by_parent: Mapping[int, float],
+) -> torch.Tensor:
+    """Replace row scalars by adding the exact delta at the last valid response token."""
+    if original_reward_tensor.ndim != 2 or response_mask.shape != original_reward_tensor.shape:
+        raise ValueError("reward tensor and response mask must be aligned rank-2 tensors")
+    if len(current_row_to_parent) != original_reward_tensor.shape[0]:
+        raise ValueError("current_row_to_parent must align with reward rows")
+    parent_to_row: dict[int, int] = {}
+    for row, raw_parent in enumerate(current_row_to_parent):
+        parent = int(raw_parent)
+        if parent in parent_to_row:
+            raise ValueError(f"duplicate parent index {parent} in current PPO batch")
+        parent_to_row[parent] = row
+    unknown = set(target_reward_by_parent) - set(parent_to_row)
+    if unknown:
+        raise ValueError(f"FA-TR targets do not belong to the current PPO batch: {sorted(unknown)}")
+
+    effective = original_reward_tensor.clone()
+    valid_mask = response_mask.to(device=effective.device, dtype=torch.bool)
+    for parent, raw_target in target_reward_by_parent.items():
+        row = parent_to_row[int(parent)]
+        valid_indices = torch.nonzero(valid_mask[row], as_tuple=False).flatten()
+        if valid_indices.numel() == 0:
+            raise ValueError(f"trajectory {parent} has no valid response token")
+        terminal_index = int(valid_indices[-1].item())
+        target = torch.as_tensor(raw_target, dtype=effective.dtype, device=effective.device)
+        delta = target - original_reward_tensor[row].sum()
+        effective[row, terminal_index] += delta
+    return effective
+
+
+def build_fa_tr_training_credit_result(
+    *,
+    original_reward_tensor: torch.Tensor,
+    response_mask: torch.Tensor,
+    current_row_to_parent: Sequence[int],
+    current_uids: Sequence[Any],
+    hit_response_cap: Sequence[bool],
+    probe_attempted: Sequence[bool],
+    context_overflow: Sequence[bool],
+    original_correctness: Sequence[float],
+    successes_by_parent: Mapping[int, Sequence[bool]],
+    correctness_threshold: float,
+    enable: bool,
+    activation_threshold: float,
+) -> ForcedAnswerTrainingCreditResult:
+    """Build effective rewards and metrics without mutating the reward-manager output."""
+    parents = np.asarray(current_row_to_parent, dtype=np.int64)
+    if len(parents) != len(original_reward_tensor) or len(current_uids) != len(original_reward_tensor):
+        raise ValueError("FA-TR row identity and uid arrays must align with the PPO batch")
+    pfa_by_parent = compute_pfa_by_parent(successes_by_parent)
+    decisions = compute_fa_tr_credit_targets(
+        hit_response_cap=hit_response_cap,
+        probe_attempted=probe_attempted,
+        context_overflow=context_overflow,
+        original_correctness=original_correctness,
+        pfa_by_parent=pfa_by_parent,
+        correctness_threshold=correctness_threshold,
+        activation_threshold=activation_threshold,
+    )
+    target_by_parent = decisions.target_reward_by_parent if enable else {}
+    effective = (
+        apply_terminal_reward_targets(
+            original_reward_tensor=original_reward_tensor,
+            response_mask=response_mask,
+            current_row_to_parent=parents,
+            target_reward_by_parent=target_by_parent,
+        )
+        if target_by_parent
+        else original_reward_tensor
+    )
+
+    parent_to_row = {int(parent): row for row, parent in enumerate(parents)}
+    corrected = tuple(sorted(target_by_parent))
+    eligible_pfas = [pfa_by_parent[parent] for parent in decisions.eligible_parent_indices]
+    original_scalars = original_reward_tensor.sum(-1).detach().float().cpu()
+    effective_scalars = effective.sum(-1).detach().float().cpu()
+    corrected_rows = [parent_to_row[parent] for parent in corrected]
+    if corrected_rows:
+        corrected_original = original_scalars[corrected_rows].numpy()
+        corrected_effective = effective_scalars[corrected_rows].numpy()
+        deltas = corrected_effective - corrected_original
+    else:
+        corrected_original = np.asarray([], dtype=np.float64)
+        corrected_effective = np.asarray([], dtype=np.float64)
+        deltas = np.asarray([], dtype=np.float64)
+
+    all_groups = {str(uid) for uid in current_uids}
+    corrected_groups = {str(current_uids[parent_to_row[parent]]) for parent in corrected}
+    total = len(original_reward_tensor)
+    eligible_count = len(decisions.eligible_parent_indices)
+    corrected_count = len(corrected)
+    num_groups = len(all_groups)
+    metrics = {
+        "fa_tr/num_eligible_truncated_failures": float(eligible_count),
+        "fa_tr/pfa_mean": float(np.mean(eligible_pfas)) if eligible_pfas else 0.0,
+        "fa_tr/pfa_eq_0_rate": float(np.mean(np.equal(eligible_pfas, 0.0))) if eligible_pfas else 0.0,
+        "fa_tr/pfa_ge_025_rate": float(np.mean(np.greater_equal(eligible_pfas, 0.25))) if eligible_pfas else 0.0,
+        "fa_tr/pfa_ge_050_rate": float(np.mean(np.greater_equal(eligible_pfas, 0.50))) if eligible_pfas else 0.0,
+        "fa_tr/pfa_ge_075_rate": float(np.mean(np.greater_equal(eligible_pfas, 0.75))) if eligible_pfas else 0.0,
+        "fa_tr/pfa_eq_1_rate": float(np.mean(np.equal(eligible_pfas, 1.0))) if eligible_pfas else 0.0,
+        "fa_tr/num_reward_corrected": float(corrected_count),
+        "fa_tr/reward_correction_rate": float(corrected_count / total) if total else 0.0,
+        "fa_tr/reward_correction_rate_given_eligible": (
+            float(corrected_count / eligible_count) if eligible_count else 0.0
+        ),
+        "fa_tr/original_reward_mean_corrected_subset": (
+            float(np.mean(corrected_original)) if corrected_rows else 0.0
+        ),
+        "fa_tr/effective_reward_mean_corrected_subset": (
+            float(np.mean(corrected_effective)) if corrected_rows else 0.0
+        ),
+        "fa_tr/reward_delta_mean": float(np.mean(deltas)) if corrected_rows else 0.0,
+        "fa_tr/reward_delta_max": float(np.max(deltas)) if corrected_rows else 0.0,
+        "fa_tr/num_groups": float(num_groups),
+        "fa_tr/num_groups_with_correction": float(len(corrected_groups)),
+        "fa_tr/group_correction_rate": float(len(corrected_groups) / num_groups) if num_groups else 0.0,
+    }
+    return ForcedAnswerTrainingCreditResult(
+        effective_reward_tensor=effective,
+        corrected_parent_indices=corrected,
+        pfa_by_parent=pfa_by_parent,
+        target_reward_by_parent=dict(target_by_parent),
+        metrics=metrics,
+    )
 
 
 def _normalize_finish_reason(reason: Any) -> str | None:

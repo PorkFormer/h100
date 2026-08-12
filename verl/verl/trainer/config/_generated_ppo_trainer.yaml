@@ -297,7 +297,7 @@ actor_rollout_ref:
     forced_answer_probe:
       _target_: verl.workers.config.ForcedAnswerProbeConfig
       enable: false
-      num_samples: 2
+      num_samples: 4
       max_new_tokens: 64
       temperature: 1.0
       top_p: 1.0
@@ -307,6 +307,11 @@ actor_rollout_ref:
         Provide only the final answer in this exact format: Answer: <final answer>'
       correctness_key: acc
       correctness_threshold: 0.5
+      training_credit:
+        _target_: verl.workers.config.ForcedAnswerTrainingCreditConfig
+        enable: false
+        activation_threshold: 0.75
+        reward_mode: centered_pfa
       success_threshold: 0.0
       high_confidence_threshold: 1.0
       save_examples: false
