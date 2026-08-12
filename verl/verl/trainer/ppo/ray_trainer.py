@@ -43,7 +43,9 @@ from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss, get_current_clip_ratios
 from verl.trainer.ppo.forced_answer_probe import (
     ForcedAnswerProbeCapture,
+    ForcedAnswerProbeScoreResult,
     aggregate_probe_diagnostics,
+    build_fa_tr_training_credit_result,
     build_probe_reward_batch,
     run_forced_answer_probe,
     save_probe_examples,
@@ -613,9 +615,9 @@ class RayPPOTrainer:
         raw_config = self._forced_answer_probe_raw_config()
         if raw_config is None:
             return False
-        if hasattr(raw_config, "get"):
-            return bool(raw_config.get("enable", False))
-        return bool(getattr(raw_config, "enable", False))
+        probe_config = omega_conf_to_dataclass(raw_config)
+        probe_config.validate()
+        return bool(probe_config.enable)
 
     def _generate_forced_answer_probe(self, rollout_batch: DataProto) -> ForcedAnswerProbeCapture | None:
         """Run auxiliary inference while the current-policy rollout replicas are awake."""
@@ -660,7 +662,7 @@ class RayPPOTrainer:
         probe_reward_batch: DataProto | None,
         original_reward_tensor: torch.Tensor,
         original_reward_extra_infos: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> ForcedAnswerProbeScoreResult:
         """Score and aggregate probes without unioning their data into the training batch."""
         try:
             return self._score_forced_answer_probe_impl(
@@ -682,7 +684,7 @@ class RayPPOTrainer:
         probe_reward_batch: DataProto | None,
         original_reward_tensor: torch.Tensor,
         original_reward_extra_infos: dict[str, Any],
-    ) -> dict[str, float]:
+    ) -> ForcedAnswerProbeScoreResult:
         raw_config = self._forced_answer_probe_raw_config()
         assert raw_config is not None
         probe_config = omega_conf_to_dataclass(raw_config)
@@ -742,6 +744,20 @@ class RayPPOTrainer:
             correctness_threshold=probe_config.correctness_threshold,
             high_confidence_threshold=probe_config.high_confidence_threshold,
         )
+        training_credit = build_fa_tr_training_credit_result(
+            original_reward_tensor=original_reward_tensor,
+            response_mask=batch.batch["response_mask"],
+            current_row_to_parent=parent_indices,
+            current_uids=batch.non_tensor_batch["uid"],
+            hit_response_cap=capture.hit_response_cap,
+            probe_attempted=capture.probe_attempted,
+            context_overflow=capture.context_overflow,
+            original_correctness=original_correctness,
+            successes_by_parent=diagnostics.successes_by_parent,
+            correctness_threshold=probe_config.correctness_threshold,
+            enable=probe_config.training_credit.enable,
+            activation_threshold=probe_config.training_credit.activation_threshold,
+        )
         if probe_config.save_examples and capture.generations:
             output_dir = probe_config.examples_dir or os.path.join(
                 self.config.trainer.default_local_dir, "forced_answer_probe_examples"
@@ -757,7 +773,7 @@ class RayPPOTrainer:
                 response_tail_chars=probe_config.response_tail_chars,
                 parent_indices=parent_indices,
             )
-        return diagnostics.metrics
+        return ForcedAnswerProbeScoreResult(diagnostics=diagnostics, training_credit=training_credit)
 
     def _validate(self, merged: bool = False):
         data_source_lst = []
@@ -1712,17 +1728,19 @@ class RayPPOTrainer:
                         # extract reward_tensor and reward_extra_infos_dict for training
                         reward_tensor, reward_extra_infos_dict = extract_reward(batch)
 
+                    effective_reward_tensor = reward_tensor
                     if probe_capture is not None:
                         with marked_timer("forced_answer_probe_reward", timing_raw, color="magenta"):
-                            metrics.update(
-                                self._score_forced_answer_probe(
-                                    batch=batch,
-                                    capture=probe_capture,
-                                    probe_reward_batch=probe_reward_batch,
-                                    original_reward_tensor=reward_tensor,
-                                    original_reward_extra_infos=reward_extra_infos_dict,
-                                )
+                            probe_score = self._score_forced_answer_probe(
+                                batch=batch,
+                                capture=probe_capture,
+                                probe_reward_batch=probe_reward_batch,
+                                original_reward_tensor=reward_tensor,
+                                original_reward_extra_infos=reward_extra_infos_dict,
                             )
+                            metrics.update(probe_score.diagnostics.metrics)
+                            metrics.update(probe_score.training_credit.metrics)
+                            effective_reward_tensor = probe_score.training_credit.effective_reward_tensor
                     # Operating Mode Selection:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                     # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
@@ -1787,7 +1805,7 @@ class RayPPOTrainer:
                     with marked_timer("adv", timing_raw, color="brown"):
                         # we combine with rule-based rm
                         reward_extra_infos_dict: dict[str, list]
-                        batch.batch["token_level_scores"] = reward_tensor
+                        batch.batch["token_level_scores"] = effective_reward_tensor
 
                         if reward_extra_infos_dict:
                             batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})

@@ -83,6 +83,10 @@ def validate_config(
         use_reference_policy (bool): is ref policy needed
         use_critic (bool): is critic needed
     """
+    raw_probe_config = config.actor_rollout_ref.rollout.get("forced_answer_probe", None)
+    if raw_probe_config is not None:
+        omega_conf_to_dataclass(raw_probe_config).validate()
+
     # number of GPUs total
     n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
 

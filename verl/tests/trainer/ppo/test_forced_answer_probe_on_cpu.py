@@ -38,8 +38,8 @@ class _Client:
     async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key=None):
         self.calls.append((request_id, prompt_ids, dict(sampling_params), routing_key))
         return [
-            SimpleNamespace(token_ids=[40], extra_fields={"branch_id": 0}),
-            SimpleNamespace(token_ids=[41, 42], extra_fields={"branch_id": 1}),
+            SimpleNamespace(token_ids=[40 + branch], extra_fields={"branch_id": branch})
+            for branch in range(sampling_params["n"])
         ]
 
 
@@ -125,7 +125,7 @@ def test_probe_filters_to_only_hit_cap_trajectories():
     assert capture.hit_response_cap.tolist() == [False, True]
     assert len(client.calls) == 1
     assert {generation.parent_index for generation in capture.generations} == {1}
-    assert client.calls[0][2]["n"] == 2
+    assert client.calls[0][2]["n"] == 4
     assert client.calls[0][2]["max_tokens"] == 64
 
 
@@ -179,7 +179,7 @@ def test_probe_generation_and_reward_batch_do_not_mutate_training_tensors():
         "position_ids",
     ):
         assert torch.equal(original.batch[key], tensor_snapshot[key])
-    assert reward_batch.batch["responses"].shape[0] == 2
+    assert reward_batch.batch["responses"].shape[0] == 4
     assert reward_batch.batch["responses"].data_ptr() != original.batch["responses"].data_ptr()
     assert "probe_parent_index" not in original.non_tensor_batch
 
@@ -345,10 +345,10 @@ def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
     trainer.reward_loop_manager = _RewardLoopManager()
     trainer.config = SimpleNamespace(
         actor_rollout_ref=SimpleNamespace(
-            rollout=SimpleNamespace(forced_answer_probe=ForcedAnswerProbeConfig(enable=True))
+            rollout=SimpleNamespace(forced_answer_probe=ForcedAnswerProbeConfig(enable=True, num_samples=2))
         )
     )
-    metrics = trainer._score_forced_answer_probe(
+    score = trainer._score_forced_answer_probe(
         batch=original,
         capture=capture,
         probe_reward_batch=reward_batch,
@@ -358,9 +358,12 @@ def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
     )
 
     assert trainer.reward_loop_manager.observed_batch_sizes == [4]
+    metrics = score.diagnostics.metrics
     assert metrics["probe/num_probe_generations"] == 2.0
     assert metrics["probe/success_rate_mean"] == pytest.approx(0.5)
     assert metrics["probe/recovery_rate_given_truncated_failure"] == 1.0
+    assert torch.equal(score.training_credit.effective_reward_tensor, original.batch["rm_scores"])
+    assert score.training_credit.metrics["fa_tr/num_reward_corrected"] == 0.0
     for key, snapshot in tensor_snapshot.items():
         assert torch.equal(original.batch[key], snapshot)
     assert "hit_response_cap" not in original.non_tensor_batch
@@ -396,7 +399,7 @@ def test_missing_correctness_key_fails_closed():
     trainer.reward_loop_manager = _RewardLoopManager()
     trainer.config = SimpleNamespace(
         actor_rollout_ref=SimpleNamespace(
-            rollout=SimpleNamespace(forced_answer_probe=ForcedAnswerProbeConfig(enable=True))
+            rollout=SimpleNamespace(forced_answer_probe=ForcedAnswerProbeConfig(enable=True, num_samples=2))
         )
     )
     with pytest.raises(RuntimeError, match="requires raw verifier correctness field 'acc'"):
@@ -413,6 +416,7 @@ def test_missing_correctness_key_fails_closed():
 
 def test_forced_answer_probe_config_correctness_defaults_and_validation():
     config = ForcedAnswerProbeConfig()
+    assert config.num_samples == 4
     assert config.correctness_key == "acc"
     assert config.correctness_threshold == 0.5
     assert config.high_confidence_threshold == 1.0
@@ -474,7 +478,7 @@ def test_mixed_context_batch_skips_only_overflow_requests():
     )
     client = _Client()
     capture = run_forced_answer_probe(
-        config=ForcedAnswerProbeConfig(enable=True, max_new_tokens=4),
+        config=ForcedAnswerProbeConfig(enable=True, num_samples=2, max_new_tokens=4),
         rollout_batch=rollout_batch,
         tokenizer=_Tokenizer(),
         client=client,
