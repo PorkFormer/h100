@@ -7,16 +7,20 @@ cap before the policy naturally emits its final answer, and the verifier then
 treats the incomplete response as unsuccessful. We call this experimental
 failure mode **truncation-induced reward censoring**.
 
-This Step 2 implementation asks a diagnostic question only: among trajectories
-that hit the response cap, how often can the same current policy produce a
-correct answer when explicitly required to answer immediately?
+The probe asks a diagnostic question: among trajectories that hit the response
+cap, how often can the same current policy produce a correct answer when
+explicitly required to answer immediately? FA-TR v1 can optionally use that
+signal for training credit; see
+[Forced-Answer Truncation Recovery](forced_answer_truncation_recovery.md).
 
 ## Workflow
 
-The normal rollout, reward, advantage, and actor update are unchanged. For each
-single-turn trajectory, the rollout backend's finish reason is used to
-distinguish natural EOS from maximum-length termination. Sequence length and
-the EOS token provide a fallback when backend metadata is unavailable.
+The rollout tokens and actor inputs are unchanged. Unless optional FA-TR
+training credit is enabled, reward, advantage, and actor updates are unchanged
+as well. For each single-turn trajectory, the rollout backend's finish reason
+is used to distinguish natural EOS from maximum-length termination. Sequence
+length and the EOS token provide a fallback when backend metadata is
+unavailable.
 
 When the feature is enabled, only response-cap trajectories receive an
 independent grouped vLLM request containing:
@@ -40,13 +44,17 @@ The feature is disabled by default under
 ```yaml
 forced_answer_probe:
   enable: false
-  num_samples: 2
+  num_samples: 4
   max_new_tokens: 64
   temperature: 1.0
   top_p: 1.0
   instruction: "\n\nProvide only the final answer in this exact format: Answer: <final answer>"
   correctness_key: acc
   correctness_threshold: 0.5
+  training_credit:
+    enable: false
+    activation_threshold: 0.75
+    reward_mode: centered_pfa
   success_threshold: 0.0
   high_confidence_threshold: 1.0
   save_examples: false
@@ -59,8 +67,8 @@ DAPO shaped reward. Values at or above `correctness_threshold` are correct.
 `success_threshold` is retained only for shaped-reward telemetry and backward
 configuration compatibility; it does not classify answer correctness.
 `high_confidence_threshold` is applied to each attempted trajectory's mean
-binary raw-correctness result. With the online defaults, K=2 therefore requires
-2/2 correct branches: neither 0/2 nor 1/2 is high confidence.
+binary raw-correctness result. It controls diagnostic telemetry independently
+from FA-TR's `training_credit.activation_threshold`.
 
 If qualitative examples are enabled, at most `max_examples_per_step` records
 are written; each retains only the original response tail rather than its full
@@ -82,8 +90,9 @@ reward extra-info field after the normal `extract_reward()` path. Missing raw
 correctness fails closed; the probe never infers correctness from `rm_scores`.
 
 Shaped rewards remain visible as telemetry so a run can directly compare raw
-answer correctness with the DAPO training reward. Neither signal is written
-back into training credit by this diagnostic.
+answer correctness with the DAPO training reward. Probe-only operation leaves
+training credit unchanged. When explicitly enabled, FA-TR uses only raw
+correctness to decide whether to replace a qualifying terminal training score.
 
 ## Metrics
 
@@ -139,16 +148,16 @@ not once per sampled branch. Generated overhead sums every branch. The legacy
 
 ## Recommended protocols
 
-Online fast diagnostic (the low-cost default when enabled):
+Online diagnostic:
 
 ```yaml
 forced_answer_probe:
   enable: true
-  num_samples: 2
+  num_samples: 4
   max_new_tokens: 64
   temperature: 1.0
   top_p: 1.0
-  high_confidence_threshold: 1.0
+  high_confidence_threshold: 0.75
 ```
 
 Canonical paper diagnostic (not the online default):
@@ -168,7 +177,7 @@ For an H=2048 diagnostic run, append overrides such as:
 ```bash
 data.max_response_length=2048 \
 actor_rollout_ref.rollout.forced_answer_probe.enable=true \
-actor_rollout_ref.rollout.forced_answer_probe.num_samples=2 \
+actor_rollout_ref.rollout.forced_answer_probe.num_samples=4 \
 actor_rollout_ref.rollout.forced_answer_probe.max_new_tokens=64
 ```
 
@@ -183,8 +192,8 @@ it does not show that a natural H=8192 continuation would have been correct.
 Accordingly, the metrics use `candidate` and `recoverable` terminology and make
 no claim that these samples are proven false negatives.
 
-This implementation is auxiliary inference only. It does not change original
-rewards, advantages, GRPO normalization, DAPO shaping, actor loss, response
-masks, old/reference log probabilities, or training sequence lengths. Negative
-masking, soft recovered rewards, sparse long continuation, and adaptive horizon
-control are intentionally outside Step 2.
+By default this remains auxiliary inference only. Enabling FA-TR changes the
+effective terminal training reward for its strict activation subset, while
+leaving original reward telemetry and all actor trajectory tensors unchanged.
+Negative masking, sparse long continuation, and adaptive horizon control remain
+outside this implementation.
