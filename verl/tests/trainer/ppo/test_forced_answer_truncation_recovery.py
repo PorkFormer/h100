@@ -6,6 +6,7 @@ import torch
 from tensordict import TensorDict
 
 from verl import DataProto
+from verl.trainer.ppo.core_algos import AdvantageEstimator
 from verl.trainer.ppo.forced_answer_probe import (
     ForcedAnswerGeneration,
     ForcedAnswerProbeCapture,
@@ -15,7 +16,8 @@ from verl.trainer.ppo.forced_answer_probe import (
     compute_fa_tr_credit_targets,
     compute_pfa_by_parent,
 )
-from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+from verl.trainer.ppo.ray_trainer import RayPPOTrainer, compute_advantage
+from verl.utils.config import validate_forced_answer_probe_config
 from verl.workers.config import ForcedAnswerProbeConfig, ForcedAnswerTrainingCreditConfig
 
 
@@ -127,6 +129,62 @@ def test_disabled_path_is_bitwise_vanilla_and_reports_no_corrections():
     assert result.metrics["fa_tr/reward_correction_rate"] == 0.0
 
 
+def _compute_grpo_advantages(reward_tensor: torch.Tensor) -> torch.Tensor:
+    response_mask = torch.ones_like(reward_tensor)
+    batch = DataProto(
+        batch=TensorDict(
+            {"token_level_rewards": reward_tensor, "response_mask": response_mask},
+            batch_size=len(reward_tensor),
+        ),
+        non_tensor_batch={"uid": np.asarray(["one-group"] * len(reward_tensor), dtype=object)},
+    )
+    return compute_advantage(
+        batch,
+        adv_estimator=AdvantageEstimator.GRPO,
+        norm_adv_by_std_in_grpo=True,
+    ).batch["advantages"]
+
+
+def test_fa_tr_turns_equal_reward_group_into_group_relative_credit():
+    original = torch.tensor([[0.0, -2.0]] * 4)
+    vanilla = build_fa_tr_training_credit_result(
+        original_reward_tensor=original,
+        response_mask=torch.ones_like(original),
+        current_row_to_parent=list(range(4)),
+        current_uids=["one-group"] * 4,
+        hit_response_cap=[True, False, False, False],
+        probe_attempted=[True, False, False, False],
+        context_overflow=[False] * 4,
+        original_correctness=[0.0] * 4,
+        successes_by_parent={0: [True, True, True, False]},
+        correctness_threshold=0.5,
+        enable=False,
+        activation_threshold=0.75,
+    )
+    vanilla_advantages = _compute_grpo_advantages(vanilla.effective_reward_tensor)
+    assert torch.allclose(vanilla_advantages, torch.zeros_like(vanilla_advantages))
+
+    corrected = build_fa_tr_training_credit_result(
+        original_reward_tensor=original,
+        response_mask=torch.ones_like(original),
+        current_row_to_parent=list(range(4)),
+        current_uids=["one-group"] * 4,
+        hit_response_cap=[True, False, False, False],
+        probe_attempted=[True, False, False, False],
+        context_overflow=[False] * 4,
+        original_correctness=[0.0] * 4,
+        successes_by_parent={0: [True, True, True, False]},
+        correctness_threshold=0.5,
+        enable=True,
+        activation_threshold=0.75,
+    )
+    corrected_advantages = _compute_grpo_advantages(corrected.effective_reward_tensor)
+    scalar_advantages = corrected_advantages[:, 0]
+    assert torch.isfinite(corrected_advantages).all()
+    assert scalar_advantages[0] > 0
+    assert torch.all(scalar_advantages[1:] < 0)
+
+
 def test_group_metrics_count_only_groups_with_a_correction():
     original = torch.full((8, 2), -1.0)
     result = build_fa_tr_training_credit_result(
@@ -150,6 +208,31 @@ def test_group_metrics_count_only_groups_with_a_correction():
     assert result.metrics["fa_tr/effective_reward_mean_corrected_subset"] == 1.0
     assert result.metrics["fa_tr/reward_delta_mean"] == 3.0
     assert result.metrics["fa_tr/reward_delta_max"] == 3.0
+    assert result.metrics["fa_tr/generated_trajectory_count"] == 8.0
+    assert result.metrics["fa_tr/probe_parent_count"] == 8.0
+    assert result.metrics["fa_tr/ppo_batch_trajectory_count"] == 8.0
+    assert result.metrics["fa_tr/unique_parent_count"] == 8.0
+
+
+def test_identity_metrics_expose_smaller_current_ppo_batch():
+    result = build_fa_tr_training_credit_result(
+        original_reward_tensor=torch.zeros((3, 1)),
+        response_mask=torch.ones((3, 1)),
+        current_row_to_parent=[2, 0, 1],
+        current_uids=["c", "a", "b"],
+        hit_response_cap=[False, False, False, False],
+        probe_attempted=[False, False, False, False],
+        context_overflow=[False, False, False, False],
+        original_correctness=[0.0, 0.0, 0.0, 0.0],
+        successes_by_parent={},
+        correctness_threshold=0.5,
+        enable=True,
+        activation_threshold=0.75,
+    )
+    assert result.metrics["fa_tr/generated_trajectory_count"] == 4.0
+    assert result.metrics["fa_tr/probe_parent_count"] == 4.0
+    assert result.metrics["fa_tr/ppo_batch_trajectory_count"] == 3.0
+    assert result.metrics["fa_tr/unique_parent_count"] == 3.0
 
 
 def test_pfa_distribution_metrics_use_eligible_subset():
@@ -182,7 +265,7 @@ def test_pfa_distribution_metrics_use_eligible_subset():
 
 def test_training_credit_config_defaults_and_fail_fast_validation():
     config = ForcedAnswerProbeConfig()
-    assert config.num_samples == 4
+    assert config.num_samples == 2
     assert config.training_credit.enable is False
     assert config.training_credit.activation_threshold == 0.75
     assert config.training_credit.reward_mode == "centered_pfa"
@@ -197,6 +280,39 @@ def test_training_credit_config_defaults_and_fail_fast_validation():
             enable=False,
             training_credit=ForcedAnswerTrainingCreditConfig(enable=True),
         ).validate()
+
+    explicit_k4 = ForcedAnswerProbeConfig(
+        enable=True,
+        num_samples=4,
+        training_credit=ForcedAnswerTrainingCreditConfig(enable=True, activation_threshold=0.75),
+    )
+    explicit_k4.validate()
+
+
+def test_fa_tr_requires_explicit_max_model_len_but_diagnostic_probe_does_not():
+    credit_probe = ForcedAnswerProbeConfig(
+        enable=True,
+        num_samples=4,
+        training_credit=ForcedAnswerTrainingCreditConfig(enable=True),
+    )
+    with pytest.raises(ValueError, match="requires an explicit.*max_model_len"):
+        validate_forced_answer_probe_config(
+            SimpleNamespace(forced_answer_probe=credit_probe, max_model_len=None)
+        )
+
+    diagnostic_probe = ForcedAnswerProbeConfig(enable=True)
+    assert (
+        validate_forced_answer_probe_config(
+            SimpleNamespace(forced_answer_probe=diagnostic_probe, max_model_len=None)
+        )
+        is diagnostic_probe
+    )
+    assert (
+        validate_forced_answer_probe_config(
+            SimpleNamespace(forced_answer_probe=credit_probe, max_model_len=4096)
+        )
+        is credit_probe
+    )
 
 
 def test_trainer_probe_enable_check_fails_fast_for_invalid_credit_dependency():
@@ -213,6 +329,24 @@ def test_trainer_probe_enable_check_fails_fast_for_invalid_credit_dependency():
     )
     with pytest.raises(ValueError, match="requires forced_answer_probe.enable=true"):
         trainer._forced_answer_probe_enabled()
+
+
+def test_duplicate_current_parent_identity_fails_closed():
+    with pytest.raises(ValueError, match="duplicate parent identity"):
+        build_fa_tr_training_credit_result(
+            original_reward_tensor=torch.zeros((3, 1)),
+            response_mask=torch.ones((3, 1)),
+            current_row_to_parent=[0, 0, 1],
+            current_uids=["a", "a", "b"],
+            hit_response_cap=[False, False, False],
+            probe_attempted=[False, False, False],
+            context_overflow=[False, False, False],
+            original_correctness=[0.0, 0.0, 0.0],
+            successes_by_parent={},
+            correctness_threshold=0.5,
+            enable=True,
+            activation_threshold=0.75,
+        )
 
 
 def _integration_batch() -> DataProto:
@@ -281,6 +415,7 @@ def test_score_integration_corrects_balanced_row_without_mutating_actor_or_rm_te
             rollout=SimpleNamespace(
                 forced_answer_probe=ForcedAnswerProbeConfig(
                     enable=True,
+                    num_samples=4,
                     training_credit=ForcedAnswerTrainingCreditConfig(enable=True),
                 )
             )
