@@ -44,7 +44,7 @@ The feature is disabled by default under
 ```yaml
 forced_answer_probe:
   enable: false
-  num_samples: 4
+  num_samples: 2
   max_new_tokens: 64
   temperature: 1.0
   top_p: 1.0
@@ -148,12 +148,12 @@ not once per sampled branch. Generated overhead sums every branch. The legacy
 
 ## Recommended protocols
 
-Online diagnostic:
+Backward-compatible online diagnostic default:
 
 ```yaml
 forced_answer_probe:
   enable: true
-  num_samples: 4
+  num_samples: 2
   max_new_tokens: 64
   temperature: 1.0
   top_p: 1.0
@@ -177,7 +177,7 @@ For an H=2048 diagnostic run, append overrides such as:
 ```bash
 data.max_response_length=2048 \
 actor_rollout_ref.rollout.forced_answer_probe.enable=true \
-actor_rollout_ref.rollout.forced_answer_probe.num_samples=4 \
+actor_rollout_ref.rollout.forced_answer_probe.num_samples=2 \
 actor_rollout_ref.rollout.forced_answer_probe.max_new_tokens=64
 ```
 

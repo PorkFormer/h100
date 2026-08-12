@@ -195,6 +195,10 @@ def build_fa_tr_training_credit_result(
     parents = np.asarray(current_row_to_parent, dtype=np.int64)
     if len(parents) != len(original_reward_tensor) or len(current_uids) != len(original_reward_tensor):
         raise ValueError("FA-TR row identity and uid arrays must align with the PPO batch")
+    unique_parent_count = len(set(parents.tolist()))
+    if enable and unique_parent_count != len(parents):
+        raise ValueError("duplicate parent identity in current PPO batch")
+    probe_parent_count = len(hit_response_cap)
     pfa_by_parent = compute_pfa_by_parent(successes_by_parent)
     decisions = compute_fa_tr_credit_targets(
         hit_response_cap=hit_response_cap,
@@ -239,6 +243,10 @@ def build_fa_tr_training_credit_result(
     corrected_count = len(corrected)
     num_groups = len(all_groups)
     metrics = {
+        "fa_tr/generated_trajectory_count": float(probe_parent_count),
+        "fa_tr/probe_parent_count": float(probe_parent_count),
+        "fa_tr/ppo_batch_trajectory_count": float(total),
+        "fa_tr/unique_parent_count": float(unique_parent_count),
         "fa_tr/num_eligible_truncated_failures": float(eligible_count),
         "fa_tr/pfa_mean": float(np.mean(eligible_pfas)) if eligible_pfas else 0.0,
         "fa_tr/pfa_eq_0_rate": float(np.mean(np.equal(eligible_pfas, 0.0))) if eligible_pfas else 0.0,

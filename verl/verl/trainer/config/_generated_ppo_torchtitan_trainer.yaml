@@ -290,7 +290,7 @@ actor_rollout_ref:
     forced_answer_probe:
       _target_: verl.workers.config.ForcedAnswerProbeConfig
       enable: false
-      num_samples: 4
+      num_samples: 2
       max_new_tokens: 64
       temperature: 1.0
       top_p: 1.0
@@ -796,6 +796,37 @@ algorithm:
   pf_ppo:
     reweight_method: pow
     weight_pow: 2.0
+  probe_credit:
+    _target_: verl.trainer.config.ProbeCreditConfig
+    enable: false
+    coef: 0.0
+    rho: 0.5
+    relative_positions:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 0.9
+    'n': 4
+    temperature: 0.7
+    top_p: 0.95
+    top_k: -1
+    max_tokens: 64
+    stop:
+    - '
+
+      '
+    answer_prefix: '
+
+
+      Answer:'
+    norm_probe_by_std: true
+    epsilon: 1.0e-06
+    probe_zero_position: true
+    strict: true
+    debug_dump: false
+    max_concurrent_requests: 128
+    request_batch_size: 512
 distillation:
   _target_: verl.workers.config.DistillationConfig
   enabled: false

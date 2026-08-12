@@ -125,7 +125,7 @@ def test_probe_filters_to_only_hit_cap_trajectories():
     assert capture.hit_response_cap.tolist() == [False, True]
     assert len(client.calls) == 1
     assert {generation.parent_index for generation in capture.generations} == {1}
-    assert client.calls[0][2]["n"] == 4
+    assert client.calls[0][2]["n"] == 2
     assert client.calls[0][2]["max_tokens"] == 64
 
 
@@ -179,7 +179,7 @@ def test_probe_generation_and_reward_batch_do_not_mutate_training_tensors():
         "position_ids",
     ):
         assert torch.equal(original.batch[key], tensor_snapshot[key])
-    assert reward_batch.batch["responses"].shape[0] == 4
+    assert reward_batch.batch["responses"].shape[0] == 2
     assert reward_batch.batch["responses"].data_ptr() != original.batch["responses"].data_ptr()
     assert "probe_parent_index" not in original.non_tensor_batch
 
@@ -416,7 +416,7 @@ def test_missing_correctness_key_fails_closed():
 
 def test_forced_answer_probe_config_correctness_defaults_and_validation():
     config = ForcedAnswerProbeConfig()
-    assert config.num_samples == 4
+    assert config.num_samples == 2
     assert config.correctness_key == "acc"
     assert config.correctness_threshold == 0.5
     assert config.high_confidence_threshold == 1.0

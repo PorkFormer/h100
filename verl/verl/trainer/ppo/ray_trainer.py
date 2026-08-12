@@ -68,7 +68,7 @@ from verl.trainer.ppo.utils import (
 )
 from verl.utils import tensordict_utils as tu
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path, should_save_ckpt_esi
-from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.config import omega_conf_to_dataclass, validate_forced_answer_probe_config
 from verl.utils.debug import marked_timer
 from verl.utils.import_utils import deprecated, load_class_from_fqn
 from verl.utils.metric import reduce_metrics
@@ -612,11 +612,9 @@ class RayPPOTrainer:
         return getattr(rollout_config, "forced_answer_probe", None)
 
     def _forced_answer_probe_enabled(self) -> bool:
-        raw_config = self._forced_answer_probe_raw_config()
-        if raw_config is None:
+        probe_config = validate_forced_answer_probe_config(self.config.actor_rollout_ref.rollout)
+        if probe_config is None:
             return False
-        probe_config = omega_conf_to_dataclass(raw_config)
-        probe_config.validate()
         return bool(probe_config.enable)
 
     def _generate_forced_answer_probe(self, rollout_batch: DataProto) -> ForcedAnswerProbeCapture | None:

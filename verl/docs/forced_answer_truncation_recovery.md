@@ -20,26 +20,40 @@ answer success.
 ## Configuration and default
 
 Training credit is disabled by default. Probe inference and reward correction
-have separate switches:
+have separate switches. The global diagnostic default remains `num_samples: 2`;
+the FA-TR v1 experiment protocol explicitly selects `K=4`:
 
 ```yaml
-forced_answer_probe:
-  enable: true
-  num_samples: 4
-  max_new_tokens: 64
-  temperature: 1.0
-  top_p: 1.0
-  correctness_key: acc
-  correctness_threshold: 0.5
-  training_credit:
-    enable: false
-    activation_threshold: 0.75
-    reward_mode: centered_pfa
+actor_rollout_ref:
+  rollout:
+    # The actor training rollout horizon remains H=2048.
+    response_length: 2048
+
+    # Required explicitly by FA-TR for probe context-budget accounting.
+    # This permits prompt + H2048 prefix + short FA probe; it does not
+    # increase the actor training horizon to 4096.
+    max_model_len: 4096
+
+    forced_answer_probe:
+      enable: true
+
+      # Explicit FA-TR v1 experiment protocol; diagnostic default is K=2.
+      num_samples: 4
+      max_new_tokens: 64
+      temperature: 1.0
+      top_p: 1.0
+      correctness_key: acc
+      correctness_threshold: 0.5
+      training_credit:
+        enable: true
+        activation_threshold: 0.75
+        reward_mode: centered_pfa
 ```
 
-Enabling training credit while probe inference is disabled fails fast. FA-TR v1
-accepts only `reward_mode: centered_pfa` and requires an activation threshold in
-`[0, 1]`.
+Enabling training credit while probe inference is disabled fails fast. Training
+credit also requires an explicit non-null rollout `max_model_len`; diagnostic-
+only probes retain the previous nullable behavior. FA-TR v1 accepts only
+`reward_mode: centered_pfa` and requires an activation threshold in `[0, 1]`.
 
 ## v1 policy
 
@@ -101,6 +115,10 @@ yet demonstrated an accuracy improvement.
 
 The existing `probe/*` metrics are unchanged. FA-TR additionally reports:
 
+- `fa_tr/generated_trajectory_count`
+- `fa_tr/probe_parent_count`
+- `fa_tr/ppo_batch_trajectory_count`
+- `fa_tr/unique_parent_count`
 - `fa_tr/num_eligible_truncated_failures`
 - `fa_tr/pfa_mean`
 - `fa_tr/pfa_eq_0_rate`
@@ -121,4 +139,7 @@ The existing `probe/*` metrics are unchanged. FA-TR additionally reports:
 
 Distribution metrics use the eligible subset. Reward-effect metrics use the
 corrected subset. Empty denominators and empty corrected subsets report `0.0`,
-never NaN.
+never NaN. `generated_trajectory_count` and `probe_parent_count` describe the
+probe capture parent universe; `ppo_batch_trajectory_count` and
+`unique_parent_count` describe the rows presented for reward correction. These
+counts make filtering or identity loss visible during a smoke run.

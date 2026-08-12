@@ -88,7 +88,7 @@ class ForcedAnswerProbeConfig(BaseConfig):
     """Diagnostic forced-answer generation for response-cap trajectories."""
 
     enable: bool = False
-    num_samples: int = 4
+    num_samples: int = 2
     max_new_tokens: int = 64
     temperature: float = 1.0
     top_p: float = 1.0

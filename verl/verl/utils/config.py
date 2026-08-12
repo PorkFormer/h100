@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
-__all__ = ["omega_conf_to_dataclass", "validate_config"]
+__all__ = ["omega_conf_to_dataclass", "validate_config", "validate_forced_answer_probe_config"]
 
 
 def omega_conf_to_dataclass(config: DictConfig | dict, dataclass_type: Optional[type[Any]] = None) -> Any:
@@ -71,6 +71,28 @@ def update_dict_with_config(dictionary: dict, config: DictConfig):
             dictionary[key] = getattr(config, key)
 
 
+def validate_forced_answer_probe_config(rollout_config: Any) -> Any | None:
+    """Validate probe settings, including FA-TR context-budget requirements."""
+    if hasattr(rollout_config, "get"):
+        raw_probe_config = rollout_config.get("forced_answer_probe", None)
+        max_model_len = rollout_config.get("max_model_len", None)
+    else:
+        raw_probe_config = getattr(rollout_config, "forced_answer_probe", None)
+        max_model_len = getattr(rollout_config, "max_model_len", None)
+    if raw_probe_config is None:
+        return None
+
+    probe_config = omega_conf_to_dataclass(raw_probe_config)
+    probe_config.validate()
+    if probe_config.training_credit.enable and max_model_len is None:
+        raise ValueError(
+            "FA-TR training credit requires an explicit "
+            "actor_rollout_ref.rollout.max_model_len for reliable "
+            "forced-answer context-budget accounting"
+        )
+    return probe_config
+
+
 def validate_config(
     config: DictConfig,
     use_reference_policy: bool,
@@ -83,9 +105,7 @@ def validate_config(
         use_reference_policy (bool): is ref policy needed
         use_critic (bool): is critic needed
     """
-    raw_probe_config = config.actor_rollout_ref.rollout.get("forced_answer_probe", None)
-    if raw_probe_config is not None:
-        omega_conf_to_dataclass(raw_probe_config).validate()
+    validate_forced_answer_probe_config(config.actor_rollout_ref.rollout)
 
     # number of GPUs total
     n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
