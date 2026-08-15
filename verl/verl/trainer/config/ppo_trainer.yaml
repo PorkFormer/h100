@@ -169,6 +169,21 @@ algorithm:
     # Maximum number of Probe requests submitted in one driver chunk
     request_batch_size: 512
 
+  # FA-CAC v2: forced-answer censor-aware GRPO advantage projection.
+  censor_aware_advantage:
+
+    # Required for recursive dataclass instantiation.
+    _target_: verl.trainer.config.CensorAwareAdvantageConfig
+
+    # Disabled is tensor-for-tensor Vanilla behavior.
+    enable: false
+
+    # false computes full shadow telemetry while leaving actor tensors Vanilla.
+    apply: true
+
+    # The sole audited v2 mechanism.
+    mode: attenuate_negative_correctness
+
 # config for the trainer
 trainer:
 

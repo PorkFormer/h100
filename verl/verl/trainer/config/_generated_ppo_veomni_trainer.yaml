@@ -832,6 +832,11 @@ algorithm:
     debug_dump: false
     max_concurrent_requests: 128
     request_batch_size: 512
+  censor_aware_advantage:
+    _target_: verl.trainer.config.CensorAwareAdvantageConfig
+    enable: false
+    apply: true
+    mode: attenuate_negative_correctness
 distillation:
   _target_: verl.workers.config.DistillationConfig
   enabled: false

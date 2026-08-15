@@ -40,11 +40,14 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.config import AlgoConfig
 from verl.trainer.distillation.losses import is_distillation_enabled
 from verl.trainer.ppo import core_algos
+from verl.trainer.ppo.censor_aware_advantage import apply_fa_cac_post_advantage_hook
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss, get_current_clip_ratios
 from verl.trainer.ppo.forced_answer_probe import (
+    ForcedAnswerCensorEvidence,
     ForcedAnswerProbeCapture,
     ForcedAnswerProbeScoreResult,
     aggregate_probe_diagnostics,
+    build_fa_cac_evidence,
     build_fa_tr_training_credit_result,
     build_probe_reward_batch,
     run_forced_answer_probe,
@@ -68,7 +71,11 @@ from verl.trainer.ppo.utils import (
 )
 from verl.utils import tensordict_utils as tu
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path, should_save_ckpt_esi
-from verl.utils.config import omega_conf_to_dataclass, validate_forced_answer_probe_config
+from verl.utils.config import (
+    omega_conf_to_dataclass,
+    validate_censor_aware_advantage_config,
+    validate_forced_answer_probe_config,
+)
 from verl.utils.debug import marked_timer
 from verl.utils.import_utils import deprecated, load_class_from_fqn
 from verl.utils.metric import reduce_metrics
@@ -613,6 +620,8 @@ class RayPPOTrainer:
 
     def _forced_answer_probe_enabled(self) -> bool:
         probe_config = validate_forced_answer_probe_config(self.config.actor_rollout_ref.rollout)
+        if hasattr(self.config, "algorithm"):
+            validate_censor_aware_advantage_config(self.config)
         if probe_config is None:
             return False
         return bool(probe_config.enable)
@@ -756,6 +765,33 @@ class RayPPOTrainer:
             enable=probe_config.training_credit.enable,
             activation_threshold=probe_config.training_credit.activation_threshold,
         )
+        raw_cac = None
+        if hasattr(self.config, "algorithm"):
+            raw_cac = (
+                self.config.algorithm.get("censor_aware_advantage", None)
+                if hasattr(self.config.algorithm, "get")
+                else getattr(self.config.algorithm, "censor_aware_advantage", None)
+            )
+        cac_enabled = bool(
+            raw_cac is not None
+            and (raw_cac.get("enable", False) if hasattr(raw_cac, "get") else getattr(raw_cac, "enable", False))
+        )
+        censor_evidence: ForcedAnswerCensorEvidence | None = None
+        if cac_enabled:
+            if "score" not in original_reward_extra_infos:
+                raise RuntimeError(
+                    "FA-CAC requires exact reward_extra_info['score']; refusing to reconstruct task score"
+                )
+            censor_evidence = build_fa_cac_evidence(
+                current_row_to_parent=parent_indices,
+                hit_response_cap=capture.hit_response_cap,
+                probe_attempted=capture.probe_attempted,
+                context_overflow=capture.context_overflow,
+                original_correctness_by_parent=original_correctness,
+                task_score_in_current_row_order=original_reward_extra_infos["score"],
+                successes_by_parent=diagnostics.successes_by_parent,
+                correctness_threshold=probe_config.correctness_threshold,
+            )
         if probe_config.save_examples and capture.generations:
             output_dir = probe_config.examples_dir or os.path.join(
                 self.config.trainer.default_local_dir, "forced_answer_probe_examples"
@@ -771,7 +807,11 @@ class RayPPOTrainer:
                 response_tail_chars=probe_config.response_tail_chars,
                 parent_indices=parent_indices,
             )
-        return ForcedAnswerProbeScoreResult(diagnostics=diagnostics, training_credit=training_credit)
+        return ForcedAnswerProbeScoreResult(
+            diagnostics=diagnostics,
+            training_credit=training_credit,
+            censor_evidence=censor_evidence,
+        )
 
     def _validate(self, merged: bool = False):
         data_source_lst = []
@@ -1727,6 +1767,7 @@ class RayPPOTrainer:
                         reward_tensor, reward_extra_infos_dict = extract_reward(batch)
 
                     effective_reward_tensor = reward_tensor
+                    censor_evidence = None
                     if probe_capture is not None:
                         with marked_timer("forced_answer_probe_reward", timing_raw, color="magenta"):
                             probe_score = self._score_forced_answer_probe(
@@ -1739,6 +1780,7 @@ class RayPPOTrainer:
                             metrics.update(probe_score.diagnostics.metrics)
                             metrics.update(probe_score.training_credit.metrics)
                             effective_reward_tensor = probe_score.training_credit.effective_reward_tensor
+                            censor_evidence = probe_score.censor_evidence
                     # Operating Mode Selection:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                     # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
@@ -1846,6 +1888,12 @@ class RayPPOTrainer:
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
                         )
+                        batch, fa_cac_metrics = apply_fa_cac_post_advantage_hook(
+                            batch,
+                            evidence=censor_evidence,
+                            algorithm_config=self.config.algorithm,
+                        )
+                        metrics.update(fa_cac_metrics)
 
                     # update critic
                     if self.use_critic:

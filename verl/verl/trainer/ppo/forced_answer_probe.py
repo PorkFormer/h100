@@ -81,11 +81,85 @@ class ForcedAnswerTrainingCreditResult:
 
 
 @dataclass(frozen=True)
+class ForcedAnswerCensorEvidence:
+    """Parent-keyed evidence consumed only after canonical Vanilla GRPO."""
+
+    current_row_to_parent: np.ndarray
+    hit_response_cap: np.ndarray
+    probe_attempted: np.ndarray
+    context_overflow: np.ndarray
+    original_correctness_by_parent: np.ndarray
+    task_score_by_parent: np.ndarray
+    pfa_by_parent: dict[int, float]
+    correctness_threshold: float
+
+
+@dataclass(frozen=True)
 class ForcedAnswerProbeScoreResult:
     """Keep probe diagnostics separate from the optional training intervention."""
 
     diagnostics: ForcedAnswerProbeDiagnostics
     training_credit: ForcedAnswerTrainingCreditResult
+    censor_evidence: ForcedAnswerCensorEvidence | None = None
+
+
+def build_fa_cac_evidence(
+    *,
+    current_row_to_parent: Sequence[int],
+    hit_response_cap: Sequence[bool],
+    probe_attempted: Sequence[bool],
+    context_overflow: Sequence[bool],
+    original_correctness_by_parent: Sequence[float],
+    task_score_in_current_row_order: Sequence[float],
+    successes_by_parent: Mapping[int, Sequence[bool]],
+    correctness_threshold: float,
+) -> ForcedAnswerCensorEvidence:
+    """Validate and freeze the exact evidence needed by FA-CAC."""
+    parents = np.asarray(current_row_to_parent, dtype=np.int64)
+    hit_cap = np.asarray(hit_response_cap, dtype=bool)
+    attempted = np.asarray(probe_attempted, dtype=bool)
+    overflow = np.asarray(context_overflow, dtype=bool)
+    correctness = np.asarray(original_correctness_by_parent, dtype=np.float64)
+    task_current = np.asarray(task_score_in_current_row_order, dtype=np.float64)
+    parent_count = len(hit_cap)
+    if not (len(attempted) == len(overflow) == len(correctness) == parent_count):
+        raise RuntimeError("FA-CAC parent evidence arrays must be aligned")
+    if len(parents) != len(task_current):
+        raise RuntimeError("FA-CAC score must align with the retained PPO batch")
+    if len(set(parents.tolist())) != len(parents):
+        raise RuntimeError("FA-CAC retained PPO rows must have unique parent identity")
+    if np.any(parents < 0) or np.any(parents >= parent_count):
+        raise RuntimeError("FA-CAC retained PPO row has an invalid parent identity")
+    if not np.all(np.isfinite(correctness)):
+        raise RuntimeError("FA-CAC raw correctness must be finite")
+    if not np.all(np.isfinite(task_current)):
+        raise RuntimeError("FA-CAC reward_extra_info['score'] must be finite")
+    task_by_parent = np.full(parent_count, np.nan, dtype=np.float64)
+    task_by_parent[parents] = task_current
+    pfa_by_parent = compute_pfa_by_parent(successes_by_parent)
+    for parent in range(parent_count):
+        eligible = bool(
+            hit_cap[parent]
+            and attempted[parent]
+            and not overflow[parent]
+            and correctness[parent] < correctness_threshold
+        )
+        if eligible and parent not in pfa_by_parent:
+            raise RuntimeError(f"FA-CAC eligible trajectory {parent} has no pFA")
+        if parent in pfa_by_parent:
+            pfa = pfa_by_parent[parent]
+            if not math.isfinite(pfa) or not 0.0 <= pfa <= 1.0:
+                raise RuntimeError(f"FA-CAC trajectory {parent} pFA must be in [0, 1]")
+    return ForcedAnswerCensorEvidence(
+        current_row_to_parent=parents.copy(),
+        hit_response_cap=hit_cap.copy(),
+        probe_attempted=attempted.copy(),
+        context_overflow=overflow.copy(),
+        original_correctness_by_parent=correctness.copy(),
+        task_score_by_parent=task_by_parent,
+        pfa_by_parent=dict(pfa_by_parent),
+        correctness_threshold=float(correctness_threshold),
+    )
 
 
 def compute_pfa_by_parent(successes_by_parent: Mapping[int, Sequence[bool]]) -> dict[int, float]:

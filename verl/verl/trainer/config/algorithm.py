@@ -21,6 +21,7 @@ from verl.base_config import BaseConfig
 
 __all__ = [
     "AlgoConfig",
+    "CensorAwareAdvantageConfig",
     "FilterGroupsConfig",
     "KLControlConfig",
     "OnPolicyBudgetedCapabilityFloorConfig",
@@ -29,6 +30,22 @@ __all__ = [
     "RolloutCorrectionConfig",
     "SuccessSupportFloorConfig",
 ]
+
+
+@dataclass
+class CensorAwareAdvantageConfig(BaseConfig):
+    """Forced-answer censor-aware GRPO advantage projection."""
+
+    enable: bool = False
+    apply: bool = True
+    mode: str = "attenuate_negative_correctness"
+
+    def validate(self) -> None:
+        if self.mode != "attenuate_negative_correctness":
+            raise ValueError(
+                "censor_aware_advantage.mode must be 'attenuate_negative_correctness'; "
+                f"got {self.mode!r}"
+            )
 
 
 @dataclass
@@ -994,6 +1011,7 @@ class AlgoConfig(BaseConfig):
     pf_ppo: dict[str, Any] = field(default_factory=dict)
     filter_groups: Optional[FilterGroupsConfig] = None
     probe_credit: ProbeCreditConfig = field(default_factory=ProbeCreditConfig)
+    censor_aware_advantage: CensorAwareAdvantageConfig = field(default_factory=CensorAwareAdvantageConfig)
     readiness_dominance: ReadinessDominanceConfig = field(
         default_factory=ReadinessDominanceConfig
     )

@@ -28,6 +28,7 @@ __all__ = [
 ]
 
 from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -369,6 +370,67 @@ def compute_gae_advantage_return(
 
 
 # NOTE(sgm): this implementation only consider outcome supervision, where the reward is a scalar.
+@dataclass(frozen=True)
+class GRPOGroupStatistics:
+    """Frozen group statistics using the historical GRPO singleton convention."""
+
+    mean_by_id: dict[Any, torch.Tensor]
+    std_by_id: dict[Any, torch.Tensor]
+
+
+def compute_grpo_group_statistics(scores: torch.Tensor, index: np.ndarray) -> GRPOGroupStatistics:
+    """Compute the exact per-UID statistics used by outcome GRPO.
+
+    Singleton groups deliberately use mean=0 and std=1. ``torch.std`` keeps
+    its default correction, matching the pre-refactor implementation.
+    """
+    if scores.ndim != 1 or len(index) != scores.shape[0]:
+        raise ValueError("GRPO scores and UID index must be aligned rank-1 arrays")
+    id2score = defaultdict(list)
+    id2mean: dict[Any, torch.Tensor] = {}
+    id2std: dict[Any, torch.Tensor] = {}
+    for i in range(scores.shape[0]):
+        id2score[index[i]].append(scores[i])
+    for idx in id2score:
+        if len(id2score[idx]) == 1:
+            # Keep these CPU scalar constructions byte-for-byte compatible
+            # with the historical implementation.
+            id2mean[idx] = torch.tensor(0.0)
+            id2std[idx] = torch.tensor(1.0)
+        elif len(id2score[idx]) > 1:
+            scores_tensor = torch.stack(id2score[idx])
+            id2mean[idx] = torch.mean(scores_tensor)
+            id2std[idx] = torch.std(scores_tensor)
+        else:  # pragma: no cover - defaultdict groups cannot be empty
+            raise ValueError(f"no score in prompt index: {idx}")
+    return GRPOGroupStatistics(mean_by_id=id2mean, std_by_id=id2std)
+
+
+def normalize_grpo_scores(
+    scores: torch.Tensor,
+    index: np.ndarray,
+    *,
+    numerator_statistics: GRPOGroupStatistics,
+    denominator_statistics: Optional[GRPOGroupStatistics] = None,
+    epsilon: float = 1e-6,
+    norm_adv_by_std_in_grpo: bool = True,
+) -> torch.Tensor:
+    """Center scalar scores and optionally divide by a shared GRPO denominator."""
+    if scores.ndim != 1 or len(index) != scores.shape[0]:
+        raise ValueError("GRPO scores and UID index must be aligned rank-1 arrays")
+    denominator_statistics = denominator_statistics or numerator_statistics
+    normalized = scores.clone()
+    for i in range(scores.shape[0]):
+        uid = index[i]
+        if norm_adv_by_std_in_grpo:
+            normalized[i] = (normalized[i] - numerator_statistics.mean_by_id[uid]) / (
+                denominator_statistics.std_by_id[uid] + epsilon
+            )
+        else:
+            normalized[i] = normalized[i] - numerator_statistics.mean_by_id[uid]
+    return normalized
+
+
 @register_adv_est(AdvantageEstimator.GRPO)  # or simply: @register_adv_est("grpo")
 def compute_grpo_outcome_advantage(
     token_level_rewards: torch.Tensor,
@@ -408,29 +470,15 @@ def compute_grpo_outcome_advantage(
     """
     scores = token_level_rewards.sum(dim=-1)
 
-    id2score = defaultdict(list)
-    id2mean = {}
-    id2std = {}
-
     with torch.no_grad():
-        bsz = scores.shape[0]
-        for i in range(bsz):
-            id2score[index[i]].append(scores[i])
-        for idx in id2score:
-            if len(id2score[idx]) == 1:
-                id2mean[idx] = torch.tensor(0.0)
-                id2std[idx] = torch.tensor(1.0)
-            elif len(id2score[idx]) > 1:
-                scores_tensor = torch.stack(id2score[idx])
-                id2mean[idx] = torch.mean(scores_tensor)
-                id2std[idx] = torch.std(scores_tensor)
-            else:
-                raise ValueError(f"no score in prompt index: {idx}")
-        for i in range(bsz):
-            if norm_adv_by_std_in_grpo:
-                scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-            else:
-                scores[i] = scores[i] - id2mean[index[i]]
+        statistics = compute_grpo_group_statistics(scores, index)
+        scores = normalize_grpo_scores(
+            scores,
+            index,
+            numerator_statistics=statistics,
+            epsilon=epsilon,
+            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+        )
         scores = scores.unsqueeze(-1) * response_mask
 
     return scores, scores

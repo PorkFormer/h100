@@ -17,7 +17,12 @@ from typing import Any, Optional
 
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
-__all__ = ["omega_conf_to_dataclass", "validate_config", "validate_forced_answer_probe_config"]
+__all__ = [
+    "omega_conf_to_dataclass",
+    "validate_censor_aware_advantage_config",
+    "validate_config",
+    "validate_forced_answer_probe_config",
+]
 
 
 def omega_conf_to_dataclass(config: DictConfig | dict, dataclass_type: Optional[type[Any]] = None) -> Any:
@@ -93,6 +98,45 @@ def validate_forced_answer_probe_config(rollout_config: Any) -> Any | None:
     return probe_config
 
 
+def validate_censor_aware_advantage_config(config: Any) -> Any | None:
+    """Fail closed on unsupported or ambiguous FA intervention modes."""
+    algorithm = config.algorithm
+    raw_cac = (
+        algorithm.get("censor_aware_advantage", None)
+        if hasattr(algorithm, "get")
+        else getattr(algorithm, "censor_aware_advantage", None)
+    )
+    if raw_cac is None:
+        return None
+    cac = omega_conf_to_dataclass(raw_cac)
+    cac.validate()
+    if not cac.enable:
+        return cac
+
+    probe = validate_forced_answer_probe_config(config.actor_rollout_ref.rollout)
+    if probe is None or not probe.enable:
+        raise ValueError("censor_aware_advantage requires forced_answer_probe.enable=true")
+    if probe.training_credit.enable:
+        raise ValueError("FA-TR v1 and FA-CAC v2 are mutually exclusive")
+    rollout = config.actor_rollout_ref.rollout
+    max_model_len = (
+        rollout.get("max_model_len", None)
+        if hasattr(rollout, "get")
+        else getattr(rollout, "max_model_len", None)
+    )
+    if max_model_len is None:
+        raise ValueError("censor_aware_advantage requires an explicit actor_rollout_ref.rollout.max_model_len")
+    adv_estimator = (
+        algorithm.get("adv_estimator", None)
+        if hasattr(algorithm, "get")
+        else getattr(algorithm, "adv_estimator", None)
+    )
+    adv_value = getattr(adv_estimator, "value", adv_estimator)
+    if adv_value != "grpo":
+        raise ValueError("censor_aware_advantage currently supports only algorithm.adv_estimator=grpo")
+    return cac
+
+
 def validate_config(
     config: DictConfig,
     use_reference_policy: bool,
@@ -106,6 +150,7 @@ def validate_config(
         use_critic (bool): is critic needed
     """
     validate_forced_answer_probe_config(config.actor_rollout_ref.rollout)
+    validate_censor_aware_advantage_config(config)
 
     # number of GPUs total
     n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
