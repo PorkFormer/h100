@@ -10,6 +10,7 @@ from tensordict import TensorDict
 
 from verl import DataProto
 from verl.trainer.config import CensorAwareAdvantageConfig
+from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.censor_aware_advantage import apply_fa_cac_post_advantage_hook
 from verl.trainer.ppo.core_algos import AdvantageEstimator, compute_grpo_outcome_advantage
 from verl.trainer.ppo.forced_answer_probe import ForcedAnswerCensorEvidence, build_fa_cac_evidence
@@ -130,7 +131,12 @@ def _batch(total_scores=(-2.0, 1.0, -1.0, 1.0), *, norm=True):
         rewards[row, int(mask[row].sum().item()) - 1] = scalar
     data = DataProto(
         batch=TensorDict(
-            {"token_level_rewards": rewards, "response_mask": mask},
+            {
+                "token_level_rewards": rewards,
+                "token_level_scores": rewards.clone(),
+                "response_mask": mask,
+                "untouched_tensor": torch.arange(len(total) * 4).reshape(len(total), 4),
+            },
             batch_size=len(total),
         ),
         non_tensor_batch={"uid": np.asarray(["a", "a", "b", "b"], dtype=object)},
@@ -142,6 +148,25 @@ def _batch(total_scores=(-2.0, 1.0, -1.0, 1.0), *, norm=True):
         config={},
     )
     return data
+
+
+def _tensor_snapshot(data):
+    return {key: value.clone() for key, value in data.batch.items()}
+
+
+def _assert_all_tensors_equal(data, before):
+    assert set(data.batch.keys()) == set(before)
+    for key, expected in before.items():
+        assert torch.equal(data.batch[key], expected), key
+
+
+def _assert_candidate_accounting(metrics):
+    assert metrics["fa_cac/candidate_count"] == (
+        metrics["fa_cac/eligible_count"]
+        + metrics["fa_cac/excluded_pfa_zero_count"]
+        + metrics["fa_cac/excluded_nonnegative_vanilla_adv_count"]
+        + metrics["fa_cac/excluded_nonnegative_task_adv_count"]
+    )
 
 
 def _evidence(*, pfa=0.75, eligible_parent=0, task=(-1.0, 1.0, -1.0, 1.0)):
@@ -196,17 +221,57 @@ def test_shadow_mode_computes_projection_but_preserves_actor_tensors():
     assert metrics["fa_cac/actor_visible_advantage_drift_max"] == 0.0
 
 
+def test_shadow_and_apply_share_all_counterfactual_projection_metrics():
+    shadow = _batch()
+    applied = _batch()
+    _, shadow_metrics = apply_fa_cac_post_advantage_hook(
+        shadow, evidence=_evidence(), algorithm_config=_algorithm(apply=False)
+    )
+    _, applied_metrics = apply_fa_cac_post_advantage_hook(
+        applied, evidence=_evidence(), algorithm_config=_algorithm(apply=True)
+    )
+    actor_only = {
+        "fa_cac/applied",
+        "fa_cac/shadow",
+        "fa_cac/actor_visible_advantage_drift_max",
+    }
+    for key in shadow_metrics.keys() - actor_only:
+        assert shadow_metrics[key] == applied_metrics[key], key
+    assert shadow_metrics["fa_cac/actor_visible_advantage_drift_max"] == 0.0
+    assert applied_metrics["fa_cac/actor_visible_advantage_drift_max"] > 0.0
+
+
+def test_batch_wide_projected_diagnostics_and_safety_counts():
+    data = _batch()
+    before = data.batch["advantages"][:, 0].double().numpy()
+    token_counts = data.batch["response_mask"].sum(-1).double().numpy()
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=_evidence(), algorithm_config=_algorithm(apply=False)
+    )
+    assert metrics["fa_cac/batch_before_adv_mean"] == pytest.approx(before.mean())
+    assert metrics["fa_cac/batch_before_adv_abs_mean"] == pytest.approx(np.abs(before).mean())
+    assert metrics["fa_cac/batch_before_adv_rms"] == pytest.approx(np.sqrt(np.mean(before**2)))
+    assert metrics["fa_cac/batch_before_adv_token_weighted_sum"] == pytest.approx(
+        np.sum(before * token_counts)
+    )
+    assert metrics["fa_cac/batch_after_adv_mean"] != metrics["fa_cac/batch_before_adv_mean"]
+    assert metrics["fa_cac/raw_correct_changed_count"] == 0.0
+    assert metrics["fa_cac/incorrect_became_positive_count"] == 0.0
+
+
 def test_real_grpo_integration_changes_only_eligible_valid_tokens_and_not_rewards():
     data = _batch()
-    rewards = data.batch["token_level_rewards"].clone()
-    vanilla = data.batch["advantages"].clone()
+    before = _tensor_snapshot(data)
     _, metrics = apply_fa_cac_post_advantage_hook(
         data, evidence=_evidence(), algorithm_config=_algorithm()
     )
-    assert torch.equal(data.batch["token_level_rewards"], rewards)
-    assert not torch.equal(data.batch["advantages"][0, :3], vanilla[0, :3])
-    assert torch.equal(data.batch["advantages"][0, 3:], vanilla[0, 3:])
-    assert torch.equal(data.batch["advantages"][1:], vanilla[1:])
+    assert not torch.equal(data.batch["advantages"][0, :3], before["advantages"][0, :3])
+    assert torch.equal(data.batch["advantages"][0, 3:], before["advantages"][0, 3:])
+    assert torch.equal(data.batch["advantages"][1:], before["advantages"][1:])
+    assert torch.equal(data.batch["returns"][0, 3:], before["returns"][0, 3:])
+    assert torch.equal(data.batch["returns"][1:], before["returns"][1:])
+    for key in before.keys() - {"advantages", "returns"}:
+        assert torch.equal(data.batch[key], before[key]), key
     assert torch.equal(data.batch["returns"], data.batch["advantages"])
     assert metrics["fa_cac/reconstruction_error_max"] <= 1e-6
     assert metrics["fa_cac/non_target_advantage_drift_max"] == 0.0
@@ -235,10 +300,13 @@ def test_formal_dapo_overlong_residual_definition(response_length, expected_resi
 
 
 def test_positive_pre_advantage_is_conservatively_sign_projected():
-    data = _batch(total_scores=(0.0, -1.0, -1.0, 1.0))
+    data = _batch(total_scores=(-0.1, 0.1, -1.0, 1.0))
     _, metrics = apply_fa_cac_post_advantage_hook(
         data, evidence=_evidence(pfa=0.75), algorithm_config=_algorithm()
     )
+    assert metrics["fa_cac/vanilla_adv_mean"] < 0.0
+    assert metrics["fa_cac/task_adv_mean"] < 0.0
+    assert metrics["fa_cac/pre_adv_mean"] > 0.0
     assert torch.all(data.batch["advantages"][0, :3] == 0)
     assert metrics["fa_cac/sign_clamp_count"] == 1.0
     assert metrics["fa_cac/sign_clamp_rate"] == 1.0
@@ -254,7 +322,7 @@ def test_no_sign_projection_reports_zero_magnitude():
     assert metrics["fa_cac/sign_clamp_magnitude_mean"] == 0.0
 
 
-@pytest.mark.parametrize("pfa", [0.0, 0.25, 0.5, 0.75, 1.0])
+@pytest.mark.parametrize("pfa", [0.25, 0.5, 0.75, 1.0])
 def test_continuous_pfa_mechanism_and_strata(pfa):
     data = _batch()
     _, metrics = apply_fa_cac_post_advantage_hook(
@@ -265,6 +333,100 @@ def test_continuous_pfa_mechanism_and_strata(pfa):
         value for key, value in metrics.items() if key.startswith("fa_cac/pfa_") and key.endswith("_count")
     )
     assert stratum_count == 1.0
+
+
+def test_pfa_zero_is_valid_evidence_but_exact_noop():
+    data = _batch()
+    before = _tensor_snapshot(data)
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=_evidence(pfa=0.0), algorithm_config=_algorithm()
+    )
+    _assert_all_tensors_equal(data, before)
+    assert metrics["fa_cac/candidate_count"] == 1.0
+    assert metrics["fa_cac/eligible_count"] == 0.0
+    assert metrics["fa_cac/excluded_pfa_zero_count"] == 1.0
+    _assert_candidate_accounting(metrics)
+
+
+def test_nonnegative_vanilla_advantage_is_exact_noop():
+    data = _batch(total_scores=(0.0, -1.0, -1.0, 1.0))
+    before = _tensor_snapshot(data)
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=_evidence(pfa=0.75), algorithm_config=_algorithm()
+    )
+    _assert_all_tensors_equal(data, before)
+    assert metrics["fa_cac/excluded_nonnegative_vanilla_adv_count"] == 1.0
+    assert metrics["fa_cac/eligible_count"] == 0.0
+    _assert_candidate_accounting(metrics)
+
+
+def test_nonnegative_task_advantage_is_exact_noop():
+    data = _batch()
+    before = _tensor_snapshot(data)
+    evidence = _evidence(pfa=0.75, task=(1.0, -1.0, -1.0, 1.0))
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=evidence, algorithm_config=_algorithm()
+    )
+    _assert_all_tensors_equal(data, before)
+    assert metrics["fa_cac/excluded_nonnegative_task_adv_count"] == 1.0
+    assert metrics["fa_cac/eligible_count"] == 0.0
+    _assert_candidate_accounting(metrics)
+
+
+def test_exclusion_counts_use_stable_first_failure_attribution():
+    data = _batch(total_scores=(0.0, -1.0, -1.0, 1.0))
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=_evidence(pfa=0.0), algorithm_config=_algorithm()
+    )
+    assert metrics["fa_cac/excluded_pfa_zero_count"] == 1.0
+    assert metrics["fa_cac/excluded_nonnegative_vanilla_adv_count"] == 0.0
+    assert metrics["fa_cac/excluded_nonnegative_task_adv_count"] == 0.0
+    _assert_candidate_accounting(metrics)
+
+
+@pytest.mark.parametrize("pfa", [np.nan, -0.1, 1.1])
+def test_candidate_invalid_pfa_fails_closed(pfa):
+    with pytest.raises(RuntimeError, match="pFA must be in"):
+        apply_fa_cac_post_advantage_hook(
+            _batch(), evidence=_evidence(pfa=pfa), algorithm_config=_algorithm()
+        )
+
+
+def test_candidate_missing_pfa_fails_closed():
+    evidence = _evidence()
+    evidence.pfa_by_parent.clear()
+    with pytest.raises(RuntimeError, match="candidate.*has no pFA"):
+        apply_fa_cac_post_advantage_hook(
+            _batch(), evidence=evidence, algorithm_config=_algorithm()
+        )
+
+
+def test_zero_valid_response_tokens_fail_closed():
+    data = _batch()
+    data.batch["response_mask"][0].zero_()
+    with pytest.raises(RuntimeError, match="zero-token rows"):
+        apply_fa_cac_post_advantage_hook(
+            data, evidence=_evidence(), algorithm_config=_algorithm()
+        )
+
+
+def test_runtime_reward_invariant_detects_actual_mutation(monkeypatch):
+    data = _batch()
+    original = core_algos.compute_grpo_group_statistics
+    mutated = False
+
+    def mutate_reward_once(*args, **kwargs):
+        nonlocal mutated
+        if not mutated:
+            data.batch["token_level_rewards"][0, 0] += 1.0
+            mutated = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(core_algos, "compute_grpo_group_statistics", mutate_reward_once)
+    with pytest.raises(RuntimeError, match="changed token_level_rewards"):
+        apply_fa_cac_post_advantage_hook(
+            data, evidence=_evidence(), algorithm_config=_algorithm()
+        )
 
 
 def test_dr_grpo_decomposition_and_singleton_semantics():

@@ -39,7 +39,36 @@ deviation. Runtime reconstruction requires:
 max |A_vanilla - A_task - A_reg| <= 1e-6
 ```
 
-For eligible capped, attempted, non-overflowed raw-verifier failures:
+The mechanism first defines censor candidates independently of GRPO signs:
+
+```text
+censor_candidate = hit_response_cap
+                   and probe_attempted
+                   and not context_overflow
+                   and raw_correctness < correctness_threshold
+```
+
+Candidate pFA evidence must be present, finite, and in `[0, 1]`. Candidates
+are assigned to exactly one outcome in this stable first-failure order:
+
+```text
+pFA <= 0                 -> excluded_pfa_zero
+A_vanilla >= 0           -> excluded_nonnegative_vanilla_adv
+A_task >= 0              -> excluded_nonnegative_task_adv
+otherwise                -> CAC eligible
+```
+
+Thus CAC eligibility is the conjunction of the four candidate conditions,
+`pFA > 0`, `A_vanilla < 0`, and `A_task < 0`. Telemetry must satisfy:
+
+```text
+candidate_count = eligible_count
+                  + excluded_pfa_zero_count
+                  + excluded_nonnegative_vanilla_adv_count
+                  + excluded_nonnegative_task_adv_count
+```
+
+For CAC-eligible rows:
 
 ```text
 A_pre = A_reg + (1 - pFA) * A_task
@@ -52,6 +81,16 @@ is not claimed. Non-target rows and padding remain bitwise unchanged. Applied
 GRPO assigns actor-visible `advantages` and `returns` consistently and never
 changes reward tensors. Shadow mode (`enable=true, apply=false`) computes the
 same projection and telemetry while leaving both actor tensors Vanilla.
+Every retained PPO row must have at least one valid response token when CAC
+is enabled. Reward and score tensors are snapshotted and checked bitwise after
+the hook; reported drift is computed from those snapshots rather than assumed.
+
+Batch-wide `before` diagnostics describe Vanilla scalar advantages, while
+batch-wide `after` diagnostics always describe the counterfactual CAC
+projection. Their mean, absolute mean, RMS, and token-weighted sum are
+therefore identical between shadow and apply runs on the same input. Only
+actor-visible telemetry differs. The safety counts
+`raw_correct_changed_count` and `incorrect_became_positive_count` must be zero.
 
 ## Four-mode truth table
 
@@ -77,6 +116,14 @@ The formal launcher is:
   -> guarded in-memory recipe.dapo.dapo_ray_trainer.RayDAPOTrainer.fit
   -> verl.trainer.ppo.censor_aware_advantage.apply_fa_cac_post_advantage_hook
 ```
+
+Because the detached canonical DAPO config does not define the CAC subtree,
+the launcher removes `algorithm.censor_aware_advantage.*` CLI assignments
+before canonical Hydra composition. It then installs the complete subtree
+(`_target_`, `enable=false`, `apply=true`, and the supported mode) and replays
+the saved CAC overrides in their original order before config printing or
+training initialization. This permits ordinary overrides without Hydra `+`
+syntax and preserves last-override-wins behavior.
 
 ## Verification boundary and experimental gate
 

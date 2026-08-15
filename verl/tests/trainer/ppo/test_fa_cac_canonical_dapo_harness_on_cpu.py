@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import os
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +18,10 @@ from analysis.fa_cac_v2.tools.dapo_adapter import (
     EXPECTED_DAPO_FIT_SHA256,
     attest_canonical_sources,
     build_patched_dapo_fit_source,
+)
+from analysis.fa_cac_v2.tools.matched_dapo_main import (
+    _inject_cac_defaults_and_overrides,
+    _split_cac_overrides,
 )
 from verl import DataProto
 from verl.trainer.ppo.forced_answer_probe import (
@@ -235,6 +242,71 @@ def test_source_guard_rejects_any_canonical_drift():
     with pytest.raises(RuntimeError, match="source changed"):
         build_patched_dapo_fit_source("def fit(self):\n    pass\n")
     assert len(EXPECTED_DAPO_FIT_SHA256) == 64
+
+
+def test_launcher_delays_cac_overrides_until_after_canonical_compose():
+    canonical, cac = _split_cac_overrides(
+        [
+            "data.train_batch_size=32",
+            "algorithm.censor_aware_advantage.enable=true",
+            "algorithm.censor_aware_advantage.apply=false",
+        ]
+    )
+    assert canonical == ["data.train_batch_size=32"]
+    assert cac == [
+        "algorithm.censor_aware_advantage.enable=true",
+        "algorithm.censor_aware_advantage.apply=false",
+    ]
+    config = OmegaConf.create({"algorithm": {"adv_estimator": "grpo"}})
+    _inject_cac_defaults_and_overrides(config, cac)
+    assert config.algorithm.censor_aware_advantage == {
+        "_target_": "verl.trainer.config.CensorAwareAdvantageConfig",
+        "enable": True,
+        "apply": False,
+        "mode": "attenuate_negative_correctness",
+    }
+    _inject_cac_defaults_and_overrides(
+        config,
+        [
+            "algorithm.censor_aware_advantage.enable=false",
+            "algorithm.censor_aware_advantage.enable=true",
+        ],
+    )
+    assert config.algorithm.censor_aware_advantage.enable is True
+
+
+def test_formal_launcher_exact_shadow_command_resolves_end_to_end():
+    repo = Path(__file__).resolve().parents[4]
+    launcher = repo / "analysis/fa_cac_v2/tools/matched_dapo_main.py"
+    command = [
+        sys.executable,
+        str(launcher),
+        "algorithm.censor_aware_advantage.enable=true",
+        "algorithm.censor_aware_advantage.apply=false",
+        "--cfg",
+        "job",
+        "--resolve",
+    ]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo}:{repo / 'verl'}:/workspace/rl/verl"
+    env["PYTHONPYCACHEPREFIX"] = "/tmp/fa-cac-v2-launcher-pycache"
+    env["FLASHINFER_WORKSPACE_BASE"] = "/tmp/fa-cac-v2-launcher-flashinfer"
+    completed = subprocess.run(
+        command,
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    resolved = OmegaConf.create(completed.stdout)
+    cac = resolved.algorithm.censor_aware_advantage
+    assert cac._target_ == "verl.trainer.config.CensorAwareAdvantageConfig"
+    assert cac.enable is True
+    assert cac.apply is False
+    assert cac.mode == "attenuate_negative_correctness"
 
 
 def test_cac_disabled_v2_matches_unpatched_canonical_tensor_for_tensor(fit_functions, monkeypatch):

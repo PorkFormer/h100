@@ -89,6 +89,12 @@ def apply_fa_cac_post_advantage_hook(
     if missing:
         raise RuntimeError(f"FA-CAC batch is missing required tensors: {sorted(missing)}")
     rewards = data.batch["token_level_rewards"]
+    rewards_before = rewards.detach().clone()
+    scores_before = (
+        data.batch["token_level_scores"].detach().clone()
+        if "token_level_scores" in data.batch
+        else None
+    )
     response_mask = data.batch["response_mask"]
     vanilla_advantages = data.batch["advantages"]
     vanilla_returns = data.batch["returns"]
@@ -96,6 +102,13 @@ def apply_fa_cac_post_advantage_hook(
         raise RuntimeError("FA-CAC reward and response mask tensors must be aligned rank-2 tensors")
     if vanilla_advantages.shape != rewards.shape or vanilla_returns.shape != rewards.shape:
         raise RuntimeError("FA-CAC Vanilla actor tensors must align with rewards")
+    response_token_counts = response_mask.sum(dim=-1)
+    if torch.any(response_token_counts <= 0):
+        bad_rows = torch.nonzero(response_token_counts <= 0, as_tuple=False).flatten().tolist()
+        raise RuntimeError(
+            "FA-CAC retained PPO rows must each contain at least one valid response token; "
+            f"zero-token rows={bad_rows}"
+        )
     parents = np.asarray(evidence.current_row_to_parent, dtype=np.int64)
     uids = data.non_tensor_batch.get("uid")
     if uids is None or len(uids) != len(rewards) or len(parents) != len(rewards):
@@ -155,36 +168,54 @@ def apply_fa_cac_post_advantage_hook(
                 f"max drift={returns_consistency_error}"
             )
 
+        candidate_rows: list[int] = []
         eligible_rows: list[int] = []
         pfas: list[float] = []
+        excluded_pfa_zero_count = 0
+        excluded_nonnegative_vanilla_adv_count = 0
+        excluded_nonnegative_task_adv_count = 0
         projected = vanilla_advantages.clone()
+        projected_returns = vanilla_returns.clone()
         pre_by_row = vanilla_scalar.clone()
         cac_by_row = vanilla_scalar.clone()
         for row, parent in enumerate(parents.tolist()):
-            eligible = bool(
+            censor_candidate = bool(
                 evidence.hit_response_cap[parent]
                 and evidence.probe_attempted[parent]
                 and not evidence.context_overflow[parent]
                 and evidence.original_correctness_by_parent[parent] < evidence.correctness_threshold
             )
-            if not eligible:
+            if not censor_candidate:
                 continue
+            candidate_rows.append(row)
             if parent not in evidence.pfa_by_parent:
-                raise RuntimeError(f"FA-CAC eligible trajectory {parent} has no pFA")
+                raise RuntimeError(f"FA-CAC censor candidate trajectory {parent} has no pFA")
             pfa = float(evidence.pfa_by_parent[parent])
             if not np.isfinite(pfa) or not 0.0 <= pfa <= 1.0:
                 raise RuntimeError(f"FA-CAC trajectory {parent} pFA must be in [0, 1]")
+            # Stable first-failure attribution. These exclusions are mutually
+            # exclusive so the candidate accounting identity is exact.
+            if pfa <= 0.0:
+                excluded_pfa_zero_count += 1
+                continue
+            if vanilla_scalar[row] >= 0.0:
+                excluded_nonnegative_vanilla_adv_count += 1
+                continue
+            if task_advantage[row] >= 0.0:
+                excluded_nonnegative_task_adv_count += 1
+                continue
             pre = residual_advantage[row] + (1.0 - pfa) * task_advantage[row]
             cac = torch.minimum(torch.zeros_like(pre), pre)
             pre_by_row[row] = pre
             cac_by_row[row] = cac
             projected[row, valid_mask[row]] = cac
+            projected_returns[row, valid_mask[row]] = cac
             eligible_rows.append(row)
             pfas.append(pfa)
 
         if apply:
             data.batch["advantages"] = projected
-            data.batch["returns"] = projected.clone()
+            data.batch["returns"] = projected_returns
 
     eligible = np.asarray(eligible_rows, dtype=np.int64)
     pfa_array = np.asarray(pfas, dtype=np.float64)
@@ -196,10 +227,19 @@ def apply_fa_cac_post_advantage_hook(
     drift = cac_np - vanilla_np
     attenuation = pre_np - vanilla_np
     clamp = cac_np - pre_np
-    token_counts = response_mask.sum(-1).detach().float().cpu().numpy()[eligible].astype(np.float64)
+    all_token_counts = response_token_counts.detach().double().cpu().numpy()
+    token_counts = all_token_counts[eligible]
     clamped = pre_np > 0.0
+    candidate_count = len(candidate_rows)
     eligible_count = len(eligible_rows)
     total_rows = len(rewards)
+    if candidate_count != (
+        eligible_count
+        + excluded_pfa_zero_count
+        + excluded_nonnegative_vanilla_adv_count
+        + excluded_nonnegative_task_adv_count
+    ):
+        raise RuntimeError("FA-CAC candidate exclusion accounting invariant failed")
     changed = np.not_equal(drift, 0.0)
     projected_padding_drift = (
         torch.max(torch.abs((projected - vanilla_advantages)[~valid_mask])).item()
@@ -215,9 +255,55 @@ def apply_fa_cac_post_advantage_hook(
         if np.any(non_target)
         else 0.0
     )
+    batch_before = vanilla_scalar.detach().double().cpu().numpy()
+    batch_after = cac_by_row.detach().double().cpu().numpy()
+    raw_correct = evidence.original_correctness_by_parent[parents] >= evidence.correctness_threshold
+    raw_incorrect = ~raw_correct
+    batch_changed = np.not_equal(batch_after, batch_before)
+    raw_correct_changed_count = int(np.count_nonzero(raw_correct & batch_changed))
+    incorrect_became_positive_count = int(
+        np.count_nonzero(raw_incorrect & (batch_before <= 0.0) & (batch_after > 0.0))
+    )
+    if raw_correct_changed_count or incorrect_became_positive_count:
+        raise RuntimeError(
+            "FA-CAC safety invariant failed: raw-correct rows changed or raw-incorrect rows became positive"
+        )
+
+    rewards_after = data.batch["token_level_rewards"]
+    reward_drift_max = (
+        torch.max(torch.abs(rewards_after - rewards_before)).item() if rewards_before.numel() else 0.0
+    )
+    if not torch.equal(rewards_after, rewards_before):
+        raise RuntimeError(f"FA-CAC changed token_level_rewards: max drift={reward_drift_max}")
+    score_drift_max = 0.0
+    if scores_before is not None:
+        scores_after = data.batch.get("token_level_scores")
+        if scores_after is None:
+            raise RuntimeError("FA-CAC removed token_level_scores")
+        score_drift_max = (
+            torch.max(torch.abs(scores_after - scores_before)).item() if scores_before.numel() else 0.0
+        )
+        if not torch.equal(scores_after, scores_before):
+            raise RuntimeError(f"FA-CAC changed token_level_scores: max drift={score_drift_max}")
+
+    def _batch_advantage_metrics(stage: str, values: np.ndarray) -> dict[str, float]:
+        return {
+            f"fa_cac/batch_{stage}_adv_mean": float(values.mean()),
+            f"fa_cac/batch_{stage}_adv_abs_mean": float(np.abs(values).mean()),
+            f"fa_cac/batch_{stage}_adv_rms": float(np.sqrt(np.mean(np.square(values)))),
+            f"fa_cac/batch_{stage}_adv_token_weighted_sum": float(np.sum(values * all_token_counts)),
+        }
+
     metrics.update(
         {
             "fa_cac/ppo_batch_trajectory_count": float(total_rows),
+            "fa_cac/candidate_count": float(candidate_count),
+            "fa_cac/eligible_count": float(eligible_count),
+            "fa_cac/excluded_pfa_zero_count": float(excluded_pfa_zero_count),
+            "fa_cac/excluded_nonnegative_vanilla_adv_count": float(
+                excluded_nonnegative_vanilla_adv_count
+            ),
+            "fa_cac/excluded_nonnegative_task_adv_count": float(excluded_nonnegative_task_adv_count),
             "fa_cac/eligible_trajectory_count": float(eligible_count),
             "fa_cac/eligible_trajectory_rate": float(eligible_count / total_rows) if total_rows else 0.0,
             "fa_cac/pfa_mean": float(pfa_array.mean()) if eligible_count else 0.0,
@@ -241,14 +327,19 @@ def apply_fa_cac_post_advantage_hook(
             "fa_cac/reconstruction_error_max": float(reconstruction_error),
             "fa_cac/vanilla_consistency_error_max": float(vanilla_consistency_error),
             "fa_cac/returns_consistency_error_max": float(returns_consistency_error),
-            "fa_cac/reward_drift_max": 0.0,
+            "fa_cac/reward_drift_max": float(reward_drift_max),
+            "fa_cac/score_drift_max": float(score_drift_max),
             "fa_cac/non_target_advantage_drift_max": float(non_target_drift),
             "fa_cac/padding_advantage_drift_max": float(projected_padding_drift),
+            "fa_cac/raw_correct_changed_count": float(raw_correct_changed_count),
+            "fa_cac/incorrect_became_positive_count": float(incorrect_became_positive_count),
             "fa_cac/actor_visible_advantage_drift_max": (
                 float(np.abs(drift).max()) if enabled and apply and eligible_count else 0.0
             ),
         }
     )
+    metrics.update(_batch_advantage_metrics("before", batch_before))
+    metrics.update(_batch_advantage_metrics("after", batch_after))
     metrics.update(_quantile_metrics("fa_cac/drift", drift))
     metrics.update(_quantile_metrics("fa_cac/mechanism_attenuation", attenuation))
     metrics.update(_quantile_metrics("fa_cac/mechanism_clamp", clamp))

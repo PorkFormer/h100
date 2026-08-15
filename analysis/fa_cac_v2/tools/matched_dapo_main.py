@@ -5,8 +5,57 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Any
 
 from analysis.fa_cac_v2.tools.dapo_adapter import MatchedFACACDAPOTaskRunner, patch_resource_pool_node_affinity
+
+
+CAC_CONFIG_PATH = "algorithm.censor_aware_advantage"
+CAC_DEFAULTS = {
+    "_target_": "verl.trainer.config.CensorAwareAdvantageConfig",
+    "enable": False,
+    "apply": True,
+    "mode": "attenuate_negative_correctness",
+}
+
+
+def _split_cac_overrides(overrides: list[str]) -> tuple[list[str], list[str]]:
+    """Delay CAC overrides until its non-canonical config subtree exists."""
+    canonical: list[str] = []
+    cac: list[str] = []
+    prefix = f"{CAC_CONFIG_PATH}."
+    for override in overrides:
+        key = override.split("=", 1)[0]
+        normalized_key = key.lstrip("+~")
+        if normalized_key == CAC_CONFIG_PATH or normalized_key.startswith(prefix):
+            if "=" not in override or key.startswith("~"):
+                raise SystemExit(f"unsupported censor_aware_advantage override: {override}")
+            cac.append(f"{normalized_key}={override.split('=', 1)[1]}")
+        else:
+            canonical.append(override)
+    return canonical, cac
+
+
+def _inject_cac_defaults_and_overrides(config: Any, cac_overrides: list[str]) -> Any:
+    """Install the complete CAC subtree, then replay its CLI overrides in order."""
+    from omegaconf import OmegaConf, open_dict
+
+    existing = OmegaConf.select(config, CAC_CONFIG_PATH)
+    subtree = OmegaConf.merge(OmegaConf.create(CAC_DEFAULTS), existing or {})
+    with open_dict(config):
+        OmegaConf.update(config, CAC_CONFIG_PATH, subtree, merge=False, force_add=True)
+        for override in cac_overrides:
+            key, _ = override.split("=", 1)
+            parsed = OmegaConf.from_dotlist([override])
+            value = OmegaConf.select(parsed, key)
+            OmegaConf.update(
+                config,
+                key,
+                value,
+                merge=key == CAC_CONFIG_PATH,
+                force_add=True,
+            )
+    return config
 
 
 def main() -> None:
@@ -39,6 +88,8 @@ def main() -> None:
         overrides.append(arg)
         index += 1
 
+    canonical_overrides, cac_overrides = _split_cac_overrides(overrides)
+
     os.chdir("/workspace/rl/h100-fa-cac-v2/verl")
     GlobalHydra.instance().clear()
     with hydra.initialize_config_dir(
@@ -46,7 +97,8 @@ def main() -> None:
         config_dir="/workspace/rl/verl/recipe/dapo/config",
         job_name="fa_cac_v2_matched_dapo",
     ):
-        config = hydra.compose(config_name="dapo_trainer", overrides=overrides)
+        config = hydra.compose(config_name="dapo_trainer", overrides=canonical_overrides)
+    config = _inject_cac_defaults_and_overrides(config, cac_overrides)
     if show_cfg:
         print(OmegaConf.to_yaml(config, resolve=resolve))
         return
