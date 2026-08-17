@@ -169,7 +169,7 @@ algorithm:
     # Maximum number of Probe requests submitted in one driver chunk
     request_batch_size: 512
 
-  # FA-CAC v2: forced-answer censor-aware GRPO advantage projection.
+  # Forced-answer post-GRPO advantage interventions (FA-CAC v2 or FA-RAR).
   censor_aware_advantage:
 
     # Required for recursive dataclass instantiation.
@@ -181,7 +181,7 @@ algorithm:
     # false computes full shadow telemetry while leaving actor tensors Vanilla.
     apply: true
 
-    # The sole audited v2 mechanism.
+    # v2 compatibility default. Use reliability_redistribution for FA-RAR.
     mode: attenuate_negative_correctness
 
 # config for the trainer

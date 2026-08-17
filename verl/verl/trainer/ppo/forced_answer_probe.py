@@ -95,12 +95,25 @@ class ForcedAnswerCensorEvidence:
 
 
 @dataclass(frozen=True)
+class ForcedAnswerReliabilityEvidence:
+    """Task-score-free evidence for reliability-centered redistribution."""
+
+    current_row_to_parent: np.ndarray
+    hit_response_cap: np.ndarray
+    probe_attempted: np.ndarray
+    context_overflow: np.ndarray
+    original_correctness_by_parent: np.ndarray
+    pfa_by_parent: dict[int, float]
+    correctness_threshold: float
+
+
+@dataclass(frozen=True)
 class ForcedAnswerProbeScoreResult:
     """Keep probe diagnostics separate from the optional training intervention."""
 
     diagnostics: ForcedAnswerProbeDiagnostics
     training_credit: ForcedAnswerTrainingCreditResult
-    censor_evidence: ForcedAnswerCensorEvidence | None = None
+    censor_evidence: ForcedAnswerCensorEvidence | ForcedAnswerReliabilityEvidence | None = None
 
 
 def build_fa_cac_evidence(
@@ -157,6 +170,62 @@ def build_fa_cac_evidence(
         context_overflow=overflow.copy(),
         original_correctness_by_parent=correctness.copy(),
         task_score_by_parent=task_by_parent,
+        pfa_by_parent=dict(pfa_by_parent),
+        correctness_threshold=float(correctness_threshold),
+    )
+
+
+def build_fa_reliability_evidence(
+    *,
+    current_row_to_parent: Sequence[int],
+    hit_response_cap: Sequence[bool],
+    probe_attempted: Sequence[bool],
+    context_overflow: Sequence[bool],
+    original_correctness_by_parent: Sequence[float],
+    successes_by_parent: Mapping[int, Sequence[bool]],
+    correctness_threshold: float,
+) -> ForcedAnswerReliabilityEvidence:
+    """Validate and freeze the task-score-free evidence needed by FA-RAR."""
+    parents = np.asarray(current_row_to_parent, dtype=np.int64)
+    hit_cap = np.asarray(hit_response_cap, dtype=bool)
+    attempted = np.asarray(probe_attempted, dtype=bool)
+    overflow = np.asarray(context_overflow, dtype=bool)
+    correctness = np.asarray(original_correctness_by_parent, dtype=np.float64)
+    parent_count = len(hit_cap)
+    if not (len(attempted) == len(overflow) == len(correctness) == parent_count):
+        raise RuntimeError("FA-RAR parent evidence arrays must be aligned")
+    if len(set(parents.tolist())) != len(parents):
+        raise RuntimeError("FA-RAR retained PPO rows must have unique parent identity")
+    if np.any(parents < 0) or np.any(parents >= parent_count):
+        raise RuntimeError("FA-RAR retained PPO row has an invalid parent identity")
+    if not np.all(np.isfinite(correctness)):
+        raise RuntimeError("FA-RAR raw correctness must be finite")
+    if not math.isfinite(correctness_threshold):
+        raise RuntimeError("FA-RAR correctness threshold must be finite")
+
+    pfa_by_parent = compute_pfa_by_parent(successes_by_parent)
+    for parent in pfa_by_parent:
+        if parent < 0 or parent >= parent_count:
+            raise RuntimeError(f"FA-RAR pFA has invalid parent identity {parent}")
+    for parent in range(parent_count):
+        candidate = bool(
+            hit_cap[parent]
+            and attempted[parent]
+            and not overflow[parent]
+            and correctness[parent] < correctness_threshold
+        )
+        if candidate and parent not in pfa_by_parent:
+            raise RuntimeError(f"FA-RAR censor candidate trajectory {parent} has no pFA")
+        if parent in pfa_by_parent:
+            pfa = pfa_by_parent[parent]
+            if not math.isfinite(pfa) or not 0.0 <= pfa <= 1.0:
+                raise RuntimeError(f"FA-RAR trajectory {parent} pFA must be in [0, 1]")
+    return ForcedAnswerReliabilityEvidence(
+        current_row_to_parent=parents.copy(),
+        hit_response_cap=hit_cap.copy(),
+        probe_attempted=attempted.copy(),
+        context_overflow=overflow.copy(),
+        original_correctness_by_parent=correctness.copy(),
         pfa_by_parent=dict(pfa_by_parent),
         correctness_threshold=float(correctness_threshold),
     )

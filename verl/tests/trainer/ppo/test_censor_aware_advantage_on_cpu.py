@@ -93,6 +93,40 @@ def test_cac_config_defaults():
     config.validate()
 
 
+def test_frozen_v2_tensors_and_metrics_remain_unchanged():
+    data = _batch()
+    _, metrics = apply_fa_cac_post_advantage_hook(
+        data, evidence=_evidence(), algorithm_config=_algorithm()
+    )
+    expected = torch.tensor(
+        [
+            [-0.3535532653, -0.3535532653, -0.3535532653, -0.0],
+            [0.7071064711, 0.7071064711, 0.0, 0.0],
+            [-0.7071062922, -0.7071062922, -0.7071062922, -0.7071062922],
+            [0.7071062922, 0.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    assert torch.equal(data.batch["advantages"], expected)
+    assert torch.equal(data.batch["returns"], expected)
+    frozen_metrics = {
+        "fa_cac/vanilla_adv_mean": -0.7071064710617065,
+        "fa_cac/task_adv_mean": -0.4714043438434601,
+        "fa_cac/reg_adv_mean": -0.23570217192173004,
+        "fa_cac/pre_adv_mean": -0.35355326533317566,
+        "fa_cac/projected_adv_mean": -0.35355326533317566,
+        "fa_cac/drift_abs_mean": 0.3535532057285309,
+        "fa_cac/batch_before_adv_token_weighted_sum": -2.828425347805023,
+        "fa_cac/batch_after_adv_token_weighted_sum": -1.7677657306194305,
+        "fa_cac/candidate_count": 1.0,
+        "fa_cac/eligible_count": 1.0,
+        "fa_cac/sign_clamp_count": 0.0,
+        "fa_cac/reward_drift_max": 0.0,
+        "fa_cac/score_drift_max": 0.0,
+    }
+    assert {key: metrics[key] for key in frozen_metrics} == frozen_metrics
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

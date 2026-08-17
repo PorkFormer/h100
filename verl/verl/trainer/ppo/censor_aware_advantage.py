@@ -1,11 +1,9 @@
-"""FA-CAC v2 post-GRPO advantage projection.
+"""Forced-answer post-GRPO advantage interventions.
 
-The hook never changes rewards. It decomposes canonical Vanilla GRPO using
-the exact task score emitted by the reward manager, applies the censor-aware
-mechanism only to eligible capped failures, and optionally exposes the
-projected tensors to the actor. The final ``min(0, A_pre)`` is a conservative
-sign projection; when it activates, exact residual preservation is not
-claimed.
+The compatibility path retains FA-CAC v2's task/residual decomposition. The
+FA-RAR path instead redistributes reliability credit among negative responses
+while conserving their token-weighted advantage mass. Neither path changes
+rewards, and both can run in shadow mode.
 """
 
 from __future__ import annotations
@@ -17,7 +15,10 @@ import torch
 
 from verl import DataProto
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.forced_answer_probe import ForcedAnswerCensorEvidence
+from verl.trainer.ppo.forced_answer_probe import (
+    ForcedAnswerCensorEvidence,
+    ForcedAnswerReliabilityEvidence,
+)
 
 
 def _get(config: Any, key: str, default: Any = None) -> Any:
@@ -58,10 +59,247 @@ def _token_weighted_quantile_metrics(
     }
 
 
+def _as_group_id_list(group_ids: Any, row_count: int) -> list[Any]:
+    if isinstance(group_ids, torch.Tensor):
+        ids = group_ids.detach().cpu().tolist()
+    elif isinstance(group_ids, np.ndarray):
+        ids = group_ids.tolist()
+    else:
+        ids = list(group_ids)
+    if len(ids) != row_count:
+        raise RuntimeError("FA-RAR group identity must align with response rows")
+    for group_id in ids:
+        if group_id is None:
+            raise RuntimeError("FA-RAR group identities must be non-null")
+        try:
+            hash(group_id)
+        except TypeError as exc:
+            raise RuntimeError("FA-RAR group identities must be hashable") from exc
+        if isinstance(group_id, (float, np.floating)) and not np.isfinite(group_id):
+            raise RuntimeError("FA-RAR group identities must be finite")
+    return ids
+
+
+def _response_mean(values: torch.Tensor, selector: torch.Tensor) -> float:
+    return float(values[selector].double().mean().item()) if torch.any(selector) else 0.0
+
+
+def compute_fa_reliability_redistributed_advantage(
+    vanilla_advantage: torch.Tensor,
+    p_fa: torch.Tensor,
+    response_mask: torch.Tensor,
+    group_ids: Any,
+    eligible_mask: torch.Tensor,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    """Redistribute FA reliability credit within each UID group's negative subset.
+
+    Inputs and output are response-level scalars. ``response_mask`` supplies the
+    response lengths used by the conservation law. Non-eligible rows must carry
+    zero pFA, making the pure-function contract explicit and fail closed.
+    """
+    if vanilla_advantage.ndim != 1 or not vanilla_advantage.is_floating_point():
+        raise RuntimeError("FA-RAR vanilla advantage must be a rank-1 floating tensor")
+    row_count = vanilla_advantage.numel()
+    if p_fa.ndim != 1 or p_fa.shape != vanilla_advantage.shape:
+        raise RuntimeError("FA-RAR pFA must align with response-level advantages")
+    if eligible_mask.ndim != 1 or eligible_mask.shape != vanilla_advantage.shape:
+        raise RuntimeError("FA-RAR eligible mask must align with response-level advantages")
+    if eligible_mask.dtype != torch.bool:
+        raise RuntimeError("FA-RAR eligible mask must be boolean")
+    if response_mask.ndim != 2 or response_mask.shape[0] != row_count:
+        raise RuntimeError("FA-RAR response mask must be rank-2 and align with response rows")
+    if p_fa.device != vanilla_advantage.device or response_mask.device != vanilla_advantage.device:
+        raise RuntimeError("FA-RAR tensors must be on the same device")
+    if eligible_mask.device != vanilla_advantage.device:
+        raise RuntimeError("FA-RAR eligible mask must be on the advantage device")
+    if not p_fa.is_floating_point():
+        raise RuntimeError("FA-RAR pFA must be floating point")
+    if not torch.all(torch.isfinite(vanilla_advantage)):
+        raise RuntimeError("FA-RAR vanilla advantage must be finite")
+    if not torch.all(torch.isfinite(p_fa)):
+        raise RuntimeError("FA-RAR pFA must be finite")
+    if torch.any((p_fa < 0) | (p_fa > 1)):
+        raise RuntimeError("FA-RAR pFA must be in [0, 1]")
+    if response_mask.is_floating_point() and not torch.all(torch.isfinite(response_mask)):
+        raise RuntimeError("FA-RAR response mask must be finite")
+    mask_bool = response_mask.to(dtype=torch.bool)
+    if not torch.equal(response_mask, mask_bool.to(dtype=response_mask.dtype)):
+        raise RuntimeError("FA-RAR response mask must contain only zeros and ones")
+    lengths = mask_bool.sum(dim=-1)
+    if torch.any(lengths <= 0):
+        bad_rows = torch.nonzero(lengths <= 0, as_tuple=False).flatten().tolist()
+        raise RuntimeError(f"FA-RAR response rows must contain valid tokens; zero-token rows={bad_rows}")
+
+    eligible = eligible_mask.to(dtype=torch.bool)
+    negative = vanilla_advantage < 0
+    if torch.any(eligible & ~negative):
+        raise RuntimeError("FA-RAR active eligibility is valid only for negative Vanilla advantages")
+    if torch.any((~eligible) & (p_fa != 0)):
+        raise RuntimeError("FA-RAR non-eligible rows must carry pFA=0")
+    if torch.any(eligible & (p_fa <= 0)):
+        raise RuntimeError("FA-RAR active eligible rows must carry pFA>0")
+
+    ids = _as_group_id_list(group_ids, row_count)
+    grouped_rows: dict[Any, list[int]] = {}
+    for row, group_id in enumerate(ids):
+        grouped_rows.setdefault(group_id, []).append(row)
+
+    work = vanilla_advantage.detach().double()
+    pfa_work = p_fa.detach().double()
+    length_work = lengths.double()
+    projected_work = work.clone()
+    distortion = torch.zeros_like(work)
+    baselines: list[float] = []
+    conservation_errors: list[float] = []
+    conservation_bounds: list[float] = []
+    dtype_info = torch.finfo(vanilla_advantage.dtype)
+
+    for rows in grouped_rows.values():
+        row_tensor = torch.as_tensor(rows, dtype=torch.long, device=work.device)
+        negative_rows = row_tensor[negative[row_tensor]]
+        if negative_rows.numel() == 0:
+            continue
+        group_distortion = pfa_work[negative_rows] * torch.abs(work[negative_rows])
+        distortion[negative_rows] = group_distortion
+        denominator = length_work[negative_rows].sum()
+        if not torch.isfinite(denominator) or denominator <= 0:
+            raise RuntimeError("FA-RAR negative-subset denominator must be finite and positive")
+        # Project raw FA reliability corrections onto the
+        # token-mass-conserving subspace.
+        baseline = torch.sum(length_work[negative_rows] * group_distortion) / denominator
+        if not torch.isfinite(baseline):
+            raise RuntimeError("FA-RAR group baseline must be finite")
+        projected_work[negative_rows] = work[negative_rows] + group_distortion - baseline
+        baselines.append(float(baseline.item()))
+
+    projected = projected_work.to(dtype=vanilla_advantage.dtype)
+    if not torch.all(torch.isfinite(projected)):
+        raise RuntimeError("FA-RAR produced a non-finite advantage")
+    if torch.any(projected[negative] > 0):
+        raise RuntimeError("FA-RAR negative-sign theorem failed")
+    if not torch.equal(projected[~negative], vanilla_advantage[~negative]):
+        raise RuntimeError("FA-RAR changed a positive or zero Vanilla advantage")
+
+    for rows in grouped_rows.values():
+        row_tensor = torch.as_tensor(rows, dtype=torch.long, device=work.device)
+        negative_rows = row_tensor[negative[row_tensor]]
+        if negative_rows.numel() == 0:
+            continue
+        before_mass = torch.sum(length_work[negative_rows] * work[negative_rows])
+        after_mass = torch.sum(length_work[negative_rows] * projected[negative_rows].double())
+        error = torch.abs(after_mass - before_mass)
+        scale = torch.sum(
+            length_work[negative_rows]
+            * (
+                torch.abs(work[negative_rows])
+                + torch.abs(projected_work[negative_rows])
+                + torch.abs(distortion[negative_rows])
+            )
+        )
+        # Bound final-dtype casts plus accumulation/formula roundoff. This is
+        # intentionally derived from the actual group magnitudes, not a fixed
+        # tolerance that would silently loosen for low-precision tensors.
+        bound = 8.0 * dtype_info.eps * torch.maximum(scale, torch.ones_like(scale))
+        bound = bound + 8.0 * dtype_info.tiny * length_work[negative_rows].sum()
+        conservation_errors.append(float(error.item()))
+        conservation_bounds.append(float(bound.item()))
+        if error > bound:
+            raise RuntimeError(
+                "FA-RAR group conservation exceeded final-dtype rounding bound: "
+                f"error={error.item()} bound={bound.item()}"
+            )
+
+    noneligible_negative = negative & ~eligible
+    lengths_double = lengths.double()
+    before_negative_mass = torch.sum(lengths_double[negative] * work[negative])
+    after_negative_mass = torch.sum(lengths_double[negative] * projected[negative].double())
+    baseline_array = np.asarray(baselines, dtype=np.float64)
+    group_count = len(grouped_rows)
+    negative_count = int(negative.sum().item())
+    eligible_count = int(eligible.sum().item())
+    eligible_pfa = p_fa.double()[eligible]
+    eligible_distortion = distortion[eligible]
+    negative_token_count = lengths_double[negative].sum()
+    raw_correction_token_mass = torch.sum(lengths_double[negative] * distortion[negative])
+    metrics = {
+        "fa_rar/trajectory_count": float(row_count),
+        "fa_rar/group_count": float(group_count),
+        "fa_rar/group_with_negative_count": float(len(baselines)),
+        "fa_rar/group_without_negative_count": float(group_count - len(baselines)),
+        "fa_rar/baseline_group_count": float(len(baselines)),
+        "fa_rar/baseline_mean": float(baseline_array.mean()) if baselines else 0.0,
+        "fa_rar/baseline_min": float(baseline_array.min()) if baselines else 0.0,
+        "fa_rar/baseline_max": float(baseline_array.max()) if baselines else 0.0,
+        "fa_rar/baseline_rms": (
+            float(np.sqrt(np.mean(np.square(baseline_array)))) if baselines else 0.0
+        ),
+        "fa_rar/negative_trajectory_count": float(negative_count),
+        "fa_rar/eligible_trajectory_count": float(eligible_count),
+        "fa_rar/eligible_rate_given_negative": float(eligible_count / negative_count) if negative_count else 0.0,
+        "fa_rar/noneligible_negative_trajectory_count": float(noneligible_negative.sum().item()),
+        "fa_rar/pfa_mean_eligible": _response_mean(p_fa.double(), eligible),
+        "fa_rar/negative_before_adv_mean": _response_mean(work, negative),
+        "fa_rar/negative_after_adv_mean": _response_mean(projected.double(), negative),
+        "fa_rar/eligible_before_adv_mean": _response_mean(work, eligible),
+        "fa_rar/eligible_after_adv_mean": _response_mean(projected.double(), eligible),
+        "fa_rar/noneligible_negative_before_adv_mean": _response_mean(work, noneligible_negative),
+        "fa_rar/noneligible_negative_after_adv_mean": _response_mean(
+            projected.double(), noneligible_negative
+        ),
+        "fa_rar/negative_before_adv_token_weighted_sum": float(before_negative_mass.item()),
+        "fa_rar/negative_after_adv_token_weighted_sum": float(after_negative_mass.item()),
+        "fa_rar/negative_net_correction_token_weighted_sum": float(
+            (after_negative_mass - before_negative_mass).item()
+        ),
+        "fa_rar/conservation_error_abs": float(
+            torch.abs(after_negative_mass - before_negative_mass).item()
+        ),
+        "fa_rar/conservation_error_group_max": max(conservation_errors, default=0.0),
+        "fa_rar/conservation_rounding_bound_group_max": max(conservation_bounds, default=0.0),
+        "fa_rar/sign_flip_count": 0.0,
+        "fa_rar/nonnegative_drift_max": 0.0,
+        # Stable public telemetry names requested by the FA-RAR protocol.
+        "fa_rar/eligible_traj_count": float(eligible_count),
+        "fa_rar/eligible_rate": float(eligible_count / row_count) if row_count else 0.0,
+        "fa_rar/negative_traj_count": float(negative_count),
+        "fa_rar/negative_token_count": float(negative_token_count.item()),
+        "fa_rar/pfa_mean": (
+            float(eligible_pfa.mean().item()) if eligible_pfa.numel() else 0.0
+        ),
+        "fa_rar/pfa_max": float(eligible_pfa.max().item()) if eligible_pfa.numel() else 0.0,
+        "fa_rar/raw_correction_mean": (
+            float(eligible_distortion.mean().item()) if eligible_distortion.numel() else 0.0
+        ),
+        "fa_rar/raw_correction_max": (
+            float(eligible_distortion.max().item()) if eligible_distortion.numel() else 0.0
+        ),
+        "fa_rar/raw_correction_token_mass": float(raw_correction_token_mass.item()),
+        "fa_rar/centering_baseline_mean": (
+            float(baseline_array.mean()) if baselines else 0.0
+        ),
+        "fa_rar/centering_baseline_max": (
+            float(baseline_array.max()) if baselines else 0.0
+        ),
+        "fa_rar/eligible_advantage_before_mean": _response_mean(work, eligible),
+        "fa_rar/eligible_advantage_after_mean": _response_mean(projected.double(), eligible),
+        "fa_rar/noneligible_negative_before_mean": _response_mean(work, noneligible_negative),
+        "fa_rar/noneligible_negative_after_mean": _response_mean(
+            projected.double(), noneligible_negative
+        ),
+        "fa_rar/token_weighted_advantage_before": float(before_negative_mass.item()),
+        "fa_rar/token_weighted_advantage_after": float(after_negative_mass.item()),
+        "fa_rar/net_token_weighted_correction": float(
+            (after_negative_mass - before_negative_mass).item()
+        ),
+        "fa_rar/conservation_error_max": max(conservation_errors, default=0.0),
+    }
+    return projected, metrics
+
+
 def apply_fa_cac_post_advantage_hook(
     data: DataProto,
     *,
-    evidence: ForcedAnswerCensorEvidence | None,
+    evidence: ForcedAnswerCensorEvidence | ForcedAnswerReliabilityEvidence | None,
     algorithm_config: Any,
 ) -> tuple[DataProto, dict[str, float]]:
     """Apply or shadow FA-CAC after canonical Vanilla ``compute_advantage``."""
@@ -75,15 +313,24 @@ def apply_fa_cac_post_advantage_hook(
     }
     if not enabled:
         return data, metrics
-    if _get(cac_config, "mode", None) != "attenuate_negative_correctness":
+    mode = _get(cac_config, "mode", None)
+    if mode == "reliability_redistribution":
+        if not isinstance(evidence, ForcedAnswerReliabilityEvidence):
+            raise RuntimeError("FA-RAR enabled but task-score-free reliability evidence is absent")
+        return _apply_fa_rar_post_advantage_hook(
+            data,
+            evidence=evidence,
+            algorithm_config=algorithm_config,
+            apply=apply,
+        )
+    if mode != "attenuate_negative_correctness":
         raise RuntimeError("unsupported FA-CAC mode reached post-advantage hook")
+    if not isinstance(evidence, ForcedAnswerCensorEvidence):
+        raise RuntimeError("FA-CAC enabled but parent-keyed forced-answer evidence is absent")
     raw_adv_estimator = _get(algorithm_config, "adv_estimator", None)
     adv_estimator = getattr(raw_adv_estimator, "value", raw_adv_estimator)
     if adv_estimator != "grpo":
         raise RuntimeError("FA-CAC post-advantage hook requires canonical Vanilla GRPO")
-    if evidence is None:
-        raise RuntimeError("FA-CAC enabled but parent-keyed forced-answer evidence is absent")
-
     required = {"token_level_rewards", "response_mask", "advantages", "returns"}
     missing = required - set(data.batch.keys())
     if missing:
@@ -366,4 +613,201 @@ def apply_fa_cac_post_advantage_hook(
         metrics.update(_quantile_metrics(f"fa_cac/pfa_{name}_drift", drift[selector]))
         metrics.update(_quantile_metrics(f"fa_cac/pfa_{name}_attenuation", attenuation[selector]))
         metrics.update(_quantile_metrics(f"fa_cac/pfa_{name}_clamp", clamp[selector]))
+    return data, metrics
+
+
+def _apply_fa_rar_post_advantage_hook(
+    data: DataProto,
+    *,
+    evidence: ForcedAnswerReliabilityEvidence,
+    algorithm_config: Any,
+    apply: bool,
+) -> tuple[DataProto, dict[str, float]]:
+    """Apply or shadow task-score-free FA reliability redistribution."""
+    raw_adv_estimator = _get(algorithm_config, "adv_estimator", None)
+    adv_estimator = getattr(raw_adv_estimator, "value", raw_adv_estimator)
+    if adv_estimator != "grpo":
+        raise RuntimeError("FA-RAR post-advantage hook requires canonical Vanilla GRPO")
+
+    required = {"token_level_rewards", "response_mask", "advantages", "returns"}
+    missing = required - set(data.batch.keys())
+    if missing:
+        raise RuntimeError(f"FA-RAR batch is missing required tensors: {sorted(missing)}")
+    tensor_before = {key: value.detach().clone() for key, value in data.batch.items()}
+    vanilla_advantages = tensor_before["advantages"]
+    vanilla_returns = tensor_before["returns"]
+    rewards_before = tensor_before["token_level_rewards"]
+    response_mask = tensor_before["response_mask"]
+    if vanilla_advantages.ndim != 2 or response_mask.shape != vanilla_advantages.shape:
+        raise RuntimeError("FA-RAR Vanilla advantages and response mask must be aligned rank-2 tensors")
+    if vanilla_returns.shape != vanilla_advantages.shape or rewards_before.shape != vanilla_advantages.shape:
+        raise RuntimeError("FA-RAR Vanilla returns and rewards must align with advantages")
+    if not vanilla_advantages.is_floating_point() or not torch.all(torch.isfinite(vanilla_advantages)):
+        raise RuntimeError("FA-RAR Vanilla token advantages must be finite floating-point values")
+    if not torch.equal(vanilla_returns, vanilla_advantages):
+        raise RuntimeError("FA-RAR canonical GRPO returns must bitwise match Vanilla advantages")
+
+    valid_mask = response_mask.to(dtype=torch.bool)
+    if response_mask.is_floating_point() and not torch.all(torch.isfinite(response_mask)):
+        raise RuntimeError("FA-RAR response mask must be finite")
+    if not torch.equal(response_mask, valid_mask.to(dtype=response_mask.dtype)):
+        raise RuntimeError("FA-RAR response mask must contain only zeros and ones")
+    response_token_counts = valid_mask.sum(dim=-1)
+    if torch.any(response_token_counts <= 0):
+        bad_rows = torch.nonzero(response_token_counts <= 0, as_tuple=False).flatten().tolist()
+        raise RuntimeError(
+            "FA-RAR retained PPO rows must each contain at least one valid response token; "
+            f"zero-token rows={bad_rows}"
+        )
+    row_count = len(vanilla_advantages)
+    vanilla_scalar = torch.empty(
+        row_count, dtype=vanilla_advantages.dtype, device=vanilla_advantages.device
+    )
+    for row in range(row_count):
+        valid_values = vanilla_advantages[row, valid_mask[row]]
+        scalar = valid_values[0]
+        if not torch.equal(valid_values, scalar.expand_as(valid_values)):
+            raise RuntimeError(
+                "FA-RAR must run immediately after response-level canonical GRPO; "
+                f"row {row} has non-constant valid-token advantages"
+            )
+        vanilla_scalar[row] = scalar
+
+    parents = np.asarray(evidence.current_row_to_parent, dtype=np.int64)
+    uids = data.non_tensor_batch.get("uid")
+    parent_count = len(evidence.hit_response_cap)
+    parent_arrays = (
+        evidence.probe_attempted,
+        evidence.context_overflow,
+        evidence.original_correctness_by_parent,
+    )
+    if any(len(array) != parent_count for array in parent_arrays):
+        raise RuntimeError("FA-RAR parent evidence arrays must remain aligned")
+    if len(parents) != row_count or uids is None or len(uids) != row_count:
+        raise RuntimeError("FA-RAR UID and row identity must align with the retained PPO batch")
+    if len(set(parents.tolist())) != len(parents):
+        raise RuntimeError("FA-RAR retained PPO rows must have unique parent identity")
+    if np.any(parents < 0) or np.any(parents >= parent_count):
+        raise RuntimeError("FA-RAR retained PPO row has an invalid parent identity")
+    if not np.all(np.isfinite(evidence.original_correctness_by_parent)):
+        raise RuntimeError("FA-RAR raw correctness must be finite")
+    if not np.isfinite(evidence.correctness_threshold):
+        raise RuntimeError("FA-RAR correctness threshold must be finite")
+    for parent, raw_pfa in evidence.pfa_by_parent.items():
+        if parent < 0 or parent >= parent_count:
+            raise RuntimeError(f"FA-RAR pFA has invalid parent identity {parent}")
+        pfa = float(raw_pfa)
+        if not np.isfinite(pfa) or not 0.0 <= pfa <= 1.0:
+            raise RuntimeError(f"FA-RAR trajectory {parent} pFA must be in [0, 1]")
+
+    p_fa = torch.zeros_like(vanilla_scalar)
+    eligible = torch.zeros(row_count, dtype=torch.bool, device=vanilla_scalar.device)
+    candidate_count = 0
+    excluded_pfa_zero_count = 0
+    excluded_nonnegative_vanilla_adv_count = 0
+    for row, parent in enumerate(parents.tolist()):
+        candidate = bool(
+            evidence.hit_response_cap[parent]
+            and evidence.probe_attempted[parent]
+            and not evidence.context_overflow[parent]
+            and evidence.original_correctness_by_parent[parent] < evidence.correctness_threshold
+        )
+        if not candidate:
+            continue
+        candidate_count += 1
+        if parent not in evidence.pfa_by_parent:
+            raise RuntimeError(f"FA-RAR censor candidate trajectory {parent} has no pFA")
+        pfa = float(evidence.pfa_by_parent[parent])
+        if vanilla_scalar[row] >= 0:
+            excluded_nonnegative_vanilla_adv_count += 1
+            continue
+        if pfa <= 0:
+            excluded_pfa_zero_count += 1
+            continue
+        eligible[row] = True
+        p_fa[row] = pfa
+
+    eligible_count = int(eligible.sum().item())
+    if candidate_count != (
+        eligible_count + excluded_pfa_zero_count + excluded_nonnegative_vanilla_adv_count
+    ):
+        raise RuntimeError("FA-RAR candidate exclusion accounting invariant failed")
+    projected_scalar, metrics = compute_fa_reliability_redistributed_advantage(
+        vanilla_scalar,
+        p_fa,
+        response_mask,
+        uids,
+        eligible,
+    )
+
+    projected_advantages = vanilla_advantages.clone()
+    projected_returns = vanilla_returns.clone()
+    for row in range(row_count):
+        projected_advantages[row, valid_mask[row]] = projected_scalar[row]
+        projected_returns[row, valid_mask[row]] = projected_scalar[row]
+
+    scalar_drift = projected_scalar - vanilla_scalar
+    negative = vanilla_scalar < 0
+    positive = vanilla_scalar > 0
+    zero = vanilla_scalar == 0
+    sign_flip_count = int(torch.sum(negative & (projected_scalar > 0)).item())
+    positive_drift_max = (
+        float(torch.max(torch.abs(scalar_drift[positive])).item()) if torch.any(positive) else 0.0
+    )
+    zero_drift_max = float(torch.max(torch.abs(scalar_drift[zero])).item()) if torch.any(zero) else 0.0
+    padding_drift_max = (
+        float(torch.max(torch.abs((projected_advantages - vanilla_advantages)[~valid_mask])).item())
+        if torch.any(~valid_mask)
+        else 0.0
+    )
+    if sign_flip_count:
+        raise RuntimeError("FA-RAR negative Vanilla advantage became positive")
+    if positive_drift_max != 0.0 or zero_drift_max != 0.0:
+        raise RuntimeError("FA-RAR changed a positive or zero Vanilla advantage")
+    if padding_drift_max != 0.0:
+        raise RuntimeError("FA-RAR changed response padding")
+    if not torch.equal(projected_returns, projected_advantages):
+        raise RuntimeError("FA-RAR projected GRPO returns must bitwise match projected advantages")
+
+    for key, before in tensor_before.items():
+        if key in {"advantages", "returns"}:
+            continue
+        after = data.batch.get(key)
+        if after is None or not torch.equal(after, before):
+            raise RuntimeError(f"FA-RAR changed guarded batch tensor {key!r}")
+    if apply:
+        data.batch["advantages"] = projected_advantages
+        data.batch["returns"] = projected_returns
+
+    drift_abs_max = (
+        float(torch.max(torch.abs(scalar_drift)).item()) if scalar_drift.numel() else 0.0
+    )
+    metrics.update(
+        {
+            "fa_rar/enabled": 1.0,
+            "fa_rar/applied": float(apply),
+            "fa_rar/shadow": float(not apply),
+            "fa_rar/candidate_count": float(candidate_count),
+            "fa_rar/eligible_count": float(eligible_count),
+            "fa_rar/excluded_pfa_zero_count": float(excluded_pfa_zero_count),
+            "fa_rar/excluded_nonnegative_vanilla_adv_count": float(
+                excluded_nonnegative_vanilla_adv_count
+            ),
+            "fa_rar/pfa_mean": _response_mean(p_fa.double(), eligible),
+            "fa_rar/sign_flip_count": float(sign_flip_count),
+            "fa_rar/positive_advantage_drift_max": float(positive_drift_max),
+            "fa_rar/zero_advantage_drift_max": float(zero_drift_max),
+            "fa_rar/padding_advantage_drift_max": float(padding_drift_max),
+            "fa_rar/returns_consistency_error_max": 0.0,
+            "fa_rar/reward_drift_max": 0.0,
+            "fa_rar/score_drift_max": 0.0,
+            "fa_rar/other_tensor_changed_count": 0.0,
+            "fa_rar/projected_changed_trajectory_count": float(torch.sum(scalar_drift != 0).item()),
+            "fa_rar/projected_changed_token_count": float(
+                response_token_counts[scalar_drift != 0].sum().item()
+            ),
+            "fa_rar/projected_drift_abs_max": drift_abs_max,
+            "fa_rar/actor_visible_advantage_drift_max": drift_abs_max if apply else 0.0,
+        }
+    )
     return data, metrics

@@ -46,8 +46,10 @@ from verl.trainer.ppo.forced_answer_probe import (
     ForcedAnswerCensorEvidence,
     ForcedAnswerProbeCapture,
     ForcedAnswerProbeScoreResult,
+    ForcedAnswerReliabilityEvidence,
     aggregate_probe_diagnostics,
     build_fa_cac_evidence,
+    build_fa_reliability_evidence,
     build_fa_tr_training_credit_result,
     build_probe_reward_batch,
     run_forced_answer_probe,
@@ -776,22 +778,38 @@ class RayPPOTrainer:
             raw_cac is not None
             and (raw_cac.get("enable", False) if hasattr(raw_cac, "get") else getattr(raw_cac, "enable", False))
         )
-        censor_evidence: ForcedAnswerCensorEvidence | None = None
+        censor_evidence: ForcedAnswerCensorEvidence | ForcedAnswerReliabilityEvidence | None = None
         if cac_enabled:
-            if "score" not in original_reward_extra_infos:
-                raise RuntimeError(
-                    "FA-CAC requires exact reward_extra_info['score']; refusing to reconstruct task score"
-                )
-            censor_evidence = build_fa_cac_evidence(
-                current_row_to_parent=parent_indices,
-                hit_response_cap=capture.hit_response_cap,
-                probe_attempted=capture.probe_attempted,
-                context_overflow=capture.context_overflow,
-                original_correctness_by_parent=original_correctness,
-                task_score_in_current_row_order=original_reward_extra_infos["score"],
-                successes_by_parent=diagnostics.successes_by_parent,
-                correctness_threshold=probe_config.correctness_threshold,
+            cac_mode = (
+                raw_cac.get("mode", None)
+                if hasattr(raw_cac, "get")
+                else getattr(raw_cac, "mode", None)
             )
+            if cac_mode == "reliability_redistribution":
+                censor_evidence = build_fa_reliability_evidence(
+                    current_row_to_parent=parent_indices,
+                    hit_response_cap=capture.hit_response_cap,
+                    probe_attempted=capture.probe_attempted,
+                    context_overflow=capture.context_overflow,
+                    original_correctness_by_parent=original_correctness,
+                    successes_by_parent=diagnostics.successes_by_parent,
+                    correctness_threshold=probe_config.correctness_threshold,
+                )
+            else:
+                if "score" not in original_reward_extra_infos:
+                    raise RuntimeError(
+                        "FA-CAC requires exact reward_extra_info['score']; refusing to reconstruct task score"
+                    )
+                censor_evidence = build_fa_cac_evidence(
+                    current_row_to_parent=parent_indices,
+                    hit_response_cap=capture.hit_response_cap,
+                    probe_attempted=capture.probe_attempted,
+                    context_overflow=capture.context_overflow,
+                    original_correctness_by_parent=original_correctness,
+                    task_score_in_current_row_order=original_reward_extra_infos["score"],
+                    successes_by_parent=diagnostics.successes_by_parent,
+                    correctness_threshold=probe_config.correctness_threshold,
+                )
         if probe_config.save_examples and capture.generations:
             output_dir = probe_config.examples_dir or os.path.join(
                 self.config.trainer.default_local_dir, "forced_answer_probe_examples"

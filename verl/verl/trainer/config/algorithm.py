@@ -34,16 +34,18 @@ __all__ = [
 
 @dataclass
 class CensorAwareAdvantageConfig(BaseConfig):
-    """Forced-answer censor-aware GRPO advantage projection."""
+    """Forced-answer post-GRPO advantage intervention."""
 
     enable: bool = False
     apply: bool = True
     mode: str = "attenuate_negative_correctness"
 
     def validate(self) -> None:
-        if self.mode != "attenuate_negative_correctness":
+        supported_modes = {"attenuate_negative_correctness", "reliability_redistribution"}
+        if self.mode not in supported_modes:
             raise ValueError(
-                "censor_aware_advantage.mode must be 'attenuate_negative_correctness'; "
+                "censor_aware_advantage.mode must be one of "
+                f"{sorted(supported_modes)}; "
                 f"got {self.mode!r}"
             )
 

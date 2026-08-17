@@ -6,9 +6,11 @@ import torch
 from tensordict import TensorDict
 
 from verl import DataProto
+from verl.trainer.config import CensorAwareAdvantageConfig
 from verl.trainer.ppo.forced_answer_probe import (
     ForcedAnswerProbeCapture,
     ForcedAnswerGeneration,
+    ForcedAnswerReliabilityEvidence,
     aggregate_probe_diagnostics,
     build_probe_reward_batch,
     detect_hit_response_cap,
@@ -368,6 +370,63 @@ def test_probe_reward_scoring_pads_only_the_independent_reward_batch():
         assert torch.equal(original.batch[key], snapshot)
     assert "hit_response_cap" not in original.non_tensor_batch
     assert "__forced_answer_probe_parent_index__" not in original.non_tensor_batch
+
+
+def test_rar_score_integration_builds_task_score_free_evidence_without_score_key():
+    original = _rollout_batch()
+    original.batch["rm_scores"] = torch.zeros_like(original.batch["responses"], dtype=torch.float32)
+    original.non_tensor_batch["__forced_answer_probe_parent_index__"] = np.asarray([1, 0])
+    generations = (
+        ForcedAnswerGeneration(1, 0, (1,), (40,)),
+        ForcedAnswerGeneration(1, 1, (1,), (41,)),
+    )
+    capture = ForcedAnswerProbeCapture(
+        hit_response_cap=np.asarray([False, True]),
+        probe_attempted=np.asarray([False, True]),
+        context_overflow=np.asarray([False, False]),
+        generations=generations,
+        probe_input_tokens=1,
+    )
+    reward_batch = build_probe_reward_batch(original, generations, pad_token_id=0)
+
+    class _RewardLoopManager:
+        reward_loop_workers = [object()]
+
+        def compute_rm_score(self, data):
+            branch_ids = np.asarray(data.non_tensor_batch["probe_branch_id"])
+            return DataProto(
+                batch=TensorDict(
+                    {"rm_scores": torch.zeros_like(data.batch["responses"], dtype=torch.float32)},
+                    batch_size=len(data),
+                ),
+                non_tensor_batch={"acc": (branch_ids == 0).astype(np.float32)},
+                meta_info={"reward_extra_keys": ["acc"]},
+            )
+
+    trainer = RayPPOTrainer.__new__(RayPPOTrainer)
+    trainer.reward_loop_manager = _RewardLoopManager()
+    trainer.config = SimpleNamespace(
+        algorithm=SimpleNamespace(
+            censor_aware_advantage=CensorAwareAdvantageConfig(
+                enable=True,
+                mode="reliability_redistribution",
+            )
+        ),
+        actor_rollout_ref=SimpleNamespace(
+            rollout=SimpleNamespace(forced_answer_probe=ForcedAnswerProbeConfig(enable=True, num_samples=2))
+        ),
+    )
+    score = trainer._score_forced_answer_probe(
+        batch=original,
+        capture=capture,
+        probe_reward_batch=reward_batch,
+        original_reward_tensor=original.batch["rm_scores"],
+        original_reward_extra_infos={"acc": np.asarray([0.0, 1.0])},
+    )
+    assert isinstance(score.censor_evidence, ForcedAnswerReliabilityEvidence)
+    assert not hasattr(score.censor_evidence, "task_score_by_parent")
+    assert score.censor_evidence.current_row_to_parent.tolist() == [1, 0]
+    assert score.censor_evidence.pfa_by_parent == {1: 0.5}
 
 
 def test_missing_correctness_key_fails_closed():
