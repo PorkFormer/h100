@@ -61,7 +61,17 @@ def test_randomized_grpo_refactor_golden(dtype, norm):
         assert torch.equal(actual_returns, expected_returns)
 
 
-def _config(*, cac=False, apply=True, v1=False, probe=True, max_model_len=4096, adv="grpo", mode=None):
+def _config(
+    *,
+    cac=False,
+    apply=True,
+    v1=False,
+    probe=True,
+    max_model_len=4096,
+    adv="grpo",
+    mode=None,
+    loss_agg_mode="token-mean",
+):
     cac_config = CensorAwareAdvantageConfig(
         enable=cac,
         apply=apply,
@@ -78,7 +88,8 @@ def _config(*, cac=False, apply=True, v1=False, probe=True, max_model_len=4096, 
             censor_aware_advantage=cac_config,
         ),
         actor_rollout_ref=SimpleNamespace(
-            rollout=SimpleNamespace(forced_answer_probe=probe_config, max_model_len=max_model_len)
+            actor=SimpleNamespace(loss_agg_mode=loss_agg_mode),
+            rollout=SimpleNamespace(forced_answer_probe=probe_config, max_model_len=max_model_len),
         ),
     )
 
@@ -153,6 +164,35 @@ def test_four_mode_configuration_truth_table(v1, cac, valid):
     else:
         with pytest.raises(ValueError, match="mutually exclusive"):
             validate_censor_aware_advantage_config(config)
+
+
+def test_rar_token_mean_runtime_guard_compatible_passes():
+    validate_censor_aware_advantage_config(
+        _config(cac=True, mode="reliability_redistribution", loss_agg_mode="token-mean")
+    )
+
+
+def test_rar_token_mean_runtime_guard_incompatible_fails():
+    with pytest.raises(ValueError, match="loss_agg_mode=token-mean"):
+        validate_censor_aware_advantage_config(
+            _config(
+                cac=True,
+                mode="reliability_redistribution",
+                loss_agg_mode="seq-mean-token-mean",
+            )
+        )
+
+
+def test_rar_token_mean_runtime_guard_disabled_is_unaffected():
+    validate_censor_aware_advantage_config(
+        _config(cac=False, mode="reliability_redistribution", loss_agg_mode="seq-mean-token-mean")
+    )
+
+
+def test_rar_token_mean_runtime_guard_old_mode_is_unaffected():
+    validate_censor_aware_advantage_config(
+        _config(cac=True, mode="attenuate_negative_correctness", loss_agg_mode="seq-mean-token-mean")
+    )
 
 
 def _batch(total_scores=(-2.0, 1.0, -1.0, 1.0), *, norm=True):

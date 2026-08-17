@@ -134,6 +134,18 @@ def validate_censor_aware_advantage_config(config: Any) -> Any | None:
     adv_value = getattr(adv_estimator, "value", adv_estimator)
     if adv_value != "grpo":
         raise ValueError("censor_aware_advantage currently supports only algorithm.adv_estimator=grpo")
+    if cac.mode == "reliability_redistribution":
+        actor = config.actor_rollout_ref.actor
+        loss_agg_mode = (
+            actor.get("loss_agg_mode", None)
+            if hasattr(actor, "get")
+            else getattr(actor, "loss_agg_mode", None)
+        )
+        if loss_agg_mode != "token-mean":
+            raise ValueError(
+                "censor_aware_advantage mode=reliability_redistribution requires "
+                "actor_rollout_ref.actor.loss_agg_mode=token-mean"
+            )
     return cac
 
 

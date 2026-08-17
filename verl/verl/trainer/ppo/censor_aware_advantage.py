@@ -221,6 +221,14 @@ def compute_fa_reliability_redistributed_advantage(
     eligible_distortion = distortion[eligible]
     negative_token_count = lengths_double[negative].sum()
     raw_correction_token_mass = torch.sum(lengths_double[negative] * distortion[negative])
+    negative_amplification_ratio_max = (
+        torch.max(
+            torch.abs(projected[negative].double())
+            / (torch.abs(work[negative]) + torch.finfo(torch.float64).eps)
+        ).item()
+        if torch.any(negative)
+        else 0.0
+    )
     metrics = {
         "fa_rar/trajectory_count": float(row_count),
         "fa_rar/group_count": float(group_count),
@@ -258,6 +266,7 @@ def compute_fa_reliability_redistributed_advantage(
         "fa_rar/conservation_rounding_bound_group_max": max(conservation_bounds, default=0.0),
         "fa_rar/sign_flip_count": 0.0,
         "fa_rar/nonnegative_drift_max": 0.0,
+        "fa_rar/negative_amplification_ratio_max": float(negative_amplification_ratio_max),
         # Stable public telemetry names requested by the FA-RAR protocol.
         "fa_rar/eligible_traj_count": float(eligible_count),
         "fa_rar/eligible_rate": float(eligible_count / row_count) if row_count else 0.0,

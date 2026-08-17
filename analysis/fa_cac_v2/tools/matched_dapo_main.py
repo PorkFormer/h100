@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from analysis.fa_cac_v2.tools.dapo_adapter import MatchedFACACDAPOTaskRunner, patch_resource_pool_node_affinity
@@ -17,6 +18,8 @@ CAC_DEFAULTS = {
     "apply": True,
     "mode": "attenuate_negative_correctness",
 }
+WORKTREE_ROOT = Path(__file__).resolve().parents[3]
+WORKTREE_VERL_ROOT = WORKTREE_ROOT / "verl"
 
 
 def _split_cac_overrides(overrides: list[str]) -> tuple[list[str], list[str]]:
@@ -90,7 +93,7 @@ def main() -> None:
 
     canonical_overrides, cac_overrides = _split_cac_overrides(overrides)
 
-    os.chdir("/workspace/rl/h100-fa-cac-v2/verl")
+    os.chdir(WORKTREE_VERL_ROOT)
     GlobalHydra.instance().clear()
     with hydra.initialize_config_dir(
         version_base=None,

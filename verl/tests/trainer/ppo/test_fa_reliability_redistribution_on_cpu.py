@@ -225,14 +225,14 @@ def _hook_batch():
     )
 
 
-def _hook_evidence(*, pfa0=0.5, pfa4=1.0):
+def _hook_evidence(*, pfa0=0.5, pfa2=0.0, pfa4=1.0):
     return ForcedAnswerReliabilityEvidence(
         current_row_to_parent=np.arange(6, dtype=np.int64),
-        hit_response_cap=np.asarray([True, False, False, False, True, False]),
-        probe_attempted=np.asarray([True, False, False, False, True, False]),
+        hit_response_cap=np.asarray([True, False, True, False, True, False]),
+        probe_attempted=np.asarray([True, False, True, False, True, False]),
         context_overflow=np.zeros(6, dtype=bool),
         original_correctness_by_parent=np.asarray([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
-        pfa_by_parent={0: pfa0, 4: pfa4},
+        pfa_by_parent={0: pfa0, 2: pfa2, 4: pfa4},
         correctness_threshold=0.5,
     )
 
@@ -251,6 +251,9 @@ def _algorithm(*, apply=True):
 def test_hook_updates_only_valid_advantages_and_returns_and_guards_every_other_tensor():
     data = _hook_batch()
     before = {key: value.clone() for key, value in data.batch.items()}
+    before_shape = data.batch["advantages"].shape
+    before_dtype = data.batch["advantages"].dtype
+    before_device = data.batch["advantages"].device
     _, metrics = apply_fa_cac_post_advantage_hook(
         data,
         evidence=_hook_evidence(),
@@ -258,17 +261,48 @@ def test_hook_updates_only_valid_advantages_and_returns_and_guards_every_other_t
     )
     assert torch.equal(data.batch["returns"], data.batch["advantages"])
     assert not torch.equal(data.batch["advantages"], before["advantages"])
+    assert data.batch["advantages"].shape == before_shape
+    assert data.batch["advantages"].dtype == before_dtype
+    assert data.batch["advantages"].device == before_device
     for key in before.keys() - {"advantages", "returns"}:
         assert torch.equal(data.batch[key], before[key]), key
     padding = ~data.batch["response_mask"].bool()
+    original_scalar = before["advantages"][:, 0]
+    projected_scalar = data.batch["advantages"][:, 0]
+    original_negative = original_scalar < 0
+    original_positive = original_scalar > 0
+    original_zero = original_scalar == 0
     assert torch.equal(data.batch["advantages"][padding], before["advantages"][padding])
-    assert torch.equal(data.batch["advantages"][1], before["advantages"][1])
-    assert torch.equal(data.batch["advantages"][3], before["advantages"][3])
+    assert torch.all(projected_scalar[original_negative] <= 0)
+    assert torch.equal(projected_scalar[original_positive], original_scalar[original_positive])
+    assert torch.equal(projected_scalar[original_zero], original_scalar[original_zero])
+    assert metrics["fa_rar/candidate_count"] == 3.0
+    assert metrics["fa_rar/eligible_count"] == 2.0
+    assert metrics["fa_rar/excluded_pfa_zero_count"] == 1.0
+    assert metrics["fa_rar/projected_changed_trajectory_count"] > 0.0
+    assert metrics["fa_rar/raw_correction_mean"] > 0.0
+    assert metrics["fa_rar/raw_correction_max"] > 0.0
+    assert metrics["fa_rar/baseline_mean"] > 0.0
+    assert metrics["fa_rar/baseline_max"] > 0.0
+    expected_drift_abs_max = torch.max(torch.abs(projected_scalar - original_scalar)).item()
+    assert metrics["fa_rar/projected_drift_abs_max"] == expected_drift_abs_max
+    expected_amplification = torch.max(
+        torch.abs(projected_scalar[original_negative]).double()
+        / (
+            torch.abs(original_scalar[original_negative]).double()
+            + torch.finfo(torch.float64).eps
+        )
+    ).item()
+    assert metrics["fa_rar/negative_amplification_ratio_max"] == expected_amplification
+    assert metrics["fa_rar/conservation_error_group_max"] <= metrics[
+        "fa_rar/conservation_rounding_bound_group_max"
+    ]
     assert metrics["fa_rar/reward_drift_max"] == 0.0
     assert metrics["fa_rar/score_drift_max"] == 0.0
     assert metrics["fa_rar/positive_advantage_drift_max"] == 0.0
     assert metrics["fa_rar/padding_advantage_drift_max"] == 0.0
     assert metrics["fa_rar/sign_flip_count"] == 0.0
+    assert not any(key.startswith("fa_cac/") for key in metrics)
 
 
 def test_shadow_mode_computes_identical_counterfactual_metrics_without_actor_drift():

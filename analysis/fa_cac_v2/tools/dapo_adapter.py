@@ -265,7 +265,23 @@ def patch_resource_pool_node_affinity() -> None:
     from verl.single_controller.ray import base
 
     if not ray.is_initialized():
-        ray.init(address=os.environ.get("RAY_ADDRESS", "auto"), log_to_driver=True)
+        private_temp_root = os.environ.get("FA_RAR_PRIVATE_RAY_TEMP_ROOT")
+        if private_temp_root:
+            if os.environ.get("RAY_ADDRESS") or os.environ.get("RAY_REDIS_ADDRESS"):
+                raise RuntimeError("private FA-RAR Ray requires RAY_ADDRESS and RAY_REDIS_ADDRESS unset")
+            namespace = os.environ.get("FA_RAR_RAY_NAMESPACE")
+            if not namespace:
+                raise RuntimeError("FA_RAR_RAY_NAMESPACE must identify the private smoke cluster")
+            ray.init(
+                address="local",
+                include_dashboard=False,
+                namespace=namespace,
+                _temp_dir=private_temp_root,
+                _node_ip_address=target_ip,
+                log_to_driver=True,
+            )
+        else:
+            ray.init(address=os.environ.get("RAY_ADDRESS", "auto"), log_to_driver=True)
     expected = f"node:{target_ip}"
     if expected not in ray.cluster_resources():
         raise RuntimeError(f"selected Ray node resource is unavailable: {expected}")

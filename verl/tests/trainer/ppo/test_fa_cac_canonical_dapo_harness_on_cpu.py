@@ -236,6 +236,8 @@ def test_canonical_source_attestation_and_import_chain():
     launcher = Path("analysis/fa_cac_v2/tools/matched_dapo_main.py").read_text()
     assert "analysis.fa_cac_v2.tools.dapo_adapter" in launcher
     assert "MatchedFACACDAPOTaskRunner" in launcher
+    assert "/workspace/rl/h100-fa-cac-v2" not in launcher
+    assert "Path(__file__).resolve().parents[3]" in launcher
 
 
 def test_source_guard_rejects_any_canonical_drift():
