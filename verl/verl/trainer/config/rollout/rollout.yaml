@@ -233,6 +233,35 @@ forced_answer_probe:
   # Base seed used to derive deterministic per-request grouped seeds.
   seed: 0
 
+# Natural long continuation and boundary-return correction. Default off is inert.
+boundary_return:
+
+  # Required for recursive dataclass instantiation.
+  _target_: verl.workers.config.BoundaryReturnConfig
+
+  # off: inert; shadow: diagnostics only; replace: filter and train on boundary return.
+  mode: off
+
+  # Total response budget L, including the original H-token prefix.
+  long_response_length: 8192
+
+  # Raw verifier correctness extra-info field and classification threshold.
+  correctness_key: acc
+  correctness_threshold: 0.5
+
+  # Explicit task-score extra-info field. Never inferred from shaped reward.
+  task_score_key: score
+
+  # Bounded grouped-request concurrency and chunk size.
+  max_concurrent_requests: 128
+  request_batch_size: 512
+
+  # Dedicated stable SHA seed namespace; does not touch global RNG streams.
+  seed: 0
+
+  # The first implementation is fail closed.
+  strict: true
+
 # Multi-turn tool config.
 multi_turn:
 

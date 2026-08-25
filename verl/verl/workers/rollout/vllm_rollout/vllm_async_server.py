@@ -572,7 +572,10 @@ class vLLMHttpServer:
 
         # Determine stop reason from finish_reason
         finish_reason = final_res.outputs[0].finish_reason
-        if self.config.forced_answer_probe.enable:
+        boundary_config = self.config.get("boundary_return", None)
+        if self.config.forced_answer_probe.enable or (
+            boundary_config is not None and boundary_config.get("mode", "off") != "off"
+        ):
             extra_fields["finish_reason"] = finish_reason
         if finish_reason == "abort":
             stop_reason = "aborted"
