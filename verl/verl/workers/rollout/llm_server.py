@@ -63,7 +63,7 @@ class TrackedGroupedRequest:
     async def result(self) -> list[TokenOutput]:
         return await _await_if_needed(self.object_ref)
 
-    async def abort(self) -> Any:
+    async def abort(self) -> dict[str, Any]:
         result = await _await_if_needed(
             self.server.abort_request.remote(
                 request_id=self.backend_request_id,
@@ -71,10 +71,20 @@ class TrackedGroupedRequest:
             )
         )
         if isinstance(result, dict) and result.get("error"):
+            error = str(result["error"]).strip()
+            if error == f"Request {self.backend_request_id} not found":
+                ray.cancel(self.object_ref, force=False)
+                return {
+                    "mechanism": "ray_object_ref_cancel",
+                    "abort_request_result": result,
+                }
             raise RuntimeError(
                 f"failed to abort grouped backend request {self.backend_request_id}: {result['error']}"
             )
-        return result
+        return {
+            "mechanism": "abort_request",
+            "abort_request_result": result,
+        }
 
     async def drain(self) -> Any:
         return await _await_if_needed(self.server.wait_for_requests_to_drain.remote())

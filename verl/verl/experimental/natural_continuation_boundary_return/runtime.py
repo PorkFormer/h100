@@ -420,11 +420,19 @@ async def run_boundary_continuations(
                 *(tracked.abort() for tracked in active), return_exceptions=True
             )
             abort_errors = [result for result in abort_results if isinstance(result, BaseException)]
+            abort_mechanisms = [
+                result.get("mechanism", "unreported")
+                if isinstance(result, dict)
+                else "unreported"
+                for result in abort_results
+                if not isinstance(result, BaseException)
+            ]
             cleanup_errors.extend(abort_errors)
             _emit_audit_event(
-                "boundary_return cleanup event=abort_ack count=%d errors=%d",
+                "boundary_return cleanup event=abort_ack count=%d errors=%d mechanisms=%s",
                 len(active),
                 len(abort_errors),
+                abort_mechanisms,
                 level=logging.WARNING,
             )
 
@@ -488,6 +496,7 @@ async def run_boundary_continuations(
                 )
             cleanup_attested = (
                 getattr(primary_error, "boundary_remote_cleanup_attested", True)
+                and not abort_errors
                 and not drain_errors
                 and not release_errors
             )

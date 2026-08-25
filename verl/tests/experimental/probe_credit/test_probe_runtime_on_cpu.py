@@ -33,6 +33,7 @@ from verl.experimental.probe_credit.probe_runtime import (  # noqa: E402
     immediate_verifier_text,
     relative_horizons,
 )
+from verl.workers.rollout import llm_server as llm_server_module  # noqa: E402
 from verl.workers.rollout.llm_server import LLMServerClient  # noqa: E402
 from verl.workers.rollout.replica import TokenOutput  # noqa: E402
 
@@ -234,7 +235,8 @@ def test_llm_server_client_tracked_grouped_request_retains_remote_abort_and_drai
         assert tracked.server is server
         assert tracked.object_ref is not None
         assert tracked.backend_request_id == "policy-7-uid-u-trajectory-0"
-        await tracked.abort()
+        abort_result = await tracked.abort()
+        assert abort_result["mechanism"] == "abort_request"
         await tracked.drain()
         await tracked.release()
         await tracked.result()
@@ -246,6 +248,62 @@ def test_llm_server_client_tracked_grouped_request_retains_remote_abort_and_drai
         ("release", "server-1"),
         ("generate", "policy-7-uid-u-trajectory-0"),
     ]
+
+
+def test_tracked_grouped_request_falls_back_to_ray_object_ref_cancel_only_when_not_found(
+    monkeypatch,
+):
+    backend_request_id = "policy-7-uid-u-trajectory-0"
+    object_ref = object()
+    cancel_calls = []
+    server = type("Server", (), {})()
+    server.abort_request = _RemoteMethod(
+        lambda **_kwargs: {"error": f"Request {backend_request_id} not found"}
+    )
+    client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
+    tracked = llm_server_module.TrackedGroupedRequest(
+        logical_request_id=backend_request_id,
+        backend_request_id=backend_request_id,
+        server_id="server-1",
+        server=server,
+        object_ref=object_ref,
+        client=client,
+    )
+    monkeypatch.setattr(
+        llm_server_module.ray,
+        "cancel",
+        lambda ref, *, force: cancel_calls.append((ref, force)),
+    )
+
+    result = asyncio.run(tracked.abort())
+
+    assert result["mechanism"] == "ray_object_ref_cancel"
+    assert cancel_calls == [(object_ref, False)]
+
+
+def test_tracked_grouped_request_does_not_fallback_for_other_abort_errors(monkeypatch):
+    server = type("Server", (), {})()
+    server.abort_request = _RemoteMethod(lambda **_kwargs: {"error": "backend unavailable"})
+    client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
+    tracked = llm_server_module.TrackedGroupedRequest(
+        logical_request_id="logical",
+        backend_request_id="backend",
+        server_id="server-1",
+        server=server,
+        object_ref=object(),
+        client=client,
+    )
+    cancel_calls = []
+    monkeypatch.setattr(
+        llm_server_module.ray,
+        "cancel",
+        lambda ref, *, force: cancel_calls.append((ref, force)),
+    )
+
+    with pytest.raises(RuntimeError, match="backend unavailable"):
+        asyncio.run(tracked.abort())
+
+    assert cancel_calls == []
 
 
 def test_start_grouped_cleanup_error_does_not_replace_primary_remote_start_error():

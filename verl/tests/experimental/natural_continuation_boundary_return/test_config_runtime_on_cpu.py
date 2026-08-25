@@ -470,7 +470,7 @@ def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_pr
     assert audit.index("event=release_ack") < audit.index("event=local_settle")
 
 
-def test_timeout_shields_backend_result_until_explicit_remote_abort():
+def test_timeout_shields_backend_result_until_explicit_remote_abort(capsys):
     events = []
     remote_done = asyncio.Event()
 
@@ -499,6 +499,7 @@ def test_timeout_shields_backend_result_until_explicit_remote_abort():
             if not self.active:
                 raise RuntimeError("remote request was cancelled before explicit abort")
             remote_done.set()
+            return {"mechanism": "ray_object_ref_cancel"}
 
         async def drain(self):
             events.append("drain")
@@ -530,6 +531,10 @@ def test_timeout_shields_backend_result_until_explicit_remote_abort():
     assert "abort_active:True" in events
     assert events.index("abort_active:True") < events.index("drain") < events.index("release")
     assert "result_cancelled" not in events
+    assert (
+        "event=abort_ack count=1 errors=0 mechanisms=['ray_object_ref_cancel']"
+        in capsys.readouterr().out
+    )
 
 
 def test_remote_cleanup_waits_for_every_delayed_start_before_result_failure():
