@@ -78,9 +78,7 @@ class TrackedGroupedRequest:
                     "mechanism": "ray_object_ref_cancel",
                     "abort_request_result": result,
                 }
-            raise RuntimeError(
-                f"failed to abort grouped backend request {self.backend_request_id}: {result['error']}"
-            )
+            raise RuntimeError(f"failed to abort grouped backend request {self.backend_request_id}: {result['error']}")
         return {
             "mechanism": "abort_request",
             "abort_request_result": result,
@@ -306,10 +304,9 @@ class LLMServerClient:
                 await self._release_server_awaited(server_id)
             except BaseException as cleanup_error:
                 primary_error.add_note(
-                    f"grouped request lease cleanup error: "
-                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    f"grouped request lease cleanup error: {type(cleanup_error).__name__}: {cleanup_error}"
                 )
-                setattr(primary_error, "boundary_remote_cleanup_attested", False)
+                primary_error.boundary_remote_cleanup_attested = False
             raise
         return TrackedGroupedRequest(
             logical_request_id=str(request_id),

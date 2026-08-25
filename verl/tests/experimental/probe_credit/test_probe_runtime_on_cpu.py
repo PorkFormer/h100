@@ -190,9 +190,7 @@ def test_llm_server_client_generate_grouped_uses_one_rpc_and_copies_sampling_par
     client._release_server = lambda _server_id: None
     sampling = {"n": 4, "seed": 17, "max_tokens": 8, "stop": ["\n"]}
 
-    outputs = asyncio.run(
-        client.generate_grouped("logical", prompt_ids=[1, 2], sampling_params=sampling)
-    )
+    outputs = asyncio.run(client.generate_grouped("logical", prompt_ids=[1, 2], sampling_params=sampling))
 
     assert [output.extra_fields["branch_id"] for output in outputs] == [0, 1, 2, 3]
     assert len(calls) == 1
@@ -204,15 +202,11 @@ def test_llm_server_client_generate_grouped_uses_one_rpc_and_copies_sampling_par
 def test_llm_server_client_tracked_grouped_request_retains_remote_abort_and_drain_handles():
     events = []
     server = type("Server", (), {})()
-    server.generate_grouped = _RemoteMethod(
-        lambda **kwargs: events.append(("generate", kwargs["request_id"])) or []
-    )
+    server.generate_grouped = _RemoteMethod(lambda **kwargs: events.append(("generate", kwargs["request_id"])) or [])
     server.abort_request = _RemoteMethod(
         lambda **kwargs: events.append(("abort", kwargs["request_id"])) or {"aborted": True}
     )
-    server.wait_for_requests_to_drain = _RemoteMethod(
-        lambda **_kwargs: events.append(("drain", None))
-    )
+    server.wait_for_requests_to_drain = _RemoteMethod(lambda **_kwargs: events.append(("drain", None)))
     client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
 
     async def acquire(_request_id):
@@ -257,9 +251,7 @@ def test_tracked_grouped_request_falls_back_to_ray_object_ref_cancel_only_when_n
     object_ref = object()
     cancel_calls = []
     server = type("Server", (), {})()
-    server.abort_request = _RemoteMethod(
-        lambda **_kwargs: {"error": f"Request {backend_request_id} not found"}
-    )
+    server.abort_request = _RemoteMethod(lambda **_kwargs: {"error": f"Request {backend_request_id} not found"})
     client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
     tracked = llm_server_module.TrackedGroupedRequest(
         logical_request_id=backend_request_id,
@@ -351,9 +343,7 @@ def test_grouped_client_routes_by_optional_key_but_keeps_backend_request_ids_uni
     client._release_server = lambda _server_id: None
 
     async def run():
-        await client.generate_grouped(
-            "request-a", prompt_ids=[1], sampling_params={"n": 4}, routing_key="prompt-route"
-        )
+        await client.generate_grouped("request-a", prompt_ids=[1], sampling_params={"n": 4}, routing_key="prompt-route")
         await client.generate_grouped(
             "request-b", prompt_ids=[1, 2], sampling_params={"n": 4}, routing_key="prompt-route"
         )

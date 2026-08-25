@@ -40,9 +40,7 @@ from verl.workers.rollout.replica import TokenOutput
 def _batch(*, finish_reasons=("length", "stop"), versions=(7, 7)) -> DataProto:
     prompts = torch.tensor([[0, 11, 12], [0, 21, 22]], dtype=torch.long)
     responses = torch.tensor([[31, 32, 33, 34], [41, 42, 0, 0]], dtype=torch.long)
-    attention_mask = torch.tensor(
-        [[0, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 0, 0]], dtype=torch.long
-    )
+    attention_mask = torch.tensor([[0, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 0, 0]], dtype=torch.long)
     return DataProto.from_dict(
         tensors={
             "prompts": prompts,
@@ -143,15 +141,18 @@ def test_build_requests_uses_exact_prompt_and_prefix_and_trajectory_identity():
     assert requests[0].request_id != requests[1].request_id
     assert requests[0].seed != requests[1].seed
     assert requests[0].branch_count == 1
-    assert requests == build_continuation_requests(
-        _batch(finish_reasons=("length", "length")),
-        policy_version=7,
-        short_response_length=4,
-        long_response_length=6,
-        max_model_len=8,
-        eos_token_id=99,
-        base_seed=19,
-    )[0]
+    assert (
+        requests
+        == build_continuation_requests(
+            _batch(finish_reasons=("length", "length")),
+            policy_version=7,
+            short_response_length=4,
+            long_response_length=6,
+            max_model_len=8,
+            eos_token_id=99,
+            base_seed=19,
+        )[0]
+    )
     assert derive_continuation_seed(19, 7, "shared", "shared:0") == requests[0].seed
 
 
@@ -196,9 +197,7 @@ class _Client:
 
             async def result(self):
                 if client.factory is not None:
-                    return await client.factory(
-                        request_id, prompt_ids, sampling_params, routing_key
-                    )
+                    return await client.factory(request_id, prompt_ids, sampling_params, routing_key)
                 return [
                     SimpleNamespace(
                         token_ids=[],
@@ -334,10 +333,22 @@ def test_result_mapping_fails_closed(results, message):
 
 def test_result_mapping_rejects_mixed_versions_across_requests():
     results = [
-        SimpleNamespace(request_id="r1", branch_id=0, tail_token_ids=(), actual_policy_version=7,
-                        stop_reason="completed", finish_reason="stop"),
-        SimpleNamespace(request_id="r2", branch_id=0, tail_token_ids=(), actual_policy_version=8,
-                        stop_reason="completed", finish_reason="stop"),
+        SimpleNamespace(
+            request_id="r1",
+            branch_id=0,
+            tail_token_ids=(),
+            actual_policy_version=7,
+            stop_reason="completed",
+            finish_reason="stop",
+        ),
+        SimpleNamespace(
+            request_id="r2",
+            branch_id=0,
+            tail_token_ids=(),
+            actual_policy_version=8,
+            stop_reason="completed",
+            finish_reason="stop",
+        ),
     ]
     with pytest.raises(ValueError, match="mixed actual policy"):
         aggregate_continuation_results(
@@ -531,10 +542,7 @@ def test_timeout_shields_backend_result_until_explicit_remote_abort(capsys):
     assert "abort_active:True" in events
     assert events.index("abort_active:True") < events.index("drain") < events.index("release")
     assert "result_cancelled" not in events
-    assert (
-        "event=abort_ack count=1 errors=0 mechanisms=['ray_object_ref_cancel']"
-        in capsys.readouterr().out
-    )
+    assert "event=abort_ack count=1 errors=0 mechanisms=['ray_object_ref_cancel']" in capsys.readouterr().out
 
 
 def test_remote_cleanup_waits_for_every_delayed_start_before_result_failure():

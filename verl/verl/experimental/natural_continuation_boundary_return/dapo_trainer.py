@@ -110,9 +110,10 @@ def validate_boundary_return_preflight(config: Any, *, use_critic: bool | None =
     agent = _config_get(rollout, "agent")
     if _config_get(agent, "default_agent_loop") != "single_turn_agent":
         raise ValueError("boundary_return requires agent.default_agent_loop=single_turn_agent")
-    if _config_get(agent, "agent_loop_config_path") is not None or _config_get(
-        agent, "agent_loop_manager_class"
-    ) is not None:
+    if (
+        _config_get(agent, "agent_loop_config_path") is not None
+        or _config_get(agent, "agent_loop_manager_class") is not None
+    ):
         raise ValueError("boundary_return does not support a custom agent loop")
     custom_server = _config_get(agent, "custom_async_server")
     if _config_get(custom_server, "path") is not None or _config_get(custom_server, "name") is not None:
@@ -185,7 +186,7 @@ def _contains_multimodal_payload(candidate: DataProto) -> bool:
             return False
         if isinstance(value, np.ndarray):
             return any(nonempty(item) for item in value.reshape(-1).tolist())
-        if isinstance(value, (dict, list, tuple, set)):
+        if isinstance(value, dict | list | tuple | set):
             return bool(value)
         if torch.is_tensor(value):
             return value.numel() > 0
@@ -205,7 +206,7 @@ def _assert_shadow_candidate_noop(before: DataProto, after: DataProto) -> None:
             return left.dtype == right.dtype and left.shape == right.shape and left.tolist() == right.tolist()
         if isinstance(left, dict) and isinstance(right, dict):
             return left.keys() == right.keys() and all(equal(left[key], right[key]) for key in left)
-        if isinstance(left, (list, tuple)) and isinstance(right, type(left)):
+        if isinstance(left, list | tuple) and isinstance(right, type(left)):
             return len(left) == len(right) and all(equal(a, b) for a, b in zip(left, right, strict=True))
         return bool(left == right)
 
@@ -217,9 +218,7 @@ def _assert_shadow_candidate_noop(before: DataProto, after: DataProto) -> None:
     if set(before.non_tensor_batch) != set(after.non_tensor_batch):
         raise AssertionError("shadow candidate non-tensor keys changed")
     for key, value in before.non_tensor_batch.items():
-        if np.asarray(value, dtype=object).tolist() != np.asarray(
-            after.non_tensor_batch[key], dtype=object
-        ).tolist():
+        if np.asarray(value, dtype=object).tolist() != np.asarray(after.non_tensor_batch[key], dtype=object).tolist():
             raise AssertionError(f"shadow candidate non-tensor field {key!r} changed")
     if not equal(before.meta_info, after.meta_info):
         raise AssertionError("shadow candidate meta_info changed")
@@ -232,8 +231,8 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         cached = getattr(self, "_typed_boundary_return_config", None)
         if cached is None:
             raw = _config_get(self.config.actor_rollout_ref.rollout, "boundary_return", {})
-            cached = raw if isinstance(raw, BoundaryReturnConfig) else omega_conf_to_dataclass(
-                raw, BoundaryReturnConfig
+            cached = (
+                raw if isinstance(raw, BoundaryReturnConfig) else omega_conf_to_dataclass(raw, BoundaryReturnConfig)
             )
             self._typed_boundary_return_config = cached
         return cached
@@ -327,16 +326,12 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         if boundary.mode == "off":
             return candidate
         agent_names = candidate.non_tensor_batch.get("agent_name")
-        if agent_names is not None and any(
-            str(agent_name) != "single_turn_agent" for agent_name in agent_names
-        ):
+        if agent_names is not None and any(str(agent_name) != "single_turn_agent" for agent_name in agent_names):
             raise ValueError("boundary_return v1 requires every row to use single_turn_agent")
         if _contains_multimodal_payload(candidate):
             raise ValueError("boundary_return v1 does not support multimodal input rows")
         shadow_snapshot = (
-            copy.deepcopy(candidate)
-            if boundary.mode == "shadow" and boundary.verify_shadow_candidate_noop
-            else None
+            copy.deepcopy(candidate) if boundary.mode == "shadow" and boundary.verify_shadow_candidate_noop else None
         )
         rollout = self.config.actor_rollout_ref.rollout
         policy_version = self._validate_rollout_policy_version(candidate)
@@ -419,8 +414,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 )
             elif not cleanup_attested:
                 error.add_note(
-                    "rollout replicas were not slept because remote continuation drain/release "
-                    "could not be attested"
+                    "rollout replicas were not slept because remote continuation drain/release could not be attested"
                 )
             raise
 
@@ -449,9 +443,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             self._boundary_return_step_accumulator = None
         return batch
 
-    def _compute_old_and_reference(
-        self, batch: DataProto, metrics: dict, timing_raw: dict
-    ) -> DataProto:
+    def _compute_old_and_reference(self, batch: DataProto, metrics: dict, timing_raw: dict) -> DataProto:
         policy_version = self._validate_rollout_policy_version(batch)
         _emit_audit_event(
             "boundary_return event=old_ref_start policy_version=%d mode=%s",

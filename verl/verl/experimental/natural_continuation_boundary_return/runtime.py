@@ -228,11 +228,7 @@ def aggregate_continuation_results(
     request_by_id = {request.request_id: request for request in requests}
     if len(request_by_id) != len(requests):
         raise ValueError("duplicate continuation request IDs")
-    versions = {
-        int(result.actual_policy_version)
-        for result in results
-        if result.actual_policy_version is not None
-    }
+    versions = {int(result.actual_policy_version) for result in results if result.actual_policy_version is not None}
     if len(versions) > 1:
         raise ValueError("continuation results have mixed actual policy versions")
     by_request: dict[str, dict[int, BoundaryContinuationBranchResult]] = {}
@@ -261,6 +257,7 @@ def aggregate_continuation_results(
                 f"continuation actual policy version {result.actual_policy_version} does not match "
                 f"published version {expected_policy_version}"
             )
+
         def normalize_reason(reason: Any) -> str | None:
             if reason is None:
                 return None
@@ -285,9 +282,7 @@ def aggregate_continuation_results(
                 f"continuation request {request.request_id} returned {len(result.tail_token_ids)} tokens "
                 f"above max_tokens={request.max_tokens}"
             )
-        if not result.tail_token_ids and not (
-            {stop_reason, finish_reason} & {"eos", "stop", "completed"}
-        ):
+        if not result.tail_token_ids and not ({stop_reason, finish_reason} & {"eos", "stop", "completed"}):
             raise ValueError(
                 f"continuation request {request.request_id} returned a zero-token tail with illegal "
                 f"terminal state stop_reason={result.stop_reason!r}, finish_reason={result.finish_reason!r}"
@@ -336,9 +331,7 @@ async def run_boundary_continuations(
         base_seed=config.seed,
     )
     prompt_width = rollout_batch.batch["prompts"].shape[-1]
-    normal_response_tokens = int(
-        rollout_batch.batch["attention_mask"][:, prompt_width:].sum().item()
-    )
+    normal_response_tokens = int(rollout_batch.batch["attention_mask"][:, prompt_width:].sum().item())
     if not requests:
         return BoundaryContinuationCapture(
             hit_response_cap=hit_cap,
@@ -416,14 +409,10 @@ async def run_boundary_continuations(
                 [tracked.backend_request_id for tracked in active],
                 level=logging.WARNING,
             )
-            abort_results = await asyncio.gather(
-                *(tracked.abort() for tracked in active), return_exceptions=True
-            )
+            abort_results = await asyncio.gather(*(tracked.abort() for tracked in active), return_exceptions=True)
             abort_errors = [result for result in abort_results if isinstance(result, BaseException)]
             abort_mechanisms = [
-                result.get("mechanism", "unreported")
-                if isinstance(result, dict)
-                else "unreported"
+                result.get("mechanism", "unreported") if isinstance(result, dict) else "unreported"
                 for result in abort_results
                 if not isinstance(result, BaseException)
             ]
@@ -466,9 +455,7 @@ async def run_boundary_continuations(
                 release_results = await asyncio.gather(
                     *(tracked.release() for tracked in tracked_requests), return_exceptions=True
                 )
-                release_errors = [
-                    result for result in release_results if isinstance(result, BaseException)
-                ]
+                release_errors = [result for result in release_results if isinstance(result, BaseException)]
                 cleanup_errors.extend(release_errors)
                 _emit_audit_event(
                     "boundary_return cleanup event=release_ack count=%d errors=%d",
@@ -500,17 +487,9 @@ async def run_boundary_continuations(
                 and not drain_errors
                 and not release_errors
             )
-            setattr(primary_error, "boundary_remote_cleanup_attested", cleanup_attested)
-            setattr(
-                primary_error,
-                "boundary_continuation_timeout_count",
-                int(isinstance(primary_error, TimeoutError)),
-            )
-            setattr(
-                primary_error,
-                "boundary_continuation_request_timeout_seconds",
-                float(config.request_timeout_seconds),
-            )
+            primary_error.boundary_remote_cleanup_attested = cleanup_attested
+            primary_error.boundary_continuation_timeout_count = int(isinstance(primary_error, TimeoutError))
+            primary_error.boundary_continuation_request_timeout_seconds = float(config.request_timeout_seconds)
             _emit_audit_event(
                 "boundary_return event=request_failure error_type=%s timeout_count=%d "
                 "timeout_seconds=%s cleanup_attested=%s",
@@ -521,12 +500,8 @@ async def run_boundary_continuations(
                 level=logging.WARNING,
             )
 
-        start_results = await asyncio.gather(
-            *(start_one(request) for request in wave), return_exceptions=True
-        )
-        primary_start_error = next(
-            (result for result in start_results if isinstance(result, BaseException)), None
-        )
+        start_results = await asyncio.gather(*(start_one(request) for request in wave), return_exceptions=True)
+        primary_start_error = next((result for result in start_results if isinstance(result, BaseException)), None)
         request_handles: list[tuple[BoundaryContinuationRequest, Any]] = []
         for result in start_results:
             if not isinstance(result, BaseException):
@@ -537,10 +512,7 @@ async def run_boundary_continuations(
             await cleanup(primary_start_error, ())
             raise primary_start_error
 
-        tasks = [
-            asyncio.create_task(generate_one(request, tracked))
-            for request, tracked in request_handles
-        ]
+        tasks = [asyncio.create_task(generate_one(request, tracked)) for request, tracked in request_handles]
         try:
             grouped = await asyncio.gather(*tasks)
             for tracked in tracked_requests:
@@ -572,8 +544,7 @@ async def run_boundary_continuations(
     for generation in generations:
         request = requests_by_id[generation.request_id]
         long_hit_response_cap[generation.parent_index] = (
-            str(generation.finish_reason).lower() == "length"
-            or len(generation.tail_token_ids) >= request.max_tokens
+            str(generation.finish_reason).lower() == "length" or len(generation.tail_token_ids) >= request.max_tokens
         )
     return BoundaryContinuationCapture(
         hit_response_cap=hit_cap,

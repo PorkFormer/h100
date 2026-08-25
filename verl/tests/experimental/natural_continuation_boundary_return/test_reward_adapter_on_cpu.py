@@ -84,9 +84,7 @@ def _candidate() -> DataProto:
             "uid": np.asarray(["a", "b", "c", "d", "e"], dtype=object),
             "trajectory_id": np.asarray(["a:0", "b:0", "c:0", "d:0", "e:0"], dtype=object),
             "data_source": np.asarray(["math"] * 5, dtype=object),
-            "reward_model": np.asarray(
-                [{"ground_truth": str(index)} for index in range(5)], dtype=object
-            ),
+            "reward_model": np.asarray([{"ground_truth": str(index)} for index in range(5)], dtype=object),
             "extra_info": np.asarray([{"index": index} for index in range(5)], dtype=object),
             "difficulty": np.asarray(["hard", "easy", "hard", "easy", "medium"], dtype=object),
             "acc": np.asarray([0.0, 0.0, 1.0, 1.0, 1.0]),

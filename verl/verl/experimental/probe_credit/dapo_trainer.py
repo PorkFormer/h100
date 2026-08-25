@@ -37,16 +37,16 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from verl import DataProto
-from verl.experimental.probe_credit.dynamic_sampling import (
-    filter_dapo_generation_batch,
-    select_complete_prompt_groups,
-)
 from verl.experimental.nondeterminism_diagnostics import (
     DiagnosticsConfig,
     NondeterminismDiagnostics,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     NormalizedRewardOutput,
+)
+from verl.experimental.probe_credit.dynamic_sampling import (
+    filter_dapo_generation_batch,
+    select_complete_prompt_groups,
 )
 from verl.experimental.probe_credit.probe_credit import (
     apply_probe_credit_redistribution,
@@ -163,9 +163,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         )
         rollout = _config_get(_config_get(self.config, "actor_rollout_ref"), "rollout")
         tp_size = _config_get(rollout, "tensor_model_parallel_size")
-        tp_group_identity = (
-            f"tp={int(tp_size)};replicas={len(server_addresses)}" if tp_size is not None else None
-        )
+        tp_group_identity = f"tp={int(tp_size)};replicas={len(server_addresses)}" if tp_size is not None else None
 
         sampler_hash = None
         train_dataloader = getattr(self, "train_dataloader", None)
@@ -262,8 +260,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     hasher.update(chunk)
             digest = hasher.hexdigest()
             tensor_fields = {
-                str(key): {"dtype": str(value.dtype), "shape": list(value.shape)}
-                for key, value in batch.batch.items()
+                str(key): {"dtype": str(value.dtype), "shape": list(value.shape)} for key, value in batch.batch.items()
             }
             manifest = {
                 "schema_version": "gate-equivalence-batch-v1",
@@ -484,9 +481,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             score = score.get("score", score.get("reward"))
         return float(score) > 0.0
 
-    def _compute_probe_credit_advantage(
-        self, batch: DataProto, metrics: dict[str, float]
-    ) -> DataProto:
+    def _compute_probe_credit_advantage(self, batch: DataProto, metrics: dict[str, float]) -> DataProto:
         probe = self._probe_config()
         if not probe.enable:
             return batch
@@ -514,9 +509,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             norm_by_std=probe.norm_probe_by_std,
             epsilon=probe.epsilon,
         )
-        correction, correction_metrics = build_probe_token_correction(
-            probe_advantages, batch.batch["response_mask"]
-        )
+        correction, correction_metrics = build_probe_token_correction(probe_advantages, batch.batch["response_mask"])
         if correction_metrics["probe_credit/zero_mass_residual_max"] > 1.0e-5:
             raise ValueError("Probe correction violates raw masked advantage-mass conservation")
         apply_metrics = apply_probe_credit_redistribution(batch, correction, coef=probe.coef, enable=True)
@@ -577,8 +570,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     ) -> NormalizedRewardOutput:
         """Invoke and normalize the exact reward path used by synchronous DAPO."""
         force_prefix_score = bool(
-            batch.meta_info.get("obcf_prefix_scoring", False)
-            or batch.meta_info.get("boundary_reward_only", False)
+            batch.meta_info.get("obcf_prefix_scoring", False) or batch.meta_info.get("boundary_reward_only", False)
         )
         if "rm_scores" not in batch.batch and (self.use_rm or force_prefix_score):
             batch.union(self._compute_reward_colocate(batch))
@@ -598,11 +590,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     def _effective_filter_metric(self) -> str | None:
         """Return the local filter metric without mutating the resolved Hydra config."""
         filter_groups = _config_get(self.config.algorithm, "filter_groups")
-        return (
-            _config_get(filter_groups, "metric")
-            if bool(_config_get(filter_groups, "enable", False))
-            else None
-        )
+        return _config_get(filter_groups, "metric") if bool(_config_get(filter_groups, "enable", False)) else None
 
     def fit(self):
         """Run official DAPO accumulation, Probe final retained groups, then update."""
@@ -820,14 +808,10 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 metrics["train/num_gen_batches"] = num_gen_batches
                 metrics["train/generated_prompt_groups"] = total_generated_prompt_count
                 metrics["train/generated_trajectories"] = total_generated_trajectory_count
-                metrics["train/retained_prompt_groups"] = len(
-                    dict.fromkeys(batch.non_tensor_batch["uid"].tolist())
-                )
+                metrics["train/retained_prompt_groups"] = len(dict.fromkeys(batch.non_tensor_batch["uid"].tolist()))
                 metrics["train/filtered_prompt_groups"] = total_filtered_prompt_count
                 metrics["train/dynamic_sampling_accept_rate"] = (
-                    total_kept_prompt_count / total_generated_prompt_count
-                    if total_generated_prompt_count
-                    else 0.0
+                    total_kept_prompt_count / total_generated_prompt_count if total_generated_prompt_count else 0.0
                 )
                 metrics["train/generated_response_tokens"] = total_generated_response_tokens
                 metrics["training/global_step"] = self.global_steps

@@ -18,7 +18,6 @@ from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 
-
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -43,11 +42,7 @@ def test_dedicated_config_composes_default_off_and_disables_other_interventions(
 
 def test_entrypoint_selects_only_boundary_return_trainer():
     source = (
-        ROOT
-        / "verl"
-        / "experimental"
-        / "natural_continuation_boundary_return"
-        / "main_dapo_boundary_return.py"
+        ROOT / "verl" / "experimental" / "natural_continuation_boundary_return" / "main_dapo_boundary_return.py"
     ).read_text(encoding="utf-8")
     assert "RayDAPOBoundaryReturnTrainer(" in source
     assert "RayDAPOProbeCreditTrainer(" not in source

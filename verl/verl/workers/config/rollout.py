@@ -108,7 +108,7 @@ class BoundaryReturnConfig(BaseConfig):
         if self.request_batch_size < self.max_concurrent_requests:
             raise ValueError(f"{prefix}.request_batch_size must be >= max_concurrent_requests")
         if (
-            not isinstance(self.request_timeout_seconds, (int, float))
+            not isinstance(self.request_timeout_seconds, int | float)
             or isinstance(self.request_timeout_seconds, bool)
             or not math.isfinite(self.request_timeout_seconds)
             or self.request_timeout_seconds <= 0
@@ -141,8 +141,7 @@ class ForcedAnswerTrainingCreditConfig(BaseConfig):
             raise ValueError("forced_answer_probe.training_credit.activation_threshold must be in [0, 1]")
         if self.reward_mode != "centered_pfa":
             raise ValueError(
-                "forced_answer_probe.training_credit.reward_mode must be 'centered_pfa'; "
-                f"got {self.reward_mode!r}"
+                f"forced_answer_probe.training_credit.reward_mode must be 'centered_pfa'; got {self.reward_mode!r}"
             )
 
 

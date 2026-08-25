@@ -35,7 +35,6 @@ from verl.experimental.natural_continuation_boundary_return.dapo_trainer import 
 )
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import (
     BoundaryReturnBatchResult,
-    BoundaryRewardOutput,
 )
 from verl.experimental.natural_continuation_boundary_return.runtime import BoundaryContinuationGeneration
 from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
@@ -311,9 +310,7 @@ def test_candidate_hook_rejects_actual_multimodal_rows_before_continuation():
     trainer = _trainer("shadow")
     trainer._rollout_policy_version = 7
     candidate = _hook_candidate()
-    candidate.non_tensor_batch["multi_modal_data"] = np.asarray(
-        [{"image": object()}, None], dtype=object
-    )
+    candidate.non_tensor_batch["multi_modal_data"] = np.asarray([{"image": object()}, None], dtype=object)
     with pytest.raises(ValueError, match="multimodal"):
         trainer._process_candidate_after_reward_before_filter(candidate, {}, {}, 1)
 
@@ -322,9 +319,7 @@ def test_candidate_hook_rejects_actual_non_single_turn_agent_rows():
     trainer = _trainer("shadow")
     trainer._rollout_policy_version = 7
     candidate = _hook_candidate()
-    candidate.non_tensor_batch["agent_name"] = np.asarray(
-        ["single_turn_agent", "tool_agent"], dtype=object
-    )
+    candidate.non_tensor_batch["agent_name"] = np.asarray(["single_turn_agent", "tool_agent"], dtype=object)
     with pytest.raises(ValueError, match="every row.*single_turn_agent"):
         trainer._process_candidate_after_reward_before_filter(candidate, {}, {}, 1)
 
@@ -402,9 +397,7 @@ def test_candidate_hook_orders_continuation_long_reward_replacement_and_preserve
         or SimpleNamespace(reward_tensor=torch.ones(2, 1), extra_info={"acc": [0, 1], "score": [0, 1]}),
         trainer,
     )
-    result = _result(
-        uids=["u", "u"], short=[0, 1], long=[0, 1], boundary=[0, 1], tails=[0, 1], normal_tokens=8
-    )
+    result = _result(uids=["u", "u"], short=[0, 1], long=[0, 1], boundary=[0, 1], tails=[0, 1], normal_tokens=8)
 
     def apply(candidate, **_kwargs):
         events.append("replace")
@@ -838,9 +831,7 @@ def _run_fit_harness(monkeypatch, *, mode, generation_batches=2, failure_stage=N
     trainer.async_rollout_manager = RolloutManager()
 
     class Client:
-        async def start_grouped(
-            self, request_id, *, prompt_ids, sampling_params, routing_key
-        ):
+        async def start_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key):
             class Tracked:
                 backend_request_id = request_id
                 server_id = "server"
@@ -1041,14 +1032,13 @@ def test_shadow_fit_is_actor_batch_filter_selection_and_rng_equivalent_to_off(mo
     ]
     assert [metric for metric, _keys, _uids in shadow.filter_spy] == ["acc", "acc"]
     assert all("boundary_acc" not in keys and "boundary_task_score" not in keys for _m, keys, _u in shadow.filter_spy)
-    assert baseline.logger.records[-1][0]["train/num_gen_batches"] == shadow.logger.records[-1][0][
-        "train/num_gen_batches"
-    ]
-    assert baseline.logger.records[-1][0]["train/retained_prompt_groups"] == shadow.logger.records[-1][0][
-        "train/retained_prompt_groups"
-    ]
-    assert shadow.logger.records[-1][0][
-        "boundary_return/shadow_candidate_noop_gate_pass_count"
-    ] == 2.0
+    assert (
+        baseline.logger.records[-1][0]["train/num_gen_batches"] == shadow.logger.records[-1][0]["train/num_gen_batches"]
+    )
+    assert (
+        baseline.logger.records[-1][0]["train/retained_prompt_groups"]
+        == shadow.logger.records[-1][0]["train/retained_prompt_groups"]
+    )
+    assert shadow.logger.records[-1][0]["boundary_return/shadow_candidate_noop_gate_pass_count"] == 2.0
     _assert_rng_equal(baseline.rng_before, baseline.rng_after)
     _assert_rng_equal(shadow.rng_before, shadow.rng_after)
