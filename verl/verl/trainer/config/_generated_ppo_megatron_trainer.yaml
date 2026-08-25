@@ -358,6 +358,9 @@ actor_rollout_ref:
       task_score_key: score
       max_concurrent_requests: 128
       request_batch_size: 512
+      request_timeout_seconds: 600.0
+      long_reward_chunk_size: 256
+      verify_shadow_candidate_noop: false
       seed: 0
       strict: true
     multi_turn:

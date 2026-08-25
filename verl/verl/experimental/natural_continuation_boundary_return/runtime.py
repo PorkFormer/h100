@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -27,6 +29,9 @@ import numpy as np
 from verl import DataProto
 from verl.trainer.ppo.forced_answer_probe import detect_hit_response_cap
 from verl.utils.ray_utils import auto_await
+
+logger = logging.getLogger(__file__)
+logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,8 @@ class BoundaryContinuationBranchResult:
     branch_id: int
     tail_token_ids: tuple[int, ...]
     actual_policy_version: int | None
+    stop_reason: str | None = None
+    finish_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,8 @@ class BoundaryContinuationGeneration:
     prefix_token_ids: tuple[int, ...]
     tail_token_ids: tuple[int, ...]
     actual_policy_version: int
+    stop_reason: str | None = None
+    finish_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +81,10 @@ class BoundaryContinuationCapture:
     requests: tuple[BoundaryContinuationRequest, ...]
     generations: tuple[BoundaryContinuationGeneration, ...]
     normal_response_tokens: int
+    continuation_input_token_lengths: tuple[int, ...] = ()
+    long_hit_response_cap: np.ndarray | None = None
+    request_timeout_seconds: float = 0.0
+    continuation_timeout_count: int = 0
 
 
 def _stable_digest(parts: Sequence[Any]) -> str:
@@ -241,6 +254,37 @@ def aggregate_continuation_results(
                 f"continuation actual policy version {result.actual_policy_version} does not match "
                 f"published version {expected_policy_version}"
             )
+        def normalize_reason(reason: Any) -> str | None:
+            if reason is None:
+                return None
+            reason = getattr(reason, "value", reason)
+            return str(reason).strip().lower().split(".")[-1]
+
+        stop_reason = normalize_reason(result.stop_reason)
+        finish_reason = normalize_reason(result.finish_reason)
+        invalid_terminal_markers = ("abort", "error", "cancel", "timeout")
+        if (
+            stop_reason is None
+            or finish_reason is None
+            or any(marker in stop_reason for marker in invalid_terminal_markers)
+            or any(marker in finish_reason for marker in invalid_terminal_markers)
+        ):
+            raise ValueError(
+                f"continuation request {request.request_id} has invalid terminal state "
+                f"stop_reason={result.stop_reason!r}, finish_reason={result.finish_reason!r}"
+            )
+        if len(result.tail_token_ids) > int(request.max_tokens):
+            raise ValueError(
+                f"continuation request {request.request_id} returned {len(result.tail_token_ids)} tokens "
+                f"above max_tokens={request.max_tokens}"
+            )
+        if not result.tail_token_ids and not (
+            {stop_reason, finish_reason} & {"eos", "stop", "completed"}
+        ):
+            raise ValueError(
+                f"continuation request {request.request_id} returned a zero-token tail with illegal "
+                f"terminal state stop_reason={result.stop_reason!r}, finish_reason={result.finish_reason!r}"
+            )
         generations.append(
             BoundaryContinuationGeneration(
                 parent_index=request.parent_index,
@@ -252,6 +296,8 @@ def aggregate_continuation_results(
                 prefix_token_ids=request.prefix_token_ids,
                 tail_token_ids=tuple(int(token) for token in result.tail_token_ids),
                 actual_policy_version=int(result.actual_policy_version),
+                stop_reason=result.stop_reason,
+                finish_reason=result.finish_reason,
             )
         )
     return tuple(generations)
@@ -292,56 +338,214 @@ async def run_boundary_continuations(
             requests=(),
             generations=(),
             normal_response_tokens=normal_response_tokens,
+            continuation_input_token_lengths=(),
+            long_hit_response_cap=np.zeros(len(rollout_batch), dtype=bool),
+            request_timeout_seconds=float(config.request_timeout_seconds),
         )
 
-    semaphore = asyncio.Semaphore(config.max_concurrent_requests)
+    logger.info(
+        "boundary_return event=continuation_start policy_version=%d request_count=%d timeout_seconds=%s",
+        policy_version,
+        len(requests),
+        config.request_timeout_seconds,
+    )
+    if not hasattr(client, "start_grouped"):
+        raise TypeError("boundary_return requires a tracked grouped-request client")
 
-    async def generate_one(request: BoundaryContinuationRequest) -> list[BoundaryContinuationBranchResult]:
-        params = dict(sampling_params)
-        params.update({"n": 1, "seed": request.seed, "max_tokens": request.max_tokens})
-        async with semaphore:
-            outputs = await client.generate_grouped(
+    async def run_wave(
+        wave: Sequence[BoundaryContinuationRequest],
+    ) -> list[list[BoundaryContinuationBranchResult]]:
+        tracked_requests: list[Any] = []
+        completed_tracked_ids: set[int] = set()
+
+        def request_params(request: BoundaryContinuationRequest) -> dict[str, Any]:
+            params = dict(sampling_params)
+            params.update({"n": 1, "seed": request.seed, "max_tokens": request.max_tokens})
+            return params
+
+        async def start_one(request: BoundaryContinuationRequest) -> tuple[Any, Any]:
+            tracked = await client.start_grouped(
                 request.request_id,
                 prompt_ids=list(request.input_token_ids),
-                sampling_params=params,
+                sampling_params=request_params(request),
                 routing_key=request.routing_key,
             )
-        results: list[BoundaryContinuationBranchResult] = []
-        for fallback_branch, output in enumerate(outputs):
-            extra_fields = output.extra_fields or {}
-            branch_id = int(extra_fields.get("branch_id", fallback_branch))
-            actual_version = extra_fields.get("global_steps")
-            results.append(
-                BoundaryContinuationBranchResult(
-                    request_id=request.request_id,
-                    branch_id=branch_id,
-                    tail_token_ids=tuple(int(token) for token in output.token_ids),
-                    actual_policy_version=int(actual_version) if actual_version is not None else None,
-                )
-            )
-        return results
+            return request, tracked
 
-    results: list[BoundaryContinuationBranchResult] = []
-    for start in range(0, len(requests), config.request_batch_size):
-        chunk = requests[start : start + config.request_batch_size]
-        tasks = [asyncio.create_task(generate_one(request)) for request in chunk]
-        try:
-            grouped = await asyncio.gather(*tasks)
-        except BaseException:
+        async def generate_one(
+            request: BoundaryContinuationRequest,
+            tracked: Any,
+        ) -> list[BoundaryContinuationBranchResult]:
+            outputs = await asyncio.wait_for(
+                tracked.result(), timeout=float(config.request_timeout_seconds)
+            )
+            completed_tracked_ids.add(id(tracked))
+            wave_results: list[BoundaryContinuationBranchResult] = []
+            for fallback_branch, output in enumerate(outputs):
+                extra_fields = output.extra_fields or {}
+                branch_id = int(extra_fields.get("branch_id", fallback_branch))
+                actual_version = extra_fields.get("global_steps")
+                wave_results.append(
+                    BoundaryContinuationBranchResult(
+                        request_id=request.request_id,
+                        branch_id=branch_id,
+                        tail_token_ids=tuple(int(token) for token in output.token_ids),
+                        actual_policy_version=int(actual_version) if actual_version is not None else None,
+                        stop_reason=output.stop_reason,
+                        finish_reason=extra_fields.get("finish_reason"),
+                    )
+                )
+            return wave_results
+
+        async def cleanup(primary_error: BaseException, tasks: Sequence[asyncio.Task]) -> None:
+            cleanup_errors: list[BaseException] = []
+            active = [tracked for tracked in tracked_requests if id(tracked) not in completed_tracked_ids]
+            logger.warning(
+                "boundary_return cleanup event=abort_start backend_request_ids=%s",
+                [tracked.backend_request_id for tracked in active],
+            )
+            abort_results = await asyncio.gather(
+                *(tracked.abort() for tracked in active), return_exceptions=True
+            )
+            abort_errors = [result for result in abort_results if isinstance(result, BaseException)]
+            cleanup_errors.extend(abort_errors)
+            logger.warning(
+                "boundary_return cleanup event=abort_ack count=%d errors=%d",
+                len(active),
+                len(abort_errors),
+            )
+
+            drain_handles: dict[str, Any] = {}
+            for tracked in tracked_requests:
+                drain_handles.setdefault(str(tracked.server_id), tracked)
+            logger.warning(
+                "boundary_return cleanup event=drain_start server_ids=%s",
+                list(drain_handles),
+            )
+            drain_results = await asyncio.gather(
+                *(tracked.drain() for tracked in drain_handles.values()), return_exceptions=True
+            )
+            drain_errors = [result for result in drain_results if isinstance(result, BaseException)]
+            cleanup_errors.extend(drain_errors)
+            logger.warning(
+                "boundary_return cleanup event=drain_ack count=%d errors=%d",
+                len(drain_handles),
+                len(drain_errors),
+            )
+
+            release_errors: list[BaseException] = []
+            if not drain_errors:
+                logger.warning(
+                    "boundary_return cleanup event=release_start server_ids=%s",
+                    [tracked.server_id for tracked in tracked_requests],
+                )
+                release_results = await asyncio.gather(
+                    *(tracked.release() for tracked in tracked_requests), return_exceptions=True
+                )
+                release_errors = [
+                    result for result in release_results if isinstance(result, BaseException)
+                ]
+                cleanup_errors.extend(release_errors)
+                logger.warning(
+                    "boundary_return cleanup event=release_ack count=%d errors=%d",
+                    len(tracked_requests),
+                    len(release_errors),
+                )
             for task in tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            logger.warning("boundary_return cleanup event=local_settle count=%d", len(tasks))
+            for cleanup_error in cleanup_errors:
+                primary_error.add_note(
+                    f"boundary continuation cleanup error: {type(cleanup_error).__name__}: {cleanup_error}"
+                )
+            cleanup_attested = (
+                getattr(primary_error, "boundary_remote_cleanup_attested", True)
+                and not drain_errors
+                and not release_errors
+            )
+            setattr(primary_error, "boundary_remote_cleanup_attested", cleanup_attested)
+            setattr(
+                primary_error,
+                "boundary_continuation_timeout_count",
+                int(isinstance(primary_error, TimeoutError)),
+            )
+            setattr(
+                primary_error,
+                "boundary_continuation_request_timeout_seconds",
+                float(config.request_timeout_seconds),
+            )
+            logger.warning(
+                "boundary_return event=request_failure error_type=%s timeout_count=%d "
+                "timeout_seconds=%s cleanup_attested=%s",
+                type(primary_error).__name__,
+                int(isinstance(primary_error, TimeoutError)),
+                config.request_timeout_seconds,
+                cleanup_attested,
+            )
+
+        start_results = await asyncio.gather(
+            *(start_one(request) for request in wave), return_exceptions=True
+        )
+        primary_start_error = next(
+            (result for result in start_results if isinstance(result, BaseException)), None
+        )
+        request_handles: list[tuple[BoundaryContinuationRequest, Any]] = []
+        for result in start_results:
+            if not isinstance(result, BaseException):
+                request, tracked = result
+                tracked_requests.append(tracked)
+                request_handles.append((request, tracked))
+        if primary_start_error is not None:
+            await cleanup(primary_start_error, ())
+            raise primary_start_error
+
+        tasks = [
+            asyncio.create_task(generate_one(request, tracked))
+            for request, tracked in request_handles
+        ]
+        try:
+            grouped = await asyncio.gather(*tasks)
+            for tracked in tracked_requests:
+                await tracked.release()
+            return grouped
+        except BaseException as primary_error:
+            await cleanup(primary_error, tasks)
             raise
-        results.extend(result for group in grouped for result in group)
+
+    results: list[BoundaryContinuationBranchResult] = []
+    for start in range(0, len(requests), config.request_batch_size):
+        chunk = requests[start : start + config.request_batch_size]
+        for wave_start in range(0, len(chunk), config.max_concurrent_requests):
+            wave = chunk[wave_start : wave_start + config.max_concurrent_requests]
+            grouped = await run_wave(wave)
+            results.extend(result for group in grouped for result in group)
     generations = aggregate_continuation_results(
         requests,
         results,
         expected_policy_version=policy_version,
     )
+    logger.info(
+        "boundary_return event=continuation_complete policy_version=%d request_count=%d",
+        policy_version,
+        len(requests),
+    )
+    requests_by_id = {request.request_id: request for request in requests}
+    long_hit_response_cap = np.zeros(len(rollout_batch), dtype=bool)
+    for generation in generations:
+        request = requests_by_id[generation.request_id]
+        long_hit_response_cap[generation.parent_index] = (
+            str(generation.finish_reason).lower() == "length"
+            or len(generation.tail_token_ids) >= request.max_tokens
+        )
     return BoundaryContinuationCapture(
         hit_response_cap=hit_cap,
         requests=tuple(requests),
         generations=generations,
         normal_response_tokens=normal_response_tokens,
+        continuation_input_token_lengths=tuple(len(request.input_token_ids) for request in requests),
+        long_hit_response_cap=long_hit_response_cap,
+        request_timeout_seconds=float(config.request_timeout_seconds),
+        continuation_timeout_count=0,
     )

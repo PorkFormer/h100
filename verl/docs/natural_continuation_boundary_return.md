@@ -14,8 +14,12 @@ The feature is disabled by default under
 `actor_rollout_ref.rollout.boundary_return.mode=off`. The supported modes are:
 
 - `off`: return before cap detection and add no fields or metrics.
-- `shadow`: generate and score continuations, but keep selection, the actor
-  batch, every training tensor, row order, and RNG state equal to the baseline.
+- `shadow`: generate and score continuations. Given the same normal candidate
+  batches, its candidate `DataProto`, filter inputs and selection, actor batch,
+  training tensors, row order, and driver RNG state are no-ops relative to
+  `off`. This conditional gate does not claim bitwise equality of subsequent
+  real-vLLM rollouts across separate launches, because auxiliary requests can
+  perturb backend scheduling.
 - `replace`: replace the task-return boundary for cap-hit rows before Dynamic Sampling.
   The resolved Hydra filter metric remains the original correctness
   key; only a local effective metric named `boundary_acc` is used.
@@ -23,8 +27,11 @@ The feature is disabled by default under
 For every real cap hit, the continuation request contains exactly the valid
 original prompt tokens followed by the valid original response prefix. It adds
 no instruction, answer prefix, gold answer, or extra stop. Sampling is `K=1`
-with the normal rollout temperature, top-p, top-k, and repetition penalty, and
-`max_tokens=L-prefix_length`. Immediate EOS and a zero-token tail are valid.
+and uses the same sampling-parameter builder as normal rollout, with
+`max_tokens=L-prefix_length`. Immediate EOS and a zero-token tail are valid only
+when the backend reports a legal EOS/stop/completed terminal state. Abort,
+error, cancelled, timeout, or missing terminal states fail closed, as does a
+tail longer than its request budget.
 
 The verifier scores an independent full-response reward-only batch:
 
@@ -34,7 +41,9 @@ response = original H-prefix + natural tail
 ```
 
 All row-aligned verifier input metadata and non-reward meta-info are copied.
-Short reward outputs and boundary-internal fields are excluded. Both short and
+Short reward outputs and boundary-internal fields are excluded. Long scoring is
+chunked (256 rows by default), and only the explicit scalar fields survive each
+chunk; long shaped reward is discarded. Both short and
 long rewards must expose explicit, aligned, finite scalar fields for raw
 correctness and task score. The default keys are `acc` and `score`. A scalar
 reward-manager result with no explicit task-score field fails closed. The
@@ -93,8 +102,11 @@ publish(v)
 If the first candidate batch retains too few prompt groups, the next candidate
 batch uses the same published policy version. Rollout replicas stay awake; no
 weights are updated between batches. Every normal and continuation output is
-validated again. Continuation or long-reward failure cancels sibling requests,
-sleeps replicas exactly once, and is re-raised before filtering or actor update.
+validated again. Continuation or long-reward failure remotely aborts active
+sibling vLLM requests, waits for abort acknowledgements and server drain, then
+awaits load-balancer release before settling local tasks and sleeping replicas.
+Cleanup errors are attached to, and never replace, the primary exception. If
+remote drain/release cannot be attested, replicas are not slept.
 
 Continuation tails never enter the actor batch. Responses, input IDs, attention
 and position IDs, response masks, old/ref log-probabilities, advantages,
@@ -118,9 +130,11 @@ batch quantiles.
 - `regressed_rate_given_cap_success` divides regressed trajectories by cap-hit
   short-correct trajectories with a valid long score. H-correct to L-wrong must
   retain its negative task-score delta.
-- `unlocked_group_rate` divides short-budget all-wrong UID groups that become
-  positive-variance under `boundary_acc` by all short-budget all-wrong UID
-  groups. A zero denominator reports zero.
+- `unlocked_group_rate` uses actual per-UID standard deviation: it divides UID
+  groups with short-return std at or below the shared numeric tolerance that
+  become positive-std under `boundary_acc` by all short-locked groups.
+  `newly_locked_group_rate` records the reverse transition. Separate
+  all-wrong-unlocked counts/rates retain the original all-wrong diagnostic.
 
 The four transition counts and rates are logged separately:
 
@@ -131,17 +145,30 @@ The four transition counts and rates are logged separately:
 
 Additional counts include candidates, cap hits, valid long scores, recovered
 and regressed trajectories, total tail tokens, tail mean/p50/p90, task-score
-delta mean/min/max, short-all-wrong groups, and unlocked groups.
+delta mean/min/max, short-all-wrong groups, unlocked/newly-locked groups,
+continuation request timeouts, input-token totals/mean/max, and long-budget cap
+hits. `request_timeout_seconds` defaults to 600.
+
+For a same-batch real-vLLM shadow gate, set
+`boundary_return.verify_shadow_candidate_noop=true` and require
+`boundary_return/shadow_candidate_noop_gate_pass_count` to equal the number of
+normal candidate batches (at least two for the smoke gate). This compares each
+real normal candidate batch to the shadow-processed `DataProto` in the same
+run; it is not a cross-launch token identity test.
 
 ## Strict scope and limitations
 
-The active feature requires synchronous GRPO, no critic, vLLM, single-turn
-rollout, `ignore_eos=false`, no reward-side KL, `L > H`, and
+The active feature requires synchronous GRPO training with `rollout.mode=async`,
+no critic, vLLM, `agent.default_agent_loop=single_turn_agent`, text-only input,
+`ignore_eos=false`, no reward-side KL, `L > H`, and
 `max_model_len >= prompt_length + L`. `replace` additionally requires
 `filter_groups.enable=true` and the Hydra filter metric to equal the configured
 correctness key.
 
-It rejects concurrent forced-answer or FA-TR, FA-CAC/FA-RAR, Probe Credit,
+The v1 reward contract is the registered DAPO manager with exact keys
+`correctness_key=acc` and `task_score_key=score`; reward-model, importlib/custom,
+and sandbox reward paths fail preflight. It rejects concurrent forced-answer or
+FA-TR, FA-CAC/FA-RAR, Probe Credit,
 Readiness Dominance, BSSF, OBCF, active rollout correction, distillation,
 teacher policy, and configured profiling steps. The first implementation is
 strict-only and targets text-only math-verifier workloads; multi-turn/tool and

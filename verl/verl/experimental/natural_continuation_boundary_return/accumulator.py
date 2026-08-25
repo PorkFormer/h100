@@ -21,6 +21,7 @@ from collections import defaultdict
 import numpy as np
 
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import (
+    BOUNDARY_NUMERIC_TOLERANCE,
     BoundaryReturnBatchResult,
 )
 
@@ -54,6 +55,18 @@ class BoundaryReturnStepAccumulator:
         regressed = cap_success & ~long_success
         tail_values = tails[hit]
         normal_tokens = sum(batch.normal_response_tokens for batch in self._batches)
+        input_token_lengths = np.concatenate(
+            [batch.continuation_input_token_lengths for batch in self._batches]
+        )
+        long_cap = np.concatenate(
+            [
+                batch.long_hit_response_cap
+                if len(batch.long_hit_response_cap) == len(batch.hit_response_cap)
+                else np.zeros(len(batch.hit_response_cap), dtype=bool)
+                for batch in self._batches
+            ]
+        )
+        timeout_count = sum(batch.continuation_timeout_count for batch in self._batches)
 
         grouped_short: dict[str, list[float]] = defaultdict(list)
         grouped_boundary: dict[str, list[float]] = defaultdict(list)
@@ -65,11 +78,31 @@ class BoundaryReturnStepAccumulator:
             for uid, values in grouped_short.items()
             if values and all(value < self.correctness_threshold for value in values)
         ]
+        short_group_std = {
+            uid: float(np.std(np.asarray(values, dtype=np.float64)))
+            for uid, values in grouped_short.items()
+        }
+        boundary_group_std = {
+            uid: float(np.std(np.asarray(values, dtype=np.float64)))
+            for uid, values in grouped_boundary.items()
+        }
+        short_locked = [
+            uid for uid, std in short_group_std.items() if std <= BOUNDARY_NUMERIC_TOLERANCE
+        ]
+        short_unlocked = [
+            uid for uid, std in short_group_std.items() if std > BOUNDARY_NUMERIC_TOLERANCE
+        ]
         unlocked = [
             uid
-            for uid in all_wrong
-            if np.ptp(np.asarray(grouped_boundary[uid], dtype=np.float64)) > 0.0
+            for uid in short_locked
+            if boundary_group_std[uid] > BOUNDARY_NUMERIC_TOLERANCE
         ]
+        newly_locked = [
+            uid
+            for uid in short_unlocked
+            if boundary_group_std[uid] <= BOUNDARY_NUMERIC_TOLERANCE
+        ]
+        all_wrong_unlocked = [uid for uid in all_wrong if uid in unlocked]
 
         metrics = {
             "boundary_return/candidate_count": float(len(hit)),
@@ -108,13 +141,46 @@ class BoundaryReturnStepAccumulator:
                 float(deltas[hit].max()) if hit.any() else 0.0
             ),
             "boundary_return/short_all_wrong_group_count": float(len(all_wrong)),
+            "boundary_return/short_locked_group_count": float(len(short_locked)),
             "boundary_return/unlocked_group_count": float(len(unlocked)),
             "boundary_return/unlocked_group_rate": (
-                float(len(unlocked) / len(all_wrong)) if all_wrong else 0.0
+                float(len(unlocked) / len(short_locked)) if short_locked else 0.0
+            ),
+            "boundary_return/newly_locked_group_count": float(len(newly_locked)),
+            "boundary_return/newly_locked_group_rate": (
+                float(len(newly_locked) / len(short_unlocked)) if short_unlocked else 0.0
+            ),
+            "boundary_return/all_wrong_unlocked_group_count": float(len(all_wrong_unlocked)),
+            "boundary_return/all_wrong_unlocked_group_rate": (
+                float(len(all_wrong_unlocked) / len(all_wrong)) if all_wrong else 0.0
             ),
             "boundary_return/prefix_penalty_drift_max": float(
                 max(
                     batch.metrics.get("boundary_return/prefix_penalty_drift_max", 0.0)
+                    for batch in self._batches
+                )
+            ),
+            "boundary_return/continuation_request_count": float(len(input_token_lengths)),
+            "boundary_return/continuation_timeout_count": float(timeout_count),
+            "boundary_return/continuation_request_timeout_seconds": float(
+                max(batch.request_timeout_seconds for batch in self._batches)
+            ),
+            "boundary_return/continuation_input_tokens": float(input_token_lengths.sum()),
+            "boundary_return/continuation_input_tokens_mean": (
+                float(input_token_lengths.mean()) if len(input_token_lengths) else 0.0
+            ),
+            "boundary_return/continuation_input_tokens_max": (
+                float(input_token_lengths.max()) if len(input_token_lengths) else 0.0
+            ),
+            "boundary_return/long_cap_count": float((long_cap & hit).sum()),
+            "boundary_return/long_cap_rate_given_cap": (
+                float((long_cap & hit).sum() / hit.sum()) if hit.any() else 0.0
+            ),
+            "boundary_return/shadow_candidate_noop_gate_pass_count": float(
+                sum(
+                    batch.metrics.get(
+                        "boundary_return/shadow_candidate_noop_gate_pass_count", 0.0
+                    )
                     for batch in self._batches
                 )
             ),

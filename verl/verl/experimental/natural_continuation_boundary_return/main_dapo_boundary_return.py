@@ -24,6 +24,7 @@ from omegaconf import OmegaConf
 
 from verl.experimental.natural_continuation_boundary_return.dapo_trainer import (
     RayDAPOBoundaryReturnTrainer,
+    validate_boundary_return_preflight,
 )
 from verl.experimental.reward_loop import migrate_legacy_reward_impl
 from verl.trainer.main_ppo import TaskRunner, create_rl_dataset, create_rl_sampler, run_ppo
@@ -40,6 +41,7 @@ class BoundaryReturnTaskRunner(TaskRunner):
         pprint(OmegaConf.to_container(config, resolve=True))
         print(f"BoundaryReturnTaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
         OmegaConf.resolve(config)
+        validate_boundary_return_preflight(config)
 
         actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(config)
         self.add_critic_worker(config)
@@ -103,6 +105,8 @@ class BoundaryReturnTaskRunner(TaskRunner):
 def main(config):
     auto_set_device(config)
     config = migrate_legacy_reward_impl(config)
+    OmegaConf.resolve(config)
+    validate_boundary_return_preflight(config)
     runner_class = ray.remote(num_cpus=1)(BoundaryReturnTaskRunner)
     run_ppo(config, task_runner_class=runner_class)
 

@@ -77,6 +77,9 @@ class BoundaryReturnConfig(BaseConfig):
     task_score_key: str = "score"
     max_concurrent_requests: int = 128
     request_batch_size: int = 512
+    request_timeout_seconds: float = 600.0
+    long_reward_chunk_size: int = 256
+    verify_shadow_candidate_noop: bool = False
     seed: int = 0
     strict: bool = True
 
@@ -104,6 +107,21 @@ class BoundaryReturnConfig(BaseConfig):
                 raise ValueError(f"{prefix}.{name} must be a positive integer")
         if self.request_batch_size < self.max_concurrent_requests:
             raise ValueError(f"{prefix}.request_batch_size must be >= max_concurrent_requests")
+        if (
+            not isinstance(self.request_timeout_seconds, (int, float))
+            or isinstance(self.request_timeout_seconds, bool)
+            or not math.isfinite(self.request_timeout_seconds)
+            or self.request_timeout_seconds <= 0
+        ):
+            raise ValueError(f"{prefix}.request_timeout_seconds must be finite and positive")
+        if (
+            not isinstance(self.long_reward_chunk_size, int)
+            or isinstance(self.long_reward_chunk_size, bool)
+            or self.long_reward_chunk_size <= 0
+        ):
+            raise ValueError(f"{prefix}.long_reward_chunk_size must be a positive integer")
+        if not isinstance(self.verify_shadow_candidate_noop, bool):
+            raise ValueError(f"{prefix}.verify_shadow_candidate_noop must be boolean")
         if not isinstance(self.seed, int) or isinstance(self.seed, bool):
             raise ValueError(f"{prefix}.seed must be an integer")
         if self.strict is not True:

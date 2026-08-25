@@ -80,6 +80,8 @@ python -m verl.experimental.natural_continuation_boundary_return.main_dapo_bound
   actor_rollout_ref.rollout.boundary_return.task_score_key=score \
   actor_rollout_ref.rollout.boundary_return.max_concurrent_requests=128 \
   actor_rollout_ref.rollout.boundary_return.request_batch_size=512 \
+  actor_rollout_ref.rollout.boundary_return.request_timeout_seconds=600 \
+  actor_rollout_ref.rollout.boundary_return.long_reward_chunk_size=256 \
   actor_rollout_ref.rollout.boundary_return.seed=42 \
   actor_rollout_ref.rollout.boundary_return.strict=true \
   actor_rollout_ref.ref.log_prob_use_dynamic_bsz=false \

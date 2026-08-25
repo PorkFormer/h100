@@ -187,6 +187,19 @@ def test_required_reward_scalars_fail_closed_including_scalar_reward_manager(out
         )
 
 
+@pytest.mark.parametrize("failure_key", ["error", "timeout"])
+def test_short_reward_extraction_rejects_verifier_failures(failure_key):
+    candidate = _candidate()
+    candidate.non_tensor_batch[failure_key] = np.asarray([None, None, "failed", None, None], dtype=object)
+    with pytest.raises(ValueError, match=failure_key):
+        apply_boundary_return(
+            candidate,
+            capture=_capture(),
+            long_reward_output=_long_output(),
+            config=_config("shadow"),
+        )
+
+
 def test_shadow_keeps_candidate_bitwise_unchanged_and_returns_isolated_arrays():
     candidate = _candidate()
     tensor_before = {key: value.clone() for key, value in candidate.batch.items()}
@@ -285,3 +298,60 @@ def test_replacement_rejects_missing_cap_score_duplicate_parent_and_empty_prefix
             long_reward_output=_long_output(),
             config=_config(),
         )
+
+
+def test_vectorized_terminal_correction_handles_6144_all_cap_rows():
+    row_count = 6144
+    prompts = torch.ones((row_count, 2), dtype=torch.long)
+    responses = torch.ones((row_count, 4), dtype=torch.long)
+    mask = torch.ones((row_count, 6), dtype=torch.long)
+    scores = torch.zeros((row_count, 4), dtype=torch.float32)
+    candidate = DataProto.from_dict(
+        tensors={
+            "prompts": prompts,
+            "responses": responses,
+            "input_ids": torch.cat((prompts, responses), dim=-1),
+            "attention_mask": mask,
+            "position_ids": torch.arange(6).repeat(row_count, 1),
+            "response_mask": torch.ones_like(responses),
+            "token_level_scores": scores.clone(),
+            "token_level_rewards": scores.clone(),
+        },
+        non_tensors={
+            "uid": np.asarray([f"u-{row}" for row in range(row_count)], dtype=object),
+            "acc": np.zeros(row_count),
+            "score": np.zeros(row_count),
+        },
+    )
+    generations = tuple(
+        BoundaryContinuationGeneration(
+            parent_index=row,
+            request_id=f"r-{row}",
+            branch_id=0,
+            uid=f"u-{row}",
+            trajectory_id=f"t-{row}",
+            prompt_token_ids=(1, 1),
+            prefix_token_ids=(1, 1, 1, 1),
+            tail_token_ids=(2,),
+            actual_policy_version=7,
+            stop_reason="completed",
+            finish_reason="stop",
+        )
+        for row in range(row_count)
+    )
+    capture = BoundaryContinuationCapture(
+        hit_response_cap=np.ones(row_count, dtype=bool),
+        requests=(),
+        generations=generations,
+        normal_response_tokens=row_count * 4,
+    )
+    output = BoundaryRewardOutput(
+        reward_tensor=torch.full((row_count, 1), 1.0e30),
+        extra_info={"acc": np.ones(row_count), "score": np.ones(row_count)},
+    )
+
+    result = apply_boundary_return(candidate, capture=capture, long_reward_output=output, config=_config())
+
+    assert torch.count_nonzero(candidate.batch["token_level_scores"][:, :-1]) == 0
+    assert torch.equal(candidate.batch["token_level_scores"][:, -1], torch.ones(row_count))
+    assert result.metrics["boundary_return/prefix_penalty_drift_max"] == 0.0

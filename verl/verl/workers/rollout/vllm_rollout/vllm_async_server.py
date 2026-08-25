@@ -667,6 +667,7 @@ class vLLMHttpServer:
                         "branch_id": branch_id,
                         "text": completion.text,
                         "global_steps": self.global_steps,
+                        "finish_reason": finish_reason,
                     },
                 )
             )

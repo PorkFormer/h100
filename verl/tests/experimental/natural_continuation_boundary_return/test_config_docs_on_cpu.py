@@ -52,6 +52,21 @@ def test_entrypoint_selects_only_boundary_return_trainer():
     assert "RayDAPOBoundaryReturnTrainer(" in source
     assert "RayDAPOProbeCreditTrainer(" not in source
     assert 'config_name="natural_continuation_boundary_return_dapo_trainer"' in source
+    preflight_positions = [
+        index for index in range(len(source)) if source.startswith("validate_boundary_return_preflight(config)", index)
+    ]
+    assert len(preflight_positions) == 2
+    assert preflight_positions[0] < source.index("self.add_actor_rollout_worker(config)")
+    assert preflight_positions[0] < source.index("copy_to_local(")
+    assert preflight_positions[0] < source.index("self.init_resource_pool_mgr(config)")
+    assert preflight_positions[0] < source.index("trainer.init_workers()")
+
+
+def test_shadow_documentation_limits_noop_claim_to_identical_normal_candidate_batches():
+    text = (ROOT / "docs" / "natural_continuation_boundary_return.md").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+    assert "Given the same normal candidate batches" in normalized
+    assert "does not claim bitwise equality of subsequent real-vLLM rollouts" in normalized
 
 
 def test_formal_example_keeps_h2048_actor_recipe_and_only_expands_continuation_context():

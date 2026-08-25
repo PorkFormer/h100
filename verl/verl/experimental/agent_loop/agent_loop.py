@@ -76,6 +76,24 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 DEFAULT_ROUTING_CACHE_SIZE = 10000
 
 
+def build_rollout_sampling_params(config: Any, *, validate: bool = False) -> dict[str, Any]:
+    """Build the sampling parameters shared by normal and auxiliary rollout calls."""
+    params = {
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "top_k": config.top_k,
+        "repetition_penalty": 1.0,
+        "logprobs": config.calculate_log_probs,
+    }
+    if validate:
+        params.update(
+            temperature=config.val_kwargs.temperature,
+            top_p=config.val_kwargs.top_p,
+            top_k=config.val_kwargs.top_k,
+        )
+    return params
+
+
 class AgentLoopMetrics(BaseModel):
     """Agent loop performance metrics."""
 
@@ -493,24 +511,12 @@ class AgentLoopWorker:
         """
         config = self.rollout_config
         validate = batch.meta_info.get("validate", False)
-        sampling_params = dict(
-            temperature=config.temperature,
-            top_p=config.top_p,
-            top_k=config.top_k,
-            repetition_penalty=1.0,
-            logprobs=config.calculate_log_probs,
-        )
+        sampling_params = build_rollout_sampling_params(config, validate=validate)
 
         def apply_greedy_sampling_params(params: dict[str, Any]) -> None:
             params["top_p"] = 1.0
             params["top_k"] = -1
             params["temperature"] = 0
-
-        # override sampling params for validation
-        if validate:
-            sampling_params["top_p"] = config.val_kwargs.top_p
-            sampling_params["top_k"] = config.val_kwargs.top_k
-            sampling_params["temperature"] = config.val_kwargs.temperature
 
         # by default, we assume it's a single turn agent
         if "agent_name" not in batch.non_tensor_batch:

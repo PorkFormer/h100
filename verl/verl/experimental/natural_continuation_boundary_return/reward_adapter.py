@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import copy
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from numbers import Real
 from typing import Any, Sequence
 
@@ -31,6 +31,9 @@ from verl.experimental.natural_continuation_boundary_return.runtime import (
     BoundaryContinuationCapture,
     BoundaryContinuationGeneration,
 )
+
+
+BOUNDARY_NUMERIC_TOLERANCE = 1.0e-6
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,14 @@ class BoundaryReturnBatchResult:
     normal_response_tokens: int
     uids: np.ndarray
     metrics: dict[str, float]
+    continuation_input_token_lengths: np.ndarray = field(
+        default_factory=lambda: np.asarray([], dtype=np.int64)
+    )
+    long_hit_response_cap: np.ndarray = field(
+        default_factory=lambda: np.asarray([], dtype=bool)
+    )
+    request_timeout_seconds: float = 0.0
+    continuation_timeout_count: int = 0
 
 
 def _boundary_internal_key(key: str) -> bool:
@@ -166,7 +177,11 @@ def extract_required_reward_scalars(
     for failure_key in ("error", "timeout"):
         if failure_key not in reward_output.extra_info:
             continue
-        failures = np.asarray(reward_output.extra_info[failure_key], dtype=object).reshape(-1)
+        failures = np.asarray(reward_output.extra_info[failure_key], dtype=object)
+        if failures.ndim != 1 or len(failures) != expected_count:
+            raise ValueError(
+                f"reward verifier {failure_key} field must have exactly {expected_count} rows"
+            )
         if any(value is not None and value != "" and value is not False for value in failures):
             raise ValueError(f"reward output contains verifier {failure_key}")
     return BoundaryRewardScalars(
@@ -235,7 +250,7 @@ def apply_boundary_return(
         reward_tensor=candidate.batch["token_level_scores"],
         extra_info={
             key: candidate.non_tensor_batch[key]
-            for key in (config.correctness_key, config.task_score_key)
+            for key in (config.correctness_key, config.task_score_key, "error", "timeout")
             if key in candidate.non_tensor_batch
         },
     )
@@ -254,11 +269,16 @@ def apply_boundary_return(
     long_acc = np.full(row_count, np.nan, dtype=np.float64)
     long_task = np.full(row_count, np.nan, dtype=np.float64)
     tail_lengths = np.zeros(row_count, dtype=np.int64)
-    for long_row, generation in enumerate(capture.generations):
-        parent = int(generation.parent_index)
-        long_acc[parent] = long.correctness[long_row]
-        long_task[parent] = long.task_score[long_row]
-        tail_lengths[parent] = len(generation.tail_token_ids)
+    parent_indices = np.asarray(
+        [int(generation.parent_index) for generation in capture.generations], dtype=np.int64
+    )
+    long_acc[parent_indices] = long.correctness
+    long_task[parent_indices] = long.task_score
+    tail_lengths[parent_indices] = np.fromiter(
+        (len(generation.tail_token_ids) for generation in capture.generations),
+        dtype=np.int64,
+        count=len(capture.generations),
+    )
 
     boundary_acc = short.correctness.copy()
     boundary_task = short.task_score.copy()
@@ -271,29 +291,40 @@ def apply_boundary_return(
         scores = candidate.batch["token_level_scores"]
         rewards = candidate.batch["token_level_rewards"]
         response_mask = candidate.batch.get("response_mask")
-        if scores.ndim != 2 or rewards.shape != scores.shape or response_mask is None or response_mask.shape != scores.shape:
+        if (
+            scores.ndim != 2
+            or rewards.shape != scores.shape
+            or response_mask is None
+            or response_mask.shape != scores.shape
+        ):
             raise ValueError("boundary_return requires aligned token scores, rewards, and response_mask")
         corrected = scores.clone()
         short_task_tensor = torch.as_tensor(
             short.task_score, dtype=scores.dtype, device=scores.device
         )
-        for parent in np.flatnonzero(hit_cap).tolist():
-            valid_positions = torch.nonzero(response_mask[parent].bool(), as_tuple=False).flatten()
-            if valid_positions.numel() == 0:
-                raise ValueError(f"cap-hit row {parent} has an empty response prefix mask")
-            last = int(valid_positions[-1].item())
-            corrected[parent, last] = corrected[parent, last] + torch.as_tensor(
-                task_delta[parent], dtype=corrected.dtype, device=corrected.device
-            )
+        cap_rows = torch.as_tensor(
+            np.flatnonzero(hit_cap), dtype=torch.long, device=response_mask.device
+        )
+        positions = torch.arange(response_mask.shape[1], device=response_mask.device).unsqueeze(0)
+        last_positions = torch.where(
+            response_mask[cap_rows].bool(), positions, torch.full_like(positions, -1)
+        ).amax(dim=1)
+        if torch.any(last_positions < 0):
+            bad_row = int(cap_rows[torch.nonzero(last_positions < 0, as_tuple=False)[0, 0]].item())
+            raise ValueError(f"cap-hit row {bad_row} has an empty response prefix mask")
+        delta_tensor = torch.as_tensor(
+            task_delta[np.flatnonzero(hit_cap)], dtype=corrected.dtype, device=corrected.device
+        )
+        corrected[cap_rows, last_positions] += delta_tensor
         boundary_task_tensor = torch.as_tensor(
             boundary_task, dtype=scores.dtype, device=scores.device
         )
         residual_before = scores.detach().sum(-1) - short_task_tensor
         residual_after = corrected.detach().sum(-1) - boundary_task_tensor
         prefix_drift_max = float((residual_after - residual_before).abs().max().item())
-        if prefix_drift_max > 1.0e-6:
+        if prefix_drift_max > BOUNDARY_NUMERIC_TOLERANCE:
             raise ValueError(f"boundary_return prefix shaping residual drifted by {prefix_drift_max}")
-        if prefix_drift_max < 1.0e-12:
+        if prefix_drift_max <= BOUNDARY_NUMERIC_TOLERANCE:
             prefix_drift_max = 0.0
         candidate.batch["token_level_scores"] = corrected
         candidate.batch["token_level_rewards"] = corrected.clone()
@@ -309,6 +340,24 @@ def apply_boundary_return(
     recovered = cap_failure & long_success
     regressed = cap_success & ~long_success
     tail_values = tail_lengths[hit_cap]
+    input_token_lengths = np.asarray(
+        getattr(capture, "continuation_input_token_lengths", ())
+        if getattr(capture, "continuation_input_token_lengths", ())
+        else [
+            len(generation.prompt_token_ids) + len(generation.prefix_token_ids)
+            for generation in capture.generations
+        ],
+        dtype=np.int64,
+    )
+    raw_long_cap = getattr(capture, "long_hit_response_cap", None)
+    long_hit_response_cap = (
+        np.asarray(raw_long_cap, dtype=bool)
+        if raw_long_cap is not None
+        else np.zeros(row_count, dtype=bool)
+    )
+    if long_hit_response_cap.ndim != 1 or len(long_hit_response_cap) != row_count:
+        raise ValueError("long_hit_response_cap must align with candidate rows")
+    long_cap_count = int((long_hit_response_cap & hit_cap).sum())
     metrics = {
         "boundary_return/hit_cap_count": float(hit_cap.sum()),
         "boundary_return/hit_cap_rate": float(hit_cap.mean()) if row_count else 0.0,
@@ -337,6 +386,24 @@ def apply_boundary_return(
             float(task_delta[hit_cap].mean()) if hit_cap.any() else 0.0
         ),
         "boundary_return/prefix_penalty_drift_max": prefix_drift_max,
+        "boundary_return/continuation_request_count": float(len(capture.generations)),
+        "boundary_return/continuation_timeout_count": float(
+            getattr(capture, "continuation_timeout_count", 0)
+        ),
+        "boundary_return/continuation_request_timeout_seconds": float(
+            getattr(capture, "request_timeout_seconds", 0.0)
+        ),
+        "boundary_return/continuation_input_tokens": float(input_token_lengths.sum()),
+        "boundary_return/continuation_input_tokens_mean": (
+            float(input_token_lengths.mean()) if len(input_token_lengths) else 0.0
+        ),
+        "boundary_return/continuation_input_tokens_max": (
+            float(input_token_lengths.max()) if len(input_token_lengths) else 0.0
+        ),
+        "boundary_return/long_cap_count": float(long_cap_count),
+        "boundary_return/long_cap_rate_given_cap": (
+            float(long_cap_count / hit_cap.sum()) if hit_cap.any() else 0.0
+        ),
     }
     metrics.update(_transition_metrics(short.correctness, long_acc, hit_cap, threshold))
     uids = candidate.non_tensor_batch.get("uid")
@@ -355,4 +422,8 @@ def apply_boundary_return(
         normal_response_tokens=int(capture.normal_response_tokens),
         uids=np.asarray(uids, dtype=object).copy(),
         metrics=metrics,
+        continuation_input_token_lengths=input_token_lengths,
+        long_hit_response_cap=long_hit_response_cap.copy(),
+        request_timeout_seconds=float(getattr(capture, "request_timeout_seconds", 0.0)),
+        continuation_timeout_count=int(getattr(capture, "continuation_timeout_count", 0)),
     )

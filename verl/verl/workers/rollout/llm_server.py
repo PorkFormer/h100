@@ -19,8 +19,10 @@ Utility classes for manage and request LLM servers:
 """
 
 import asyncio
+import inspect
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -38,6 +40,50 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 DEFAULT_ROUTING_CACHE_SIZE = 10000
+
+
+async def _await_if_needed(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+@dataclass
+class TrackedGroupedRequest:
+    """A grouped RPC whose remote request and load-balancer lease remain observable."""
+
+    logical_request_id: str
+    backend_request_id: str
+    server_id: str
+    server: Any
+    object_ref: Any
+    client: "LLMServerClient"
+    _released: bool = False
+
+    async def result(self) -> list[TokenOutput]:
+        return await _await_if_needed(self.object_ref)
+
+    async def abort(self) -> Any:
+        result = await _await_if_needed(
+            self.server.abort_request.remote(
+                request_id=self.backend_request_id,
+                reset_prefix_cache=False,
+            )
+        )
+        if isinstance(result, dict) and result.get("error"):
+            raise RuntimeError(
+                f"failed to abort grouped backend request {self.backend_request_id}: {result['error']}"
+            )
+        return result
+
+    async def drain(self) -> Any:
+        return await _await_if_needed(self.server.wait_for_requests_to_drain.remote())
+
+    async def release(self) -> None:
+        if self._released:
+            return
+        await self.client._release_server_awaited(self.server_id)
+        self._released = True
 
 
 @ray.remote
@@ -176,6 +222,13 @@ class LLMServerClient:
         # Awaiting here risks blocking the finally clause if the LB actor is unresponsive.
         self._load_balancer.release_server.remote(server_id=server_id)
 
+    async def _release_server_awaited(self, server_id: str) -> None:
+        """Release a lease with an acknowledgement for strict cleanup paths."""
+        if self._load_balancer is None:
+            await _await_if_needed(self._release_server(server_id))
+            return
+        await _await_if_needed(self._load_balancer.release_server.remote(server_id=server_id))
+
     @rollout_trace_op
     async def generate(
         self,
@@ -220,6 +273,44 @@ class LLMServerClient:
             self._release_server(server_id)
 
     @rollout_trace_op
+    async def start_grouped(
+        self,
+        request_id: str,
+        *,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        routing_key: str | None = None,
+        backend_request_id: str | None = None,
+    ) -> TrackedGroupedRequest:
+        """Start one grouped request while retaining every remote cleanup handle."""
+        server_id, server = await self._acquire_server(routing_key or request_id)
+        backend_request_id = str(backend_request_id or request_id)
+        try:
+            object_ref = server.generate_grouped.remote(
+                request_id=backend_request_id,
+                prompt_ids=list(prompt_ids),
+                sampling_params=dict(sampling_params),
+            )
+        except BaseException as primary_error:
+            try:
+                await self._release_server_awaited(server_id)
+            except BaseException as cleanup_error:
+                primary_error.add_note(
+                    f"grouped request lease cleanup error: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+                setattr(primary_error, "boundary_remote_cleanup_attested", False)
+            raise
+        return TrackedGroupedRequest(
+            logical_request_id=str(request_id),
+            backend_request_id=backend_request_id,
+            server_id=server_id,
+            server=server,
+            object_ref=object_ref,
+            client=self,
+        )
+
+    @rollout_trace_op
     async def generate_grouped(
         self,
         request_id: str,
@@ -229,15 +320,17 @@ class LLMServerClient:
         routing_key: str | None = None,
     ) -> list[TokenOutput]:
         """Generate every completion from one grouped sampling request."""
-        server_id, server = await self._acquire_server(routing_key or request_id)
+        tracked = await self.start_grouped(
+            request_id,
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+            routing_key=routing_key,
+            backend_request_id=uuid4().hex,
+        )
         try:
-            return await server.generate_grouped.remote(
-                request_id=uuid4().hex,
-                prompt_ids=list(prompt_ids),
-                sampling_params=dict(sampling_params),
-            )
+            return await tracked.result()
         finally:
-            self._release_server(server_id)
+            await tracked.release()
 
 
 class LLMServerManager:

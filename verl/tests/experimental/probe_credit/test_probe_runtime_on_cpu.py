@@ -200,6 +200,84 @@ def test_llm_server_client_generate_grouped_uses_one_rpc_and_copies_sampling_par
     assert sampling == {"n": 4, "seed": 17, "max_tokens": 8, "stop": ["\n"]}
 
 
+def test_llm_server_client_tracked_grouped_request_retains_remote_abort_and_drain_handles():
+    events = []
+    server = type("Server", (), {})()
+    server.generate_grouped = _RemoteMethod(
+        lambda **kwargs: events.append(("generate", kwargs["request_id"])) or []
+    )
+    server.abort_request = _RemoteMethod(
+        lambda **kwargs: events.append(("abort", kwargs["request_id"])) or {"aborted": True}
+    )
+    server.wait_for_requests_to_drain = _RemoteMethod(
+        lambda **_kwargs: events.append(("drain", None))
+    )
+    client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
+
+    async def acquire(_request_id):
+        return "server-1", server
+
+    async def release(server_id):
+        events.append(("release", server_id))
+
+    client._acquire_server = acquire
+    client._release_server_awaited = release
+
+    async def run():
+        tracked = await client.start_grouped(
+            "policy-7-uid-u-trajectory-0",
+            prompt_ids=[1, 2],
+            sampling_params={"n": 1, "max_tokens": 2},
+            routing_key="sticky-u",
+        )
+        assert tracked.server_id == "server-1"
+        assert tracked.server is server
+        assert tracked.object_ref is not None
+        assert tracked.backend_request_id == "policy-7-uid-u-trajectory-0"
+        await tracked.abort()
+        await tracked.drain()
+        await tracked.release()
+        await tracked.result()
+
+    asyncio.run(run())
+    assert events == [
+        ("abort", "policy-7-uid-u-trajectory-0"),
+        ("drain", None),
+        ("release", "server-1"),
+        ("generate", "policy-7-uid-u-trajectory-0"),
+    ]
+
+
+def test_start_grouped_cleanup_error_does_not_replace_primary_remote_start_error():
+    class FailingRemoteMethod:
+        def remote(self, **_kwargs):
+            raise RuntimeError("primary start boom")
+
+    server = type("Server", (), {"generate_grouped": FailingRemoteMethod()})()
+    client = LLMServerClient(config={"actor_rollout_ref": {}}, load_balancer_handle=None)
+
+    async def acquire(_request_id):
+        return "server-1", server
+
+    async def release(_server_id):
+        raise RuntimeError("release boom")
+
+    client._acquire_server = acquire
+    client._release_server_awaited = release
+
+    async def run():
+        await client.start_grouped(
+            "logical",
+            prompt_ids=[1],
+            sampling_params={"n": 1, "max_tokens": 1},
+        )
+
+    with pytest.raises(RuntimeError, match="primary start boom") as caught:
+        asyncio.run(run())
+    assert caught.value.boundary_remote_cleanup_attested is False
+    assert any("release boom" in note for note in getattr(caught.value, "__notes__", []))
+
+
 def test_grouped_client_routes_by_optional_key_but_keeps_backend_request_ids_unique():
     acquire_keys = []
     calls = []

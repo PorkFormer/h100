@@ -256,6 +256,13 @@ boundary_return:
   max_concurrent_requests: 128
   request_batch_size: 512
 
+  # Per-request timeout and verifier scoring chunk size.
+  request_timeout_seconds: 600.0
+  long_reward_chunk_size: 256
+
+  # Optional per-candidate DataProto no-op assertion for real-vLLM shadow gates.
+  verify_shadow_candidate_noop: false
+
   # Dedicated stable SHA seed namespace; does not touch global RNG streams.
   seed: 0
 

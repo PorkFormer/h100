@@ -23,8 +23,10 @@ import pytest
 import torch
 
 from verl import DataProto
+from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
 from verl.experimental.agent_loop.single_turn_agent_loop import SingleTurnAgentLoop
 from verl.experimental.natural_continuation_boundary_return.runtime import (
+    BoundaryContinuationBranchResult,
     BoundaryContinuationRequest,
     aggregate_continuation_results,
     build_continuation_requests,
@@ -78,6 +80,23 @@ def _normal_sampling() -> dict[str, object]:
     }
 
 
+def test_normal_and_continuation_share_one_sampling_parameter_builder():
+    rollout = SimpleNamespace(
+        temperature=0.9,
+        top_p=0.95,
+        top_k=-1,
+        calculate_log_probs=False,
+        val_kwargs=SimpleNamespace(temperature=0.0, top_p=1.0, top_k=-1),
+    )
+    assert build_rollout_sampling_params(rollout) == {
+        "temperature": 0.9,
+        "top_p": 0.95,
+        "top_k": -1,
+        "repetition_penalty": 1.0,
+        "logprobs": False,
+    }
+
+
 def test_boundary_return_typed_config_defaults_to_off_and_validates_strictly():
     config = BoundaryReturnConfig()
     assert config.mode == "off"
@@ -94,6 +113,8 @@ def test_boundary_return_typed_config_defaults_to_off_and_validates_strictly():
         ({"correctness_threshold": float("nan")}, "correctness_threshold"),
         ({"max_concurrent_requests": 0}, "max_concurrent_requests"),
         ({"request_batch_size": 1, "max_concurrent_requests": 2}, "request_batch_size"),
+        ({"request_timeout_seconds": 0}, "request_timeout_seconds"),
+        ({"long_reward_chunk_size": 0}, "long_reward_chunk_size"),
         ({"seed": True}, "seed"),
         ({"strict": False}, "strict"),
     ):
@@ -165,16 +186,41 @@ class _Client:
         self.calls = []
         self.factory = factory
 
-    async def generate_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key):
+    async def start_grouped(self, request_id, *, prompt_ids, sampling_params, routing_key):
         self.calls.append((request_id, prompt_ids, dict(sampling_params), routing_key))
-        if self.factory is not None:
-            return await self.factory(request_id, prompt_ids, sampling_params, routing_key)
-        return [
-            SimpleNamespace(
-                token_ids=[],
-                extra_fields={"branch_id": 0, "global_steps": 7},
-            )
-        ]
+        client = self
+
+        class Tracked:
+            backend_request_id = request_id
+            server_id = "server"
+
+            async def result(self):
+                if client.factory is not None:
+                    return await client.factory(
+                        request_id, prompt_ids, sampling_params, routing_key
+                    )
+                return [
+                    SimpleNamespace(
+                        token_ids=[],
+                        stop_reason="completed",
+                        extra_fields={
+                            "branch_id": 0,
+                            "global_steps": 7,
+                            "finish_reason": "stop",
+                        },
+                    )
+                ]
+
+            async def abort(self):
+                return None
+
+            async def drain(self):
+                return None
+
+            async def release(self):
+                return None
+
+        return Tracked()
 
 
 def test_disabled_mode_returns_before_detection_or_client_access():
@@ -191,6 +237,20 @@ def test_disabled_mode_returns_before_detection_or_client_access():
     )
     assert capture is None
     assert client.calls == []
+
+
+def test_active_mode_rejects_untracked_grouped_client():
+    with pytest.raises(TypeError, match="tracked grouped-request"):
+        run_boundary_continuations(
+            config=_active_config(),
+            rollout_batch=_batch(),
+            client=object(),
+            eos_token_id=99,
+            short_response_length=4,
+            max_model_len=8,
+            policy_version=7,
+            sampling_params=_normal_sampling(),
+        )
 
 
 def test_zero_token_tail_is_legal_and_sampling_matches_normal_rollout():
@@ -210,6 +270,9 @@ def test_zero_token_tail_is_legal_and_sampling_matches_normal_rollout():
     assert len(capture.generations) == 1
     assert capture.generations[0].tail_token_ids == ()
     assert capture.generations[0].prefix_token_ids == (31, 32, 33, 34)
+    assert capture.continuation_input_token_lengths == (6,)
+    assert capture.long_hit_response_cap.tolist() == [False, False]
+    assert capture.request_timeout_seconds == 600.0
     assert client.calls[0][2] == {
         "temperature": 0.9,
         "top_p": 0.95,
@@ -262,14 +325,19 @@ def _request(identity: str, trajectory: str) -> BoundaryContinuationRequest:
     ],
 )
 def test_result_mapping_fails_closed(results, message):
+    for result in results:
+        result.stop_reason = "completed"
+        result.finish_reason = "stop"
     with pytest.raises(ValueError, match=message):
         aggregate_continuation_results([_request("r", "t")], results, expected_policy_version=7)
 
 
 def test_result_mapping_rejects_mixed_versions_across_requests():
     results = [
-        SimpleNamespace(request_id="r1", branch_id=0, tail_token_ids=(), actual_policy_version=7),
-        SimpleNamespace(request_id="r2", branch_id=0, tail_token_ids=(), actual_policy_version=8),
+        SimpleNamespace(request_id="r1", branch_id=0, tail_token_ids=(), actual_policy_version=7,
+                        stop_reason="completed", finish_reason="stop"),
+        SimpleNamespace(request_id="r2", branch_id=0, tail_token_ids=(), actual_policy_version=8,
+                        stop_reason="completed", finish_reason="stop"),
     ]
     with pytest.raises(ValueError, match="mixed actual policy"):
         aggregate_continuation_results(
@@ -279,12 +347,236 @@ def test_result_mapping_rejects_mixed_versions_across_requests():
         )
 
 
+@pytest.mark.parametrize("bad_reason", ["abort", "aborted", "error", "cancelled", "timeout", None])
+def test_strict_result_mapping_rejects_invalid_terminal_states(bad_reason):
+    result = BoundaryContinuationBranchResult(
+        request_id="r",
+        branch_id=0,
+        tail_token_ids=(9,),
+        actual_policy_version=7,
+        stop_reason=bad_reason,
+        finish_reason="stop",
+    )
+    with pytest.raises(ValueError, match="terminal"):
+        aggregate_continuation_results([_request("r", "t")], [result], expected_policy_version=7)
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "finish_reason", "accepted"),
+    [
+        ("completed", "stop", True),
+        ("eos", "eos", True),
+        ("stop", "stop", True),
+        ("completed", "length", True),
+        ("length", "length", False),
+    ],
+)
+def test_zero_token_tail_requires_legal_terminal_state(stop_reason, finish_reason, accepted):
+    result = BoundaryContinuationBranchResult(
+        request_id="r",
+        branch_id=0,
+        tail_token_ids=(),
+        actual_policy_version=7,
+        stop_reason=stop_reason,
+        finish_reason=finish_reason,
+    )
+    if accepted:
+        aggregate_continuation_results([_request("r", "t")], [result], expected_policy_version=7)
+    else:
+        with pytest.raises(ValueError, match="zero-token"):
+            aggregate_continuation_results([_request("r", "t")], [result], expected_policy_version=7)
+
+
+def test_result_mapping_rejects_tail_larger_than_request_budget():
+    result = BoundaryContinuationBranchResult(
+        request_id="r",
+        branch_id=0,
+        tail_token_ids=(9, 10, 11),
+        actual_policy_version=7,
+        stop_reason="completed",
+        finish_reason="length",
+    )
+    with pytest.raises(ValueError, match="max_tokens"):
+        aggregate_continuation_results([_request("r", "t")], [result], expected_policy_version=7)
+
+
+def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_primary_error():
+    events = []
+    both_started = asyncio.Event()
+
+    class Tracked:
+        def __init__(self, request_id, fail):
+            self.request_id = request_id
+            self.backend_request_id = f"backend-{request_id}"
+            self.server_id = "server"
+            self.server = object()
+            self.object_ref = object()
+            self.fail = fail
+
+        async def result(self):
+            events.append(f"result:{self.request_id}")
+            if len([event for event in events if event.startswith("result:")]) == 2:
+                both_started.set()
+            await both_started.wait()
+            if self.fail:
+                raise RuntimeError("primary boom")
+            try:
+                await asyncio.sleep(60)
+            finally:
+                events.append(f"settled:{self.request_id}")
+
+        async def abort(self):
+            events.append(f"abort:{self.request_id}")
+            if self.fail:
+                raise RuntimeError("cleanup abort boom")
+
+        async def drain(self):
+            events.append("drain:server")
+
+        async def release(self):
+            events.append(f"release:{self.request_id}")
+
+    class TrackedClient:
+        def __init__(self):
+            self.count = 0
+
+        async def start_grouped(self, request_id, **_kwargs):
+            self.count += 1
+            return Tracked(request_id, fail=self.count == 1)
+
+    with pytest.raises(RuntimeError, match="primary boom") as caught:
+        run_boundary_continuations(
+            config=_active_config(),
+            rollout_batch=_batch(finish_reasons=("length", "length")),
+            client=TrackedClient(),
+            eos_token_id=99,
+            short_response_length=4,
+            max_model_len=8,
+            policy_version=7,
+            sampling_params=_normal_sampling(),
+        )
+
+    abort_positions = [index for index, event in enumerate(events) if event.startswith("abort:")]
+    drain_position = events.index("drain:server")
+    release_positions = [index for index, event in enumerate(events) if event.startswith("release:")]
+    settle_positions = [index for index, event in enumerate(events) if event.startswith("settled:")]
+    assert abort_positions and max(abort_positions) < drain_position
+    assert release_positions and drain_position < min(release_positions)
+    assert settle_positions and max(release_positions) < min(settle_positions)
+    assert any("cleanup abort boom" in note for note in getattr(caught.value, "__notes__", []))
+
+
+def test_remote_cleanup_waits_for_every_delayed_start_before_result_failure():
+    events = []
+
+    class Tracked:
+        def __init__(self, label, fail):
+            self.label = label
+            self.backend_request_id = f"backend-{label}"
+            self.server_id = "server"
+            self.server = object()
+            self.object_ref = object()
+            self.fail = fail
+
+        async def result(self):
+            events.append(f"result:{self.label}")
+            if self.fail:
+                raise RuntimeError("primary boom")
+            await asyncio.sleep(60)
+
+        async def abort(self):
+            events.append(f"abort:{self.label}")
+
+        async def drain(self):
+            events.append("drain:server")
+
+        async def release(self):
+            events.append(f"release:{self.label}")
+
+    class Client:
+        def __init__(self):
+            self.count = 0
+
+        async def start_grouped(self, _request_id, **_kwargs):
+            self.count += 1
+            label = str(self.count)
+            events.append(f"start:{label}")
+            if label == "2":
+                await asyncio.sleep(0.01)
+            events.append(f"started:{label}")
+            return Tracked(label, fail=label == "1")
+
+    with pytest.raises(RuntimeError, match="primary boom"):
+        run_boundary_continuations(
+            config=_active_config(),
+            rollout_batch=_batch(finish_reasons=("length", "length")),
+            client=Client(),
+            eos_token_id=99,
+            short_response_length=4,
+            max_model_len=8,
+            policy_version=7,
+            sampling_params=_normal_sampling(),
+        )
+
+    first_result = events.index("result:1")
+    assert events.index("started:2") < first_result
+    assert {event for event in events if event.startswith("abort:")} == {"abort:1", "abort:2"}
+    drain_position = events.index("drain:server")
+    assert max(events.index("abort:1"), events.index("abort:2")) < drain_position
+    assert drain_position < min(events.index("release:1"), events.index("release:2"))
+
+
+def test_per_request_timeout_remotely_aborts_and_exposes_timeout_audit_fields():
+    events = []
+
+    class Tracked:
+        request_id = "r"
+        backend_request_id = "backend-r"
+        server_id = "server"
+        server = object()
+        object_ref = object()
+
+        async def result(self):
+            await asyncio.sleep(60)
+
+        async def abort(self):
+            events.append("abort")
+
+        async def drain(self):
+            events.append("drain")
+
+        async def release(self):
+            events.append("release")
+
+    class Client:
+        async def start_grouped(self, *_args, **_kwargs):
+            return Tracked()
+
+    with pytest.raises(TimeoutError) as caught:
+        run_boundary_continuations(
+            config=_active_config(request_timeout_seconds=0.01),
+            rollout_batch=_batch(),
+            client=Client(),
+            eos_token_id=99,
+            short_response_length=4,
+            max_model_len=8,
+            policy_version=7,
+            sampling_params=_normal_sampling(),
+        )
+    assert events == ["abort", "drain", "release"]
+    assert caught.value.boundary_continuation_timeout_count == 1
+    assert caught.value.boundary_continuation_request_timeout_seconds == 0.01
+
+
 def test_concurrent_failure_cancels_sibling_tasks_and_preserves_global_rng():
     started = asyncio.Event()
     cancelled = asyncio.Event()
+    factory_call_count = 0
 
     async def factory(request_id, _prompt_ids, _sampling_params, _routing_key):
-        if len(client.calls) == 1:
+        nonlocal factory_call_count
+        factory_call_count += 1
+        if factory_call_count == 1:
             await started.wait()
             raise RuntimeError("boom")
         started.set()
