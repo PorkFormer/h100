@@ -34,6 +34,13 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _emit_audit_event(message: str, *args: Any, level: int = logging.INFO) -> None:
+    """Emit cleanup/order evidence even when Ray worker logging is not forwarded."""
+    rendered = message % args
+    logger.log(level, rendered)
+    print(rendered, flush=True)
+
+
 @dataclass(frozen=True)
 class BoundaryContinuationRequest:
     parent_index: int
@@ -343,7 +350,7 @@ async def run_boundary_continuations(
             request_timeout_seconds=float(config.request_timeout_seconds),
         )
 
-    logger.info(
+    _emit_audit_event(
         "boundary_return event=continuation_start policy_version=%d request_count=%d timeout_seconds=%s",
         policy_version,
         len(requests),
@@ -400,44 +407,49 @@ async def run_boundary_continuations(
         async def cleanup(primary_error: BaseException, tasks: Sequence[asyncio.Task]) -> None:
             cleanup_errors: list[BaseException] = []
             active = [tracked for tracked in tracked_requests if id(tracked) not in completed_tracked_ids]
-            logger.warning(
+            _emit_audit_event(
                 "boundary_return cleanup event=abort_start backend_request_ids=%s",
                 [tracked.backend_request_id for tracked in active],
+                level=logging.WARNING,
             )
             abort_results = await asyncio.gather(
                 *(tracked.abort() for tracked in active), return_exceptions=True
             )
             abort_errors = [result for result in abort_results if isinstance(result, BaseException)]
             cleanup_errors.extend(abort_errors)
-            logger.warning(
+            _emit_audit_event(
                 "boundary_return cleanup event=abort_ack count=%d errors=%d",
                 len(active),
                 len(abort_errors),
+                level=logging.WARNING,
             )
 
             drain_handles: dict[str, Any] = {}
             for tracked in tracked_requests:
                 drain_handles.setdefault(str(tracked.server_id), tracked)
-            logger.warning(
+            _emit_audit_event(
                 "boundary_return cleanup event=drain_start server_ids=%s",
                 list(drain_handles),
+                level=logging.WARNING,
             )
             drain_results = await asyncio.gather(
                 *(tracked.drain() for tracked in drain_handles.values()), return_exceptions=True
             )
             drain_errors = [result for result in drain_results if isinstance(result, BaseException)]
             cleanup_errors.extend(drain_errors)
-            logger.warning(
+            _emit_audit_event(
                 "boundary_return cleanup event=drain_ack count=%d errors=%d",
                 len(drain_handles),
                 len(drain_errors),
+                level=logging.WARNING,
             )
 
             release_errors: list[BaseException] = []
             if not drain_errors:
-                logger.warning(
+                _emit_audit_event(
                     "boundary_return cleanup event=release_start server_ids=%s",
                     [tracked.server_id for tracked in tracked_requests],
+                    level=logging.WARNING,
                 )
                 release_results = await asyncio.gather(
                     *(tracked.release() for tracked in tracked_requests), return_exceptions=True
@@ -446,16 +458,21 @@ async def run_boundary_continuations(
                     result for result in release_results if isinstance(result, BaseException)
                 ]
                 cleanup_errors.extend(release_errors)
-                logger.warning(
+                _emit_audit_event(
                     "boundary_return cleanup event=release_ack count=%d errors=%d",
                     len(tracked_requests),
                     len(release_errors),
+                    level=logging.WARNING,
                 )
             for task in tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            logger.warning("boundary_return cleanup event=local_settle count=%d", len(tasks))
+            _emit_audit_event(
+                "boundary_return cleanup event=local_settle count=%d",
+                len(tasks),
+                level=logging.WARNING,
+            )
             for cleanup_error in cleanup_errors:
                 primary_error.add_note(
                     f"boundary continuation cleanup error: {type(cleanup_error).__name__}: {cleanup_error}"
@@ -476,13 +493,14 @@ async def run_boundary_continuations(
                 "boundary_continuation_request_timeout_seconds",
                 float(config.request_timeout_seconds),
             )
-            logger.warning(
+            _emit_audit_event(
                 "boundary_return event=request_failure error_type=%s timeout_count=%d "
                 "timeout_seconds=%s cleanup_attested=%s",
                 type(primary_error).__name__,
                 int(isinstance(primary_error, TimeoutError)),
                 config.request_timeout_seconds,
                 cleanup_attested,
+                level=logging.WARNING,
             )
 
         start_results = await asyncio.gather(
@@ -526,7 +544,7 @@ async def run_boundary_continuations(
         results,
         expected_policy_version=policy_version,
     )
-    logger.info(
+    _emit_audit_event(
         "boundary_return event=continuation_complete policy_version=%d request_count=%d",
         policy_version,
         len(requests),

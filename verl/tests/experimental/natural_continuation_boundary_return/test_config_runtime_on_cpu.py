@@ -400,7 +400,7 @@ def test_result_mapping_rejects_tail_larger_than_request_budget():
         aggregate_continuation_results([_request("r", "t")], [result], expected_policy_version=7)
 
 
-def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_primary_error():
+def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_primary_error(capsys):
     events = []
     both_started = asyncio.Event()
 
@@ -464,6 +464,10 @@ def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_pr
     assert release_positions and drain_position < min(release_positions)
     assert settle_positions and max(release_positions) < min(settle_positions)
     assert any("cleanup abort boom" in note for note in getattr(caught.value, "__notes__", []))
+    audit = capsys.readouterr().out
+    assert audit.index("event=abort_start") < audit.index("event=drain_start")
+    assert audit.index("event=drain_ack") < audit.index("event=release_start")
+    assert audit.index("event=release_ack") < audit.index("event=local_settle")
 
 
 def test_remote_cleanup_waits_for_every_delayed_start_before_result_failure():

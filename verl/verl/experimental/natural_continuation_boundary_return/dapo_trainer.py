@@ -51,6 +51,13 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _emit_audit_event(message: str, *args: Any, level: int = logging.INFO) -> None:
+    """Emit step-order evidence even when Ray worker logging is not forwarded."""
+    rendered = message % args
+    logger.log(level, rendered)
+    print(rendered, flush=True)
+
+
 @contextlib.contextmanager
 def _preserve_driver_rng_state() -> Iterator[None]:
     """Isolate auxiliary inference/scoring from Python, NumPy, and Torch CPU RNGs."""
@@ -238,11 +245,24 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
     def _effective_filter_metric(self) -> str | None:
         boundary = self._boundary_config()
         if boundary.mode == "replace":
-            logger.info("boundary_return event=filter metric=boundary_acc")
+            _emit_audit_event("boundary_return event=filter metric=boundary_acc")
             return "boundary_acc"
         if boundary.mode == "shadow":
-            logger.info("boundary_return event=filter metric=acc mode=shadow")
+            _emit_audit_event("boundary_return event=filter metric=acc mode=shadow")
         return super()._effective_filter_metric()
+
+    def _publish_rollout_policy_version(self, version: int) -> None:
+        _emit_audit_event(
+            "boundary_return event=publish_start policy_version=%d mode=%s",
+            int(version),
+            self._boundary_config().mode,
+        )
+        super()._publish_rollout_policy_version(version)
+        _emit_audit_event(
+            "boundary_return event=publish_complete policy_version=%d mode=%s",
+            int(version),
+            self._boundary_config().mode,
+        )
 
     def _step_accumulator(self) -> BoundaryReturnStepAccumulator:
         accumulator = getattr(self, "_boundary_return_step_accumulator", None)
@@ -314,7 +334,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         )
         rollout = self.config.actor_rollout_ref.rollout
         policy_version = self._validate_rollout_policy_version(candidate)
-        logger.info(
+        _emit_audit_event(
             "boundary_return event=short_reward_complete policy_version=%d mode=%s",
             policy_version,
             boundary.mode,
@@ -336,7 +356,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 if capture is None:
                     raise AssertionError("active boundary_return returned no continuation capture")
                 if capture.generations:
-                    logger.info(
+                    _emit_audit_event(
                         "boundary_return event=continuation_complete policy_version=%d request_count=%d",
                         policy_version,
                         len(capture.generations),
@@ -347,7 +367,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                             capture.generations,
                             boundary,
                         )
-                    logger.info(
+                    _emit_audit_event(
                         "boundary_return event=long_reward_complete policy_version=%d row_count=%d",
                         policy_version,
                         len(capture.generations),
@@ -370,7 +390,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                     _assert_shadow_candidate_noop(shadow_snapshot, candidate)
                     result.metrics["boundary_return/shadow_candidate_noop_gate_pass_count"] = 1.0
                 self._step_accumulator().add(result)
-                logger.info(
+                _emit_audit_event(
                     "boundary_return event=mode_complete policy_version=%d mode=%s",
                     policy_version,
                     boundary.mode,
@@ -379,8 +399,18 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         except BaseException as error:
             cleanup_attested = getattr(error, "boundary_remote_cleanup_attested", True)
             if cleanup_attested and not getattr(self, "_boundary_failure_replicas_slept", False):
+                _emit_audit_event(
+                    "boundary_return cleanup event=replica_sleep_start error_type=%s",
+                    type(error).__name__,
+                    level=logging.WARNING,
+                )
                 self.checkpoint_manager.sleep_replicas()
                 self._boundary_failure_replicas_slept = True
+                _emit_audit_event(
+                    "boundary_return cleanup event=replica_sleep_ack error_type=%s",
+                    type(error).__name__,
+                    level=logging.WARNING,
+                )
             elif not cleanup_attested:
                 error.add_note(
                     "rollout replicas were not slept because remote continuation drain/release "
@@ -394,7 +424,17 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         metrics: dict[str, float],
         timing_raw: dict[str, float],
     ) -> DataProto:
+        _emit_audit_event(
+            "boundary_return event=replica_sleep_start policy_version=%d mode=%s",
+            self._validate_rollout_policy_version(batch),
+            self._boundary_config().mode,
+        )
         batch = super()._prepare_final_retained_batch(batch, metrics, timing_raw)
+        _emit_audit_event(
+            "boundary_return event=replica_sleep_complete policy_version=%d mode=%s",
+            self._validate_rollout_policy_version(batch),
+            self._boundary_config().mode,
+        )
         if self._boundary_config().mode != "off":
             step_metrics = self._step_accumulator().metrics()
             if step_metrics.get("boundary_return/prefix_penalty_drift_max") != 0.0:
@@ -402,3 +442,37 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             metrics.update(step_metrics)
             self._boundary_return_step_accumulator = None
         return batch
+
+    def _compute_old_and_reference(
+        self, batch: DataProto, metrics: dict, timing_raw: dict
+    ) -> DataProto:
+        policy_version = self._validate_rollout_policy_version(batch)
+        _emit_audit_event(
+            "boundary_return event=old_ref_start policy_version=%d mode=%s",
+            policy_version,
+            self._boundary_config().mode,
+        )
+        batch = super()._compute_old_and_reference(batch, metrics, timing_raw)
+        _emit_audit_event(
+            "boundary_return event=old_ref_complete policy_version=%d mode=%s",
+            policy_version,
+            self._boundary_config().mode,
+        )
+        return batch
+
+    def _compute_advantage_and_actor_update(
+        self, batch: DataProto, metrics: dict[str, float], timing_raw: dict[str, float]
+    ) -> tuple[DataProto, DataProto]:
+        policy_version = self._validate_rollout_policy_version(batch)
+        _emit_audit_event(
+            "boundary_return event=grpo_actor_start policy_version=%d mode=%s",
+            policy_version,
+            self._boundary_config().mode,
+        )
+        result = super()._compute_advantage_and_actor_update(batch, metrics, timing_raw)
+        _emit_audit_event(
+            "boundary_return event=actor_update_complete policy_version=%d mode=%s",
+            policy_version,
+            self._boundary_config().mode,
+        )
+        return result
