@@ -108,6 +108,7 @@ def test_smoke_launcher_overrides_the_formal_gen_batch_without_duplicate_append(
     ).read_text(encoding="utf-8")
     assert "data.train_batch_size=8" in script
     assert "data.gen_batch_size=16" in script
+    assert "data.train_max_samples=64" in script
     assert "+data.gen_batch_size=16" not in script
     assert "actor_rollout_ref.rollout.n=2" in script
     assert "actor_rollout_ref.actor.ppo_mini_batch_size=8" in script

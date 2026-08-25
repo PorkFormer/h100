@@ -6,6 +6,7 @@ set -euo pipefail
 exec "$(dirname "$0")/run_qwen3_4b_boundary_return_h2048_l8192_replace_fsdp.sh" \
   data.train_batch_size=8 \
   data.gen_batch_size=16 \
+  data.train_max_samples=64 \
   actor_rollout_ref.rollout.n=2 \
   actor_rollout_ref.actor.ppo_mini_batch_size=8 \
   trainer.total_training_steps=1 \
