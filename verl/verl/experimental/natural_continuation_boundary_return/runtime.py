@@ -363,6 +363,7 @@ async def run_boundary_continuations(
         wave: Sequence[BoundaryContinuationRequest],
     ) -> list[list[BoundaryContinuationBranchResult]]:
         tracked_requests: list[Any] = []
+        backend_result_tasks: list[asyncio.Task] = []
         completed_tracked_ids: set[int] = set()
 
         def request_params(request: BoundaryContinuationRequest) -> dict[str, Any]:
@@ -383,8 +384,11 @@ async def run_boundary_continuations(
             request: BoundaryContinuationRequest,
             tracked: Any,
         ) -> list[BoundaryContinuationBranchResult]:
+            backend_result_task = asyncio.create_task(tracked.result())
+            backend_result_tasks.append(backend_result_task)
             outputs = await asyncio.wait_for(
-                tracked.result(), timeout=float(config.request_timeout_seconds)
+                asyncio.shield(backend_result_task),
+                timeout=float(config.request_timeout_seconds),
             )
             completed_tracked_ids.add(id(tracked))
             wave_results: list[BoundaryContinuationBranchResult] = []
@@ -467,10 +471,15 @@ async def run_boundary_continuations(
             for task in tasks:
                 if not task.done():
                     task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            for task in backend_result_tasks:
+                if not task.done():
+                    task.cancel()
+            local_tasks = [*tasks, *backend_result_tasks]
+            await asyncio.gather(*local_tasks, return_exceptions=True)
             _emit_audit_event(
-                "boundary_return cleanup event=local_settle count=%d",
+                "boundary_return cleanup event=local_settle count=%d backend_result_count=%d",
                 len(tasks),
+                len(backend_result_tasks),
                 level=logging.WARNING,
             )
             for cleanup_error in cleanup_errors:

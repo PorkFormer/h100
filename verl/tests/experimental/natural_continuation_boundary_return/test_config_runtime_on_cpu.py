@@ -470,6 +470,68 @@ def test_remote_abort_drain_release_happens_before_local_settle_and_preserves_pr
     assert audit.index("event=release_ack") < audit.index("event=local_settle")
 
 
+def test_timeout_shields_backend_result_until_explicit_remote_abort():
+    events = []
+    remote_done = asyncio.Event()
+
+    class Tracked:
+        backend_request_id = "backend-timeout"
+        server_id = "server"
+        server = object()
+        object_ref = object()
+        active = False
+
+        async def result(self):
+            self.active = True
+            events.append("result_started")
+            try:
+                await remote_done.wait()
+                events.append("result_finished")
+                return []
+            except asyncio.CancelledError:
+                events.append("result_cancelled")
+                raise
+            finally:
+                self.active = False
+
+        async def abort(self):
+            events.append(f"abort_active:{self.active}")
+            if not self.active:
+                raise RuntimeError("remote request was cancelled before explicit abort")
+            remote_done.set()
+
+        async def drain(self):
+            events.append("drain")
+            await remote_done.wait()
+
+        async def release(self):
+            events.append("release")
+
+    class Client:
+        async def start_grouped(self, _request_id, **_kwargs):
+            return Tracked()
+
+    with pytest.raises(TimeoutError):
+        run_boundary_continuations(
+            config=_active_config(
+                max_concurrent_requests=1,
+                request_batch_size=1,
+                request_timeout_seconds=0.01,
+            ),
+            rollout_batch=_batch(),
+            client=Client(),
+            eos_token_id=99,
+            short_response_length=4,
+            max_model_len=8,
+            policy_version=7,
+            sampling_params=_normal_sampling(),
+        )
+
+    assert "abort_active:True" in events
+    assert events.index("abort_active:True") < events.index("drain") < events.index("release")
+    assert "result_cancelled" not in events
+
+
 def test_remote_cleanup_waits_for_every_delayed_start_before_result_failure():
     events = []
 
