@@ -106,8 +106,11 @@ def test_smoke_launcher_overrides_the_formal_gen_batch_without_duplicate_append(
         / "natural_continuation_boundary_return"
         / "run_qwen3_4b_boundary_return_h2048_l8192_replace_smoke_fsdp.sh"
     ).read_text(encoding="utf-8")
-    assert "data.gen_batch_size=4" in script
-    assert "+data.gen_batch_size=4" not in script
+    assert "data.train_batch_size=8" in script
+    assert "data.gen_batch_size=16" in script
+    assert "+data.gen_batch_size=16" not in script
+    assert "actor_rollout_ref.rollout.n=2" in script
+    assert "actor_rollout_ref.actor.ppo_mini_batch_size=8" in script
     assert '  "$@"' in script
 
 
