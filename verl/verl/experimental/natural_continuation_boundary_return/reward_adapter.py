@@ -109,7 +109,6 @@ def build_long_reward_batch(
         values = np.asarray(raw_values)
         selected = [copy.deepcopy(values[parent]) for parent in parent_indices]
         non_tensor_batch[key] = np.asarray(selected, dtype=values.dtype)
-    non_tensor_batch["boundary_parent_index"] = np.asarray(parent_indices, dtype=np.int64)
     meta_info = {
         key: copy.deepcopy(value)
         for key, value in original_batch.meta_info.items()

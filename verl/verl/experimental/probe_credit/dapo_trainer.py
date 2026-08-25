@@ -562,11 +562,33 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         batch: DataProto,
     ) -> NormalizedRewardOutput:
         """Invoke and normalize the exact reward path used by synchronous DAPO."""
-        force_prefix_score = bool(batch.meta_info.get("obcf_prefix_scoring", False))
+        force_prefix_score = bool(
+            batch.meta_info.get("obcf_prefix_scoring", False)
+            or batch.meta_info.get("boundary_reward_only", False)
+        )
         if "rm_scores" not in batch.batch and (self.use_rm or force_prefix_score):
             batch.union(self._compute_reward_colocate(batch))
         reward_tensor, extra_info = extract_reward(batch)
         return NormalizedRewardOutput(reward_tensor=reward_tensor, extra_info=extra_info)
+
+    def _process_candidate_after_reward_before_filter(
+        self,
+        candidate: DataProto,
+        metrics: dict[str, float],
+        timing_raw: dict[str, float],
+        generation_batch_index: int,
+    ) -> DataProto:
+        """Backward-compatible no-op hook for candidate-local pre-filter processing."""
+        return candidate
+
+    def _effective_filter_metric(self) -> str | None:
+        """Return the local filter metric without mutating the resolved Hydra config."""
+        filter_groups = _config_get(self.config.algorithm, "filter_groups")
+        return (
+            _config_get(filter_groups, "metric")
+            if bool(_config_get(filter_groups, "enable", False))
+            else None
+        )
 
     def fit(self):
         """Run official DAPO accumulation, Probe final retained groups, then update."""
@@ -661,11 +683,13 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                             )
                         candidate.batch["token_level_rewards"] = candidate.batch["token_level_scores"]
 
-                    metric_name = (
-                        self.config.algorithm.filter_groups.metric
-                        if self.config.algorithm.filter_groups.enable
-                        else None
+                    candidate = self._process_candidate_after_reward_before_filter(
+                        candidate,
+                        metrics,
+                        timing_raw,
+                        num_gen_batches,
                     )
+                    metric_name = self._effective_filter_metric()
                     self._capture_nondeterminism_boundary(
                         2,
                         candidate,

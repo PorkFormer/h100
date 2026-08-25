@@ -94,6 +94,8 @@ class BoundaryReturnConfig(BaseConfig):
             raise ValueError(f"{prefix}.correctness_key must be nonempty")
         if not isinstance(self.task_score_key, str) or not self.task_score_key:
             raise ValueError(f"{prefix}.task_score_key must be nonempty")
+        if self.task_score_key == self.correctness_key:
+            raise ValueError(f"{prefix}.task_score_key must differ from correctness_key")
         if not math.isfinite(self.correctness_threshold):
             raise ValueError(f"{prefix}.correctness_threshold must be finite")
         for name in ("max_concurrent_requests", "request_batch_size"):

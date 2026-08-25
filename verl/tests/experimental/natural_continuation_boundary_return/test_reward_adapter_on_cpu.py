@@ -136,7 +136,6 @@ def test_long_reward_batch_uses_original_prompt_and_full_response_and_copies_ver
     assert batch.batch["attention_mask"][0].tolist() == [1, 1, 1, 1, 1, 1, 1, 0]
     assert batch.non_tensor_batch["difficulty"].tolist() == ["hard", "easy", "hard", "easy"]
     assert batch.non_tensor_batch["extra_info"][2] == {"index": 2}
-    assert batch.non_tensor_batch["boundary_parent_index"].tolist() == [0, 1, 2, 3]
     assert batch.meta_info == {"verifier_protocol": "fake-v1"}
     for excluded in ("acc", "score", "overlong_reward", "boundary_stale"):
         assert excluded not in batch.non_tensor_batch
