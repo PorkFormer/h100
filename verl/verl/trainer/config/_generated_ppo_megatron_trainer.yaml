@@ -349,6 +349,17 @@ actor_rollout_ref:
       max_concurrent_requests: 128
       strict: true
       seed: 0
+    boundary_return:
+      _target_: verl.workers.config.BoundaryReturnConfig
+      mode: false
+      long_response_length: 8192
+      correctness_key: acc
+      correctness_threshold: 0.5
+      task_score_key: score
+      max_concurrent_requests: 128
+      request_batch_size: 512
+      seed: 0
+      strict: true
     multi_turn:
       _target_: verl.workers.config.MultiTurnConfig
       enable: false

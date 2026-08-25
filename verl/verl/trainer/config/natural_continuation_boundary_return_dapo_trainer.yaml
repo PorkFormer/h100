@@ -1,0 +1,66 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: true
+    metric: acc
+    max_num_gen_batches: 10
+
+  probe_credit:
+    enable: false
+    coef: 0.0
+
+  censor_aware_advantage:
+    _target_: verl.trainer.config.CensorAwareAdvantageConfig
+    enable: false
+    apply: true
+    mode: reliability_redistribution
+
+  readiness_dominance:
+    _target_: verl.trainer.config.ReadinessDominanceConfig
+    mode: "off"
+
+  success_support_floor:
+    _target_: verl.trainer.config.SuccessSupportFloorConfig
+    mode: "off"
+
+  on_policy_budgeted_capability_floor:
+    _target_: verl.trainer.config.OnPolicyBudgetedCapabilityFloorConfig
+    mode: "off"
+
+actor_rollout_ref:
+  actor:
+    loss_agg_mode: token-mean
+    use_kl_loss: false
+
+  rollout:
+    name: vllm
+    ignore_eos: false
+
+    forced_answer_probe:
+      enable: false
+      training_credit:
+        enable: false
+
+    boundary_return:
+      mode: "off"
+      long_response_length: 8192
+      correctness_key: acc
+      correctness_threshold: 0.5
+      task_score_key: score
+      max_concurrent_requests: 128
+      request_batch_size: 512
+      seed: 0
+      strict: true
+
+critic:
+  enable: false
+
+distillation:
+  enabled: false
