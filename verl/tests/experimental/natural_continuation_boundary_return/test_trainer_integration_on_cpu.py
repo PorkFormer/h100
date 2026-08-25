@@ -477,6 +477,62 @@ def test_long_reward_scoring_chunks_6144_rows_and_keeps_only_scalar_outputs(monk
     assert len(output.extra_info["acc"]) == 6144
 
 
+def test_long_reward_scoring_pads_nondivisible_chunk_only_inside_reward_batch(monkeypatch):
+    from verl.experimental.natural_continuation_boundary_return import dapo_trainer as module
+
+    trainer = _trainer("shadow")
+    trainer.tokenizer = SimpleNamespace(pad_token_id=0)
+    trainer.reward_loop_manager = SimpleNamespace(reward_loop_workers=[object()] * 8)
+    candidate = DataProto.from_dict(tensors={"responses": torch.arange(12).reshape(12, 1)})
+    built_sizes = []
+    scored_sizes = []
+
+    def build(_candidate, generations, **_kwargs):
+        built_sizes.append(len(generations))
+        return DataProto.from_dict(tensors={"responses": torch.arange(len(generations)).reshape(-1, 1)})
+
+    monkeypatch.setattr(module, "build_long_reward_batch", build)
+
+    def score(_self, batch):
+        scored_sizes.append(len(batch))
+        assert len(batch) % 8 == 0
+        return SimpleNamespace(
+            reward_tensor=torch.full((len(batch), 1), 1.0e30),
+            extra_info={
+                "acc": np.arange(len(batch), dtype=np.float64),
+                "score": np.arange(len(batch), dtype=np.float64) + 100,
+            },
+        )
+
+    trainer._score_batch_with_existing_reward_pipeline = MethodType(score, trainer)
+    generations = tuple(
+        BoundaryContinuationGeneration(
+            parent_index=row,
+            request_id=f"r-{row}",
+            branch_id=0,
+            uid=f"u-{row}",
+            trajectory_id=f"t-{row}",
+            prompt_token_ids=(1,),
+            prefix_token_ids=(2,),
+            tail_token_ids=(3,),
+            actual_policy_version=7,
+        )
+        for row in range(12)
+    )
+
+    output = trainer._score_long_generations_in_chunks(
+        candidate,
+        generations,
+        BoundaryReturnConfig(mode="shadow", long_response_length=8, long_reward_chunk_size=256),
+    )
+
+    assert built_sizes == [12]
+    assert scored_sizes == [16]
+    assert len(candidate) == 12
+    assert output.extra_info["acc"].tolist() == list(range(12))
+    assert output.extra_info["score"].tolist() == [100 + row for row in range(12)]
+
+
 @pytest.mark.parametrize("failure_stage", ["continuation", "long_reward"])
 def test_candidate_failure_sleeps_exactly_once_and_reraises(monkeypatch, failure_stage):
     from verl.experimental.natural_continuation_boundary_return import dapo_trainer as module

@@ -281,6 +281,9 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
     ) -> BoundaryRewardOutput:
         correctness_parts: list[np.ndarray] = []
         task_score_parts: list[np.ndarray] = []
+        reward_loop_manager = getattr(self, "reward_loop_manager", None)
+        reward_loop_workers = getattr(reward_loop_manager, "reward_loop_workers", ())
+        reward_worker_count = len(reward_loop_workers) or 1
         for start in range(0, len(generations), boundary.long_reward_chunk_size):
             chunk = generations[start : start + boundary.long_reward_chunk_size]
             long_batch = build_long_reward_batch(
@@ -289,18 +292,21 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 pad_token_id=self.tokenizer.pad_token_id,
             )
             long_batch.meta_info["boundary_reward_only"] = True
+            original_count = len(long_batch)
+            padding_count = (-original_count) % reward_worker_count
+            long_batch.padding(padding_count, padding_candidate="last")
             normalized = self._score_batch_with_existing_reward_pipeline(long_batch)
             scalars = extract_required_reward_scalars(
                 BoundaryRewardOutput(
                     reward_tensor=normalized.reward_tensor,
                     extra_info=normalized.extra_info,
                 ),
-                expected_count=len(chunk),
+                expected_count=len(long_batch),
                 correctness_key=boundary.correctness_key,
                 task_score_key=boundary.task_score_key,
             )
-            correctness_parts.append(scalars.correctness)
-            task_score_parts.append(scalars.task_score)
+            correctness_parts.append(scalars.correctness[:original_count])
+            task_score_parts.append(scalars.task_score[:original_count])
         return BoundaryRewardOutput(
             reward_tensor=torch.empty((len(generations), 0), dtype=torch.float32),
             extra_info={
