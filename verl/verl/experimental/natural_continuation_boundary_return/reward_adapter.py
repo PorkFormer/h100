@@ -27,6 +27,10 @@ import torch
 from tensordict import TensorDict
 
 from verl import DataProto
+from verl.experimental.natural_continuation_boundary_return.profiling import (
+    ProfileInterval,
+    interval_union_seconds,
+)
 from verl.experimental.natural_continuation_boundary_return.runtime import (
     BoundaryContinuationCapture,
     BoundaryContinuationGeneration,
@@ -39,6 +43,7 @@ BOUNDARY_NUMERIC_TOLERANCE = 1.0e-6
 class BoundaryRewardOutput:
     reward_tensor: torch.Tensor
     extra_info: dict[str, Any]
+    profiling_intervals: tuple[ProfileInterval, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,7 @@ class BoundaryReturnBatchResult:
     long_hit_response_cap: np.ndarray = field(default_factory=lambda: np.asarray([], dtype=bool))
     request_timeout_seconds: float = 0.0
     continuation_timeout_count: int = 0
+    profiling_intervals: tuple[ProfileInterval, ...] = ()
 
 
 def _boundary_internal_key(key: str) -> bool:
@@ -348,6 +354,7 @@ def apply_boundary_return(
             float(regressed.sum() / cap_success.sum()) if cap_success.any() else 0.0
         ),
         "boundary_return/extra_generated_tokens": float(tail_values.sum()),
+        "boundary_return/tail_decode_tokens": float(tail_values.sum()),
         "boundary_return/extra_generated_token_ratio": (
             float(tail_values.sum() / capture.normal_response_tokens) if capture.normal_response_tokens else 0.0
         ),
@@ -370,11 +377,82 @@ def apply_boundary_return(
         ),
         "boundary_return/long_cap_count": float(long_cap_count),
         "boundary_return/long_cap_rate_given_cap": (float(long_cap_count / hit_cap.sum()) if hit_cap.any() else 0.0),
+        "boundary_return/long_reward_rows": float(len(capture.generations)),
+        "boundary_return/long_reward_full_response_tokens": float(
+            sum(len(generation.prefix_token_ids) + len(generation.tail_token_ids) for generation in capture.generations)
+        ),
     }
+    all_intervals = (*capture.profiling_intervals, *long_reward_output.profiling_intervals)
+    interval_names = {
+        "continuation_request_dispatch": "continuation_dispatch_seconds_union",
+        "continuation_queue": "continuation_queue_seconds_union",
+        "continuation_prefill_engine": "continuation_prefill_engine_seconds_union",
+        "continuation_decode_engine": "continuation_decode_engine_seconds_union",
+        "continuation_cleanup_release": "continuation_cleanup_seconds_union",
+        "long_reward_batch_build": "long_reward_batch_build_seconds_union",
+        "long_reward_model_forward": "long_reward_model_forward_seconds_union",
+    }
+    for interval_name, metric_name in interval_names.items():
+        metrics[f"boundary_return/{metric_name}"] = interval_union_seconds(
+            [interval for interval in all_intervals if interval.name == interval_name]
+        )
+    continuation_parents = [interval for interval in all_intervals if interval.name == "boundary_continuation"]
+    engine_or_queue = [
+        interval
+        for interval in all_intervals
+        if interval.name in {"continuation_queue", "continuation_prefill_engine", "continuation_decode_engine"}
+    ]
+    # Control cost is critical-path wall within the continuation span after
+    # removing the union of backend queue/prefill/decode work. This avoids
+    # summing concurrent request latency.
+    metrics["boundary_return/continuation_control_exclusive_seconds"] = max(
+        interval_union_seconds(continuation_parents) - interval_union_seconds(engine_or_queue), 0.0
+    )
+    metrics["boundary_return/long_reward_chunk_count"] = float(
+        sum(interval.name == "boundary_long_reward_chunk" for interval in all_intervals)
+    )
     metrics.update(_transition_metrics(short.correctness, long_acc, hit_cap, threshold))
     uids = candidate.non_tensor_batch.get("uid")
     if uids is None or len(uids) != row_count:
         raise ValueError("boundary_return requires row-aligned uid for diagnostics")
+    if config.mode == "replace":
+        # Only rows that can actually reach the actor carry these labels.  The
+        # subsequent boundary_acc group filter, concatenation, truncation and
+        # balancing operations preserve row alignment automatically.
+        eligible = valid_long
+        applied = eligible.copy()
+        changed = eligible & (np.abs(task_delta) > BOUNDARY_NUMERIC_TOLERANCE)
+        grouped_short: dict[str, list[float]] = {}
+        grouped_boundary: dict[str, list[float]] = {}
+        for uid, short_value, boundary_value in zip(
+            np.asarray(uids, dtype=object).tolist(),
+            short.correctness.tolist(),
+            boundary_acc.tolist(),
+            strict=True,
+        ):
+            grouped_short.setdefault(str(uid), []).append(float(short_value))
+            grouped_boundary.setdefault(str(uid), []).append(float(boundary_value))
+        unlocked_uids = {
+            uid
+            for uid, values in grouped_short.items()
+            if np.std(np.asarray(values, dtype=np.float64)) <= BOUNDARY_NUMERIC_TOLERANCE
+            and np.std(np.asarray(grouped_boundary[uid], dtype=np.float64)) > BOUNDARY_NUMERIC_TOLERANCE
+        }
+        group_unlocked = np.asarray([str(uid) in unlocked_uids for uid in uids], dtype=bool)
+        label_values = {
+            "boundary_hit_cap": hit_cap,
+            "boundary_eligible": eligible,
+            "boundary_applied": applied,
+            "boundary_changed": changed,
+            "boundary_recovered": recovered,
+            "boundary_regressed": regressed,
+            "boundary_task_delta": task_delta,
+            "boundary_group_unlocked": group_unlocked,
+        }
+        device = candidate.batch["responses"].device
+        for key, values in label_values.items():
+            dtype = torch.float32 if key == "boundary_task_delta" else torch.bool
+            candidate.batch[key] = torch.as_tensor(values, dtype=dtype, device=device)
     return BoundaryReturnBatchResult(
         hit_response_cap=hit_cap.copy(),
         short_acc=short.correctness.copy(),
@@ -392,4 +470,5 @@ def apply_boundary_return(
         long_hit_response_cap=long_hit_response_cap.copy(),
         request_timeout_seconds=float(getattr(capture, "request_timeout_seconds", 0.0)),
         continuation_timeout_count=int(getattr(capture, "continuation_timeout_count", 0)),
+        profiling_intervals=all_intervals,
     )

@@ -91,6 +91,12 @@ actor_rollout_ref:
     loss_scale_factor: null
     entropy_coeff: 0
     calculate_entropy: false
+    diagnostics:
+      _target_: verl.workers.config.ActorDiagnosticsConfig
+      enable: false
+      numerical_log_ratio_min: -20.0
+      numerical_log_ratio_max: 20.0
+      entropy_bucket_size: 256
     calculate_sum_pi_squared: false
     use_kl_loss: false
     use_prefix_grouper: false
@@ -904,6 +910,17 @@ trainer:
   balance_batch: true
   total_epochs: 30
   total_training_steps: null
+  dynamic_sampling_gate_cycles: 0
+  dynamic_sampling_gate_receipt_path: null
+  profile_interval_path: null
+  profile_coordination_dir: null
+  profile_arm: null
+  profile_candidate: null
+  profile_diagnostics_mode: null
+  profile_min_steps: 4
+  profile_max_steps: 6
+  profile_cv_threshold: 0.1
+  profile_coordination_timeout_seconds: 900
   project_name: verl_examples
   experiment_name: gsm8k
   logger:

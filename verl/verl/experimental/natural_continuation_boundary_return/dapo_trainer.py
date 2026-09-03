@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import json
 import logging
 import os
 import random
+from pathlib import Path
 from typing import Any, Iterator
 
 import numpy as np
@@ -30,6 +32,11 @@ from verl import DataProto
 from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
 from verl.experimental.natural_continuation_boundary_return.accumulator import (
     BoundaryReturnStepAccumulator,
+)
+from verl.experimental.natural_continuation_boundary_return.profiling import (
+    IntervalRecorder,
+    analyze_interval_dag,
+    coordinate_profile_extension,
 )
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import (
     BoundaryRewardOutput,
@@ -82,6 +89,9 @@ def validate_boundary_return_preflight(config: Any, *, use_critic: bool | None =
         else omega_conf_to_dataclass(raw_boundary, BoundaryReturnConfig)
     )
     boundary.validate()
+    gate_cycles = int(_config_get(_config_get(config, "trainer"), "dynamic_sampling_gate_cycles", 0))
+    if gate_cycles not in (0, 3):
+        raise ValueError("Dynamic Sampling Gate 0 requires exactly 3 cycles or must be disabled with 0")
     if boundary.mode == "off":
         return
 
@@ -272,6 +282,20 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             self._boundary_return_step_accumulator = accumulator
         return accumulator
 
+    @contextlib.contextmanager
+    def _profile_candidate_stage(self, name: str, metadata: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        recorder = IntervalRecorder(f"boundary-{name}-step-{self.global_steps}")
+        with recorder.record(name, metadata=metadata):
+            yield metadata
+        profile_intervals = getattr(self, "_boundary_profile_intervals", None)
+        if profile_intervals is None:
+            profile_intervals = []
+            self._boundary_profile_intervals = profile_intervals
+        profile_intervals.extend(recorder.intervals)
+
+    def _profile_actor_metadata(self, batch: DataProto) -> dict[str, Any]:
+        return {"actor_valid_tokens": int(batch.batch["response_mask"].sum().item())}
+
     def _score_long_generations_in_chunks(
         self,
         candidate: DataProto,
@@ -283,35 +307,58 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         reward_loop_manager = getattr(self, "reward_loop_manager", None)
         reward_loop_workers = getattr(reward_loop_manager, "reward_loop_workers", ())
         reward_worker_count = len(reward_loop_workers) or 1
-        for start in range(0, len(generations), boundary.long_reward_chunk_size):
-            chunk = generations[start : start + boundary.long_reward_chunk_size]
-            long_batch = build_long_reward_batch(
-                candidate,
-                chunk,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            long_batch.meta_info["boundary_reward_only"] = True
-            original_count = len(long_batch)
-            padding_count = (-original_count) % reward_worker_count
-            long_batch.padding(padding_count, padding_candidate="last")
-            normalized = self._score_batch_with_existing_reward_pipeline(long_batch)
-            scalars = extract_required_reward_scalars(
-                BoundaryRewardOutput(
-                    reward_tensor=normalized.reward_tensor,
-                    extra_info=normalized.extra_info,
-                ),
-                expected_count=len(long_batch),
-                correctness_key=boundary.correctness_key,
-                task_score_key=boundary.task_score_key,
-            )
-            correctness_parts.append(scalars.correctness[:original_count])
-            task_score_parts.append(scalars.task_score[:original_count])
+        global_step = int(getattr(self, "global_steps", 0))
+        recorder = IntervalRecorder(f"boundary-long-reward-step-{global_step}")
+        with recorder.record(
+            "boundary_long_reward",
+            metadata={"rows": len(generations), "chunk_size": boundary.long_reward_chunk_size},
+        ):
+            for chunk_index, start in enumerate(range(0, len(generations), boundary.long_reward_chunk_size)):
+                chunk = generations[start : start + boundary.long_reward_chunk_size]
+                full_tokens = sum(
+                    len(getattr(item, "prefix_token_ids", ())) + len(getattr(item, "tail_token_ids", ()))
+                    for item in chunk
+                )
+                with recorder.record(
+                    "boundary_long_reward_chunk",
+                    metadata={"chunk_index": chunk_index, "rows": len(chunk), "full_response_tokens": full_tokens},
+                ):
+                    with recorder.record(
+                        "long_reward_batch_build",
+                        metadata={"chunk_index": chunk_index, "rows": len(chunk), "full_response_tokens": full_tokens},
+                    ):
+                        long_batch = build_long_reward_batch(
+                            candidate,
+                            chunk,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                        )
+                        long_batch.meta_info["boundary_reward_only"] = True
+                        original_count = len(long_batch)
+                        padding_count = (-original_count) % reward_worker_count
+                        long_batch.padding(padding_count, padding_candidate="last")
+                    with recorder.record(
+                        "long_reward_model_forward",
+                        metadata={"chunk_index": chunk_index, "rows": original_count, "padded_rows": len(long_batch)},
+                    ):
+                        normalized = self._score_batch_with_existing_reward_pipeline(long_batch)
+                    scalars = extract_required_reward_scalars(
+                        BoundaryRewardOutput(
+                            reward_tensor=normalized.reward_tensor,
+                            extra_info=normalized.extra_info,
+                        ),
+                        expected_count=len(long_batch),
+                        correctness_key=boundary.correctness_key,
+                        task_score_key=boundary.task_score_key,
+                    )
+                    correctness_parts.append(scalars.correctness[:original_count])
+                    task_score_parts.append(scalars.task_score[:original_count])
         return BoundaryRewardOutput(
             reward_tensor=torch.empty((len(generations), 0), dtype=torch.float32),
             extra_info={
                 boundary.correctness_key: np.concatenate(correctness_parts),
                 boundary.task_score_key: np.concatenate(task_score_parts),
             },
+            profiling_intervals=tuple(recorder.intervals),
         )
 
     def _process_candidate_after_reward_before_filter(
@@ -391,6 +438,11 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                     _assert_shadow_candidate_noop(shadow_snapshot, candidate)
                     result.metrics["boundary_return/shadow_candidate_noop_gate_pass_count"] = 1.0
                 self._step_accumulator().add(result)
+                profile_intervals = getattr(self, "_boundary_profile_intervals", None)
+                if profile_intervals is None:
+                    profile_intervals = []
+                    self._boundary_profile_intervals = profile_intervals
+                profile_intervals.extend(result.profiling_intervals)
                 _emit_audit_event(
                     "boundary_return event=mode_complete policy_version=%d mode=%s",
                     policy_version,
@@ -429,7 +481,14 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             self._validate_rollout_policy_version(batch),
             self._boundary_config().mode,
         )
-        batch = super()._prepare_final_retained_batch(batch, metrics, timing_raw)
+        recorder = IntervalRecorder(f"boundary-finalize-step-{self.global_steps}")
+        with recorder.record("candidate_finalization_and_replica_sleep"):
+            batch = super()._prepare_final_retained_batch(batch, metrics, timing_raw)
+        profile_intervals = getattr(self, "_boundary_profile_intervals", None)
+        if profile_intervals is None:
+            profile_intervals = []
+            self._boundary_profile_intervals = profile_intervals
+        profile_intervals.extend(recorder.intervals)
         _emit_audit_event(
             "boundary_return event=replica_sleep_complete policy_version=%d mode=%s",
             self._validate_rollout_policy_version(batch),
@@ -441,7 +500,109 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 raise AssertionError("boundary_return prefix penalty drift must be exactly zero")
             metrics.update(step_metrics)
             self._boundary_return_step_accumulator = None
+            if self._boundary_config().mode == "replace":
+                required_labels = {
+                    "boundary_hit_cap",
+                    "boundary_eligible",
+                    "boundary_applied",
+                    "boundary_changed",
+                    "boundary_recovered",
+                    "boundary_regressed",
+                    "boundary_task_delta",
+                    "boundary_group_unlocked",
+                }
+                missing = required_labels - set(batch.batch.keys())
+                if missing:
+                    raise AssertionError(f"retained boundary actor batch is missing row labels: {sorted(missing)}")
+                if (
+                    "boundary_group_newly_locked" in batch.batch
+                    or "boundary_group_newly_locked" in batch.non_tensor_batch
+                ):
+                    raise AssertionError("newly locked groups are candidate-only diagnostics, never actor cohorts")
+        else:
+            forbidden = [key for key in batch.batch.keys() if str(key).startswith("boundary_")]
+            if forbidden:
+                raise AssertionError(f"baseline actor batch unexpectedly carries boundary labels: {forbidden}")
+            metrics["boundary_return/continuation_request_count"] = 0.0
         return batch
+
+    def _flush_profile_intervals(
+        self,
+        *,
+        stage: str,
+        timing_raw: dict[str, float] | None = None,
+        metrics: dict[str, float] | None = None,
+    ) -> None:
+        profile_path_value = _config_get(self.config.trainer, "profile_interval_path")
+        profile_intervals = getattr(self, "_boundary_profile_intervals", [])
+        if profile_path_value is not None:
+            profile_path = Path(str(profile_path_value))
+            profile_path.parent.mkdir(parents=True, exist_ok=True)
+            record = {
+                "schema_version": "ncbr-profile-interval-dag-v1",
+                "global_step": int(self.global_steps),
+                "stage": stage,
+                "intervals": [interval.to_dict() for interval in profile_intervals],
+                "analysis": analyze_interval_dag(profile_intervals),
+                "trainer_timing_raw": dict(timing_raw or {}),
+                "step_metrics": dict(metrics or {}),
+            }
+            with profile_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+        self._boundary_profile_intervals = []
+
+    def _write_dynamic_sampling_gate_receipt(self, record: dict[str, Any]) -> None:
+        path_value = _config_get(self.config.trainer, "dynamic_sampling_gate_receipt_path")
+        if path_value is None:
+            raise ValueError("Dynamic Sampling Gate 0 requires trainer.dynamic_sampling_gate_receipt_path")
+        path = Path(str(path_value))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            **record,
+            "arm": "baseline" if self._boundary_config().mode == "off" else "v1",
+            "boundary_return_mode": self._boundary_config().mode,
+            "global_step": int(self.global_steps),
+            "pid": os.getpid(),
+        }
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        self._flush_profile_intervals(stage="dynamic_sampling_gate")
+
+    def _flush_step_profile(self, timing_raw: dict[str, float], metrics: dict[str, float]) -> None:
+        step_wall = timing_raw.get("step")
+        if step_wall is not None:
+            walls = getattr(self, "_boundary_profile_step_walls", None)
+            if walls is None:
+                walls = []
+                self._boundary_profile_step_walls = walls
+            walls.append(float(step_wall))
+        self._flush_profile_intervals(stage="training", timing_raw=timing_raw, metrics=metrics)
+
+    def _profile_should_stop_after_step(self) -> bool:
+        trainer = self.config.trainer
+        coordination_value = _config_get(trainer, "profile_coordination_dir")
+        if coordination_value in (None, "null"):
+            return False
+        min_steps = int(_config_get(trainer, "profile_min_steps", 4))
+        max_steps = int(_config_get(trainer, "profile_max_steps", 6))
+        if (min_steps, max_steps) != (4, 6):
+            raise ValueError("paired profiling is fixed to a Step 4 decision and Step 6 maximum")
+        if self.global_steps != min_steps:
+            return False
+        walls = list(getattr(self, "_boundary_profile_step_walls", ()))
+        arm = str(_config_get(trainer, "profile_arm"))
+        candidate = str(_config_get(trainer, "profile_candidate"))
+        diagnostics_mode = str(_config_get(trainer, "profile_diagnostics_mode"))
+        extend = coordinate_profile_extension(
+            Path(str(coordination_value)),
+            arm=arm,
+            candidate=candidate,
+            diagnostics_mode=diagnostics_mode,
+            step_walls_2_4=walls[1:4],
+            threshold=float(_config_get(trainer, "profile_cv_threshold", 0.10)),
+            timeout_seconds=float(_config_get(trainer, "profile_coordination_timeout_seconds", 900)),
+        )
+        return not extend
 
     def _compute_old_and_reference(self, batch: DataProto, metrics: dict, timing_raw: dict) -> DataProto:
         policy_version = self._validate_rollout_policy_version(batch)
@@ -450,7 +611,10 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             policy_version,
             self._boundary_config().mode,
         )
-        batch = super()._compute_old_and_reference(batch, metrics, timing_raw)
+        recorder = IntervalRecorder(f"boundary-old-ref-step-{self.global_steps}")
+        with recorder.record("old_and_reference_log_prob"):
+            batch = super()._compute_old_and_reference(batch, metrics, timing_raw)
+        self._boundary_profile_intervals.extend(recorder.intervals)
         _emit_audit_event(
             "boundary_return event=old_ref_complete policy_version=%d mode=%s",
             policy_version,
@@ -467,7 +631,10 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             policy_version,
             self._boundary_config().mode,
         )
-        result = super()._compute_advantage_and_actor_update(batch, metrics, timing_raw)
+        recorder = IntervalRecorder(f"boundary-actor-step-{self.global_steps}")
+        with recorder.record("advantage_and_actor_update"):
+            result = super()._compute_advantage_and_actor_update(batch, metrics, timing_raw)
+        self._boundary_profile_intervals.extend(recorder.intervals)
         _emit_audit_event(
             "boundary_return event=actor_update_complete policy_version=%d mode=%s",
             policy_version,

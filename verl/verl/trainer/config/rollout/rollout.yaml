@@ -245,19 +245,25 @@ boundary_return:
   # Total response budget L, including the original H-token prefix.
   long_response_length: 8192
 
-  # Raw verifier correctness extra-info field and classification threshold.
+  # Raw verifier correctness extra-info field.
   correctness_key: acc
+
+  # Threshold used to classify the raw verifier correctness field.
   correctness_threshold: 0.5
 
   # Explicit task-score extra-info field. Never inferred from shaped reward.
   task_score_key: score
 
-  # Bounded grouped-request concurrency and chunk size.
+  # Maximum number of simultaneous grouped continuation requests.
   max_concurrent_requests: 128
+
+  # Maximum request count submitted in one bounded chunk.
   request_batch_size: 512
 
-  # Per-request timeout and verifier scoring chunk size.
+  # Per-request timeout in seconds.
   request_timeout_seconds: 600.0
+
+  # Row count in each verifier-scoring chunk.
   long_reward_chunk_size: 256
 
   # Optional per-candidate DataProto no-op assertion for real-vLLM shadow gates.

@@ -33,6 +33,7 @@ from .model import HFModelConfig
 from .optimizer import OptimizerConfig
 
 __all__ = [
+    "ActorDiagnosticsConfig",
     "ClipRatioScheduleConfig",
     "PolicyLossConfig",
     "RouterReplayConfig",
@@ -44,6 +45,28 @@ __all__ = [
     "TorchTitanActorConfig",
     "MindSpeedActorConfig",
 ]
+
+
+@dataclass
+class ActorDiagnosticsConfig(BaseConfig):
+    """Read-only PPO diagnostics computed from tensors already used by the loss.
+
+    The diagnostics path accumulates sufficient statistics locally over all
+    micro-batches and performs at most one packed data-parallel reduction for
+    each optimizer step.  It never changes the loss or any tensor consumed by
+    backward.
+    """
+
+    enable: bool = False
+    numerical_log_ratio_min: float = -20.0
+    numerical_log_ratio_max: float = 20.0
+    entropy_bucket_size: int = 256
+
+    def __post_init__(self):
+        if not self.numerical_log_ratio_min < self.numerical_log_ratio_max:
+            raise ValueError("actor diagnostics log-ratio bounds must be increasing")
+        if self.entropy_bucket_size <= 0:
+            raise ValueError("actor diagnostics entropy_bucket_size must be positive")
 
 
 @dataclass
@@ -198,6 +221,7 @@ class ActorConfig(BaseConfig):
     tau_pos: float = 1.0
     tau_neg: float = 1.05
     calculate_entropy: bool = False
+    diagnostics: ActorDiagnosticsConfig = field(default_factory=ActorDiagnosticsConfig)
     calculate_sum_pi_squared: bool = False
     use_kl_loss: bool = False
     # Whether to enable PrefixGrouper-based shared-prefix forward

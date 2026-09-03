@@ -255,6 +255,15 @@ def test_replace_preserves_raw_fields_and_prefix_shaping_residual_and_syncs_rewa
     assert result.metrics["boundary_return/transition_h_correct_l_correct_count"] == 1.0
     assert result.metrics["boundary_return/transition_h_correct_l_wrong_count"] == 1.0
     assert result.task_score_delta[3] == -2.0
+    assert candidate.batch["boundary_hit_cap"].tolist() == [True, True, True, True, False]
+    assert candidate.batch["boundary_eligible"].tolist() == [True, True, True, True, False]
+    assert candidate.batch["boundary_applied"].tolist() == [True, True, True, True, False]
+    assert candidate.batch["boundary_changed"].tolist() == [False, True, False, True, False]
+    assert candidate.batch["boundary_recovered"].tolist() == [False, True, False, False, False]
+    assert candidate.batch["boundary_regressed"].tolist() == [False, False, False, True, False]
+    assert candidate.batch["boundary_task_delta"].tolist() == pytest.approx([0.0, 1.0, 0.0, -2.0, 0.0])
+    assert candidate.batch["boundary_group_unlocked"].tolist() == [False] * 5
+    assert "boundary_group_newly_locked" not in candidate.batch
 
 
 def test_replacement_rejects_missing_cap_score_duplicate_parent_and_empty_prefix_mask():

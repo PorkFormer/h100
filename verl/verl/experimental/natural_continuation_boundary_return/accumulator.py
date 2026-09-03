@@ -103,6 +103,7 @@ class BoundaryReturnStepAccumulator:
                 float(regressed.sum() / cap_success.sum()) if cap_success.any() else 0.0
             ),
             "boundary_return/extra_generated_tokens": float(tail_values.sum()),
+            "boundary_return/tail_decode_tokens": float(tail_values.sum()),
             "boundary_return/extra_generated_token_ratio": (
                 float(tail_values.sum() / normal_tokens) if normal_tokens else 0.0
             ),
@@ -150,6 +151,23 @@ class BoundaryReturnStepAccumulator:
                 )
             ),
         }
+        additive_profile_metrics = (
+            "continuation_control_exclusive_seconds",
+            "continuation_dispatch_seconds_union",
+            "continuation_queue_seconds_union",
+            "continuation_prefill_engine_seconds_union",
+            "continuation_decode_engine_seconds_union",
+            "continuation_cleanup_seconds_union",
+            "long_reward_rows",
+            "long_reward_full_response_tokens",
+            "long_reward_batch_build_seconds_union",
+            "long_reward_model_forward_seconds_union",
+            "long_reward_chunk_count",
+        )
+        for name in additive_profile_metrics:
+            metrics[f"boundary_return/{name}"] = float(
+                sum(batch.metrics.get(f"boundary_return/{name}", 0.0) for batch in self._batches)
+            )
         transition_masks = {
             "h_wrong_l_wrong": valid & ~short_success & ~long_success,
             "h_wrong_l_correct": valid & ~short_success & long_success,

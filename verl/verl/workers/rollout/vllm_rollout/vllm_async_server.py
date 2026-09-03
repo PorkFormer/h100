@@ -556,6 +556,15 @@ class vLLMHttpServer:
             )
 
         extra_fields = {"global_steps": self.global_steps}
+        request_metrics = getattr(final_res, "metrics", None)
+        if request_metrics is not None:
+            engine_timing = {}
+            for field in ("arrival_time", "first_scheduled_time", "first_token_time", "finished_time"):
+                value = getattr(request_metrics, field, None)
+                if value is not None:
+                    engine_timing[field] = float(value)
+            if engine_timing:
+                extra_fields["engine_timing"] = engine_timing
         extract_prompt_logprobs(
             output=final_res,
             num_prompt_logprobs=sampling_params.prompt_logprobs,

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import random
 from dataclasses import replace
 from types import MethodType, SimpleNamespace
@@ -393,8 +394,10 @@ def test_candidate_hook_orders_continuation_long_reward_replacement_and_preserve
         lambda *_args, **_kwargs: events.append("build") or long_batch,
     )
     trainer._score_batch_with_existing_reward_pipeline = MethodType(
-        lambda self, batch: events.append("long_reward")
-        or SimpleNamespace(reward_tensor=torch.ones(2, 1), extra_info={"acc": [0, 1], "score": [0, 1]}),
+        lambda self, batch: (
+            events.append("long_reward")
+            or SimpleNamespace(reward_tensor=torch.ones(2, 1), extra_info={"acc": [0, 1], "score": [0, 1]})
+        ),
         trainer,
     )
     result = _result(uids=["u", "u"], short=[0, 1], long=[0, 1], boundary=[0, 1], tails=[0, 1], normal_tokens=8)
@@ -637,7 +640,15 @@ def test_trainer_sleeps_only_after_runtime_remote_drain_and_release():
     assert max(abort_positions) < drain_position < min(release_positions) < sleep_position
 
 
-def _run_fit_harness(monkeypatch, *, mode, generation_batches=2, failure_stage=None):
+def _run_fit_harness(
+    monkeypatch,
+    *,
+    mode,
+    generation_batches=2,
+    failure_stage=None,
+    gate_cycles=0,
+    gate_receipt_path=None,
+):
     from verl.experimental.natural_continuation_boundary_return import dapo_trainer as boundary_module
     from verl.experimental.probe_credit import dapo_trainer as base_module
     from verl.experimental.probe_credit.dynamic_sampling import (
@@ -758,6 +769,9 @@ def _run_fit_harness(monkeypatch, *, mode, generation_batches=2, failure_stage=N
                 "test_freq": 0,
                 "rollout_data_dir": None,
                 "esi_redundant_time": 0,
+                "dynamic_sampling_gate_cycles": gate_cycles,
+                "dynamic_sampling_gate_receipt_path": gate_receipt_path,
+                "profile_interval_path": None,
             },
             "distillation": {"enabled": False},
             "global_profiler": {"steps": None},
@@ -797,7 +811,7 @@ def _run_fit_harness(monkeypatch, *, mode, generation_batches=2, failure_stage=N
     trainer.resource_pool_manager = SimpleNamespace(get_n_gpus=lambda: 1)
     trainer.tokenizer = SimpleNamespace(eos_token_id=0, pad_token_id=0)
 
-    uid_values = iter([f"uid-{index}" for index in range(generation_batches * 2)])
+    uid_values = iter([f"uid-{index}" for index in range(max(generation_batches, gate_cycles) * 2)])
     monkeypatch.setattr(base_module.uuid, "uuid4", lambda: next(uid_values))
 
     class RolloutManager:
@@ -873,13 +887,13 @@ def _run_fit_harness(monkeypatch, *, mode, generation_batches=2, failure_stage=N
             events.append("long_reward")
             if failure_stage == "long_reward":
                 raise RuntimeError("long reward failed")
-            pattern = short_patterns[reward_call["short"] - 1]
+            pattern = short_patterns[(reward_call["short"] - 1) % len(short_patterns)]
             return SimpleNamespace(
                 reward_tensor=torch.full((len(batch), 8), 1.0e20),
                 extra_info={"acc": pattern, "score": pattern},
             )
         events.append("short_reward")
-        pattern = short_patterns[reward_call["short"]]
+        pattern = short_patterns[reward_call["short"] % len(short_patterns)]
         reward_call["short"] += 1
         shaped = torch.zeros((len(batch), 4), dtype=torch.float32)
         shaped[:, -1] = torch.tensor(pattern)
@@ -980,6 +994,18 @@ def test_two_batch_fit_call_order_keeps_replicas_awake_and_one_policy_version(mo
     assert result.logger.records[-1][0]["boundary_return/extra_generated_tokens"] == 8.0
     assert result.actor_batch.batch["responses"].shape[-1] == 4
     assert not bool((result.actor_batch.batch["responses"] == 99).any().item())
+    for label in (
+        "boundary_hit_cap",
+        "boundary_eligible",
+        "boundary_applied",
+        "boundary_changed",
+        "boundary_recovered",
+        "boundary_regressed",
+        "boundary_task_delta",
+        "boundary_group_unlocked",
+    ):
+        assert label in result.actor_batch.batch
+    assert "boundary_group_newly_locked" not in result.actor_batch.batch
 
 
 def test_single_batch_fit_call_order(monkeypatch):
@@ -998,6 +1024,27 @@ def test_single_batch_fit_call_order(monkeypatch):
         "actor_update",
     ]
     assert result.events[10] == "publish(8)"
+
+
+def test_dynamic_sampling_gate_runs_three_cycles_and_stops_before_old_ref_advantage_actor(monkeypatch, tmp_path):
+    receipt = tmp_path / "gate.jsonl"
+    result = _run_fit_harness(
+        monkeypatch,
+        mode="replace",
+        generation_batches=1,
+        gate_cycles=3,
+        gate_receipt_path=str(receipt),
+    )
+    assert result.error is None
+    assert "old/ref" not in result.events
+    assert "GRPO" not in result.events
+    assert "actor_update" not in result.events
+    assert result.events.count("normal(7)") == 3
+    assert result.events.count("sleep") == 3
+    assert result.events.count("publish(7)") == 3
+    records = [json.loads(line) for line in receipt.read_text().splitlines()]
+    assert [record["cycle"] for record in records] == [1, 2, 3]
+    assert all(record["status"] == "PASS" for record in records)
 
 
 @pytest.mark.parametrize("failure_stage", ["continuation", "long_reward"])
@@ -1024,6 +1071,7 @@ def test_shadow_fit_is_actor_batch_filter_selection_and_rng_equivalent_to_off(mo
     np.random.set_state(initial_np)
     torch.random.set_rng_state(initial_torch)
     shadow = _run_fit_harness(monkeypatch, mode="shadow", generation_batches=2)
+    assert not any(str(key).startswith("boundary_") for key in baseline.actor_batch.batch.keys())
 
     assert baseline.error is shadow.error is None
     _assert_dataproto_equal(baseline.actor_batch, shadow.actor_batch)

@@ -196,6 +196,39 @@ trainer:
   # Total training steps (can be set explicitly or derived from epochs)
   total_training_steps: null
 
+  # Candidate-accumulation cycles to validate before old/ref, advantage, and actor update; 0 disables Gate 0
+  dynamic_sampling_gate_cycles: 0
+
+  # Optional append-only JSONL receipt for Dynamic Sampling Gate 0
+  dynamic_sampling_gate_receipt_path: null
+
+  # Optional append-only JSONL interval-DAG artifact for NCBR profiling stages
+  profile_interval_path: null
+
+  # Fresh shared directory used only for the paired-arm Step 4 CV decision
+  profile_coordination_dir: null
+
+  # Profile arm identity written to the paired-arm CV receipt
+  profile_arm: null
+
+  # P0/P1/P2 identity written to the paired-arm CV receipt
+  profile_candidate: null
+
+  # Diagnostics on/off identity written to the paired-arm CV receipt
+  profile_diagnostics_mode: null
+
+  # First step at which paired-arm stability is evaluated
+  profile_min_steps: 4
+
+  # Hard upper bound after an in-process instability extension
+  profile_max_steps: 6
+
+  # Maximum accepted Step 2 through Step 4 wall-time coefficient of variation
+  profile_cv_threshold: 0.10
+
+  # Maximum time to wait for the other arm's atomic CV receipt
+  profile_coordination_timeout_seconds: 900
+
   # Project name for experiment tracking (e.g., wandb)
   project_name: verl_examples
 

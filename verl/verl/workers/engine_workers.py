@@ -52,6 +52,7 @@ from verl.workers.config import (
     TrainingWorkerConfig,
 )
 from verl.workers.rollout.base import BaseRollout, get_rollout_class
+from verl.workers.utils.actor_diagnostics import ActorDiagnosticsAccumulator
 from verl.workers.utils.losses import ppo_loss
 
 logger = logging.getLogger(__file__)
@@ -343,14 +344,26 @@ class TrainingWorker(Worker, DistProfilerExtension):
             if key not in data.keys():
                 tu.assign_non_tensor(data, **{key: val})
 
+        diagnostics_config = tu.get_non_tensor_data(data, "actor_diagnostics", {})
+        diagnostics = ActorDiagnosticsAccumulator(diagnostics_config)
+
+        def loss_with_diagnostics(*, model_output, data, dp_group=None):
+            loss, loss_metrics = self.loss_fn(model_output=model_output, data=data, dp_group=dp_group)
+            diagnostics.accumulate(model_output, data)
+            return loss, loss_metrics
+
         with (
             self.engine.train_mode(disable_auto_offload=disable_auto_offload),
             Timer(name="train_batch", logger=None) as timer,
         ):
-            output = self.engine.train_batch(data, loss_function=self.loss_fn)
+            output = self.engine.train_batch(data, loss_function=loss_with_diagnostics)
             # containing loss, model_output and metrics
             # for training, we only care about loss and metrics
         delta_time = timer.last
+
+        # This is deliberately outside every micro-batch.  finalize() packs all
+        # sufficient statistics and performs at most one DP all-reduce.
+        diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
 
         update_lr_scheduler = tu.get(data, key="update_lr_scheduler", default=False)
         # update lr scheduler
@@ -371,6 +384,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 forward_only=False,
                 images_seqlens=images_seqlens,
             ).cpu()
+            tu.get(final_output, "metrics").update(diagnostic_result.metrics)
         else:
             final_output = None
 

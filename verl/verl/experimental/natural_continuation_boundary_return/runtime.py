@@ -21,12 +21,15 @@ import hashlib
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+from uuid import uuid4 as _profile_uuid4
 
 import numpy as np
 
 from verl import DataProto
+from verl.experimental.natural_continuation_boundary_return.profiling import ProfileInterval
 from verl.trainer.ppo.forced_answer_probe import detect_hit_response_cap
 from verl.utils.ray_utils import auto_await
 
@@ -65,6 +68,7 @@ class BoundaryContinuationBranchResult:
     actual_policy_version: int | None
     stop_reason: str | None = None
     finish_reason: str | None = None
+    engine_timing: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,7 @@ class BoundaryContinuationGeneration:
     actual_policy_version: int
     stop_reason: str | None = None
     finish_reason: str | None = None
+    engine_timing: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +97,7 @@ class BoundaryContinuationCapture:
     long_hit_response_cap: np.ndarray | None = None
     request_timeout_seconds: float = 0.0
     continuation_timeout_count: int = 0
+    profiling_intervals: tuple[ProfileInterval, ...] = ()
 
 
 def _stable_digest(parts: Sequence[Any]) -> str:
@@ -300,6 +306,7 @@ def aggregate_continuation_results(
                 actual_policy_version=int(result.actual_policy_version),
                 stop_reason=result.stop_reason,
                 finish_reason=result.finish_reason,
+                engine_timing=result.engine_timing,
             )
         )
     return tuple(generations)
@@ -352,6 +359,33 @@ async def run_boundary_continuations(
     if not hasattr(client, "start_grouped"):
         raise TypeError("boundary_return requires a tracked grouped-request client")
 
+    continuation_start = time.perf_counter()
+    continuation_parent_id = f"boundary-continuation:{policy_version}:{_profile_uuid4().hex}"
+    profiling_intervals: list[ProfileInterval] = []
+
+    def add_interval(
+        name: str,
+        start: float,
+        end: float,
+        *,
+        parent_id: str | None = continuation_parent_id,
+        asynchronous: bool,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        interval_id = f"boundary-continuation:{name}:{_profile_uuid4().hex}"
+        profiling_intervals.append(
+            ProfileInterval(
+                interval_id=interval_id,
+                name=name,
+                wall_start=float(start),
+                wall_end=float(end),
+                parent_id=parent_id,
+                asynchronous=asynchronous,
+                metadata=dict(metadata or {}),
+            )
+        )
+        return interval_id
+
     async def run_wave(
         wave: Sequence[BoundaryContinuationRequest],
     ) -> list[list[BoundaryContinuationBranchResult]]:
@@ -364,19 +398,33 @@ async def run_boundary_continuations(
             params.update({"n": 1, "seed": request.seed, "max_tokens": request.max_tokens})
             return params
 
-        async def start_one(request: BoundaryContinuationRequest) -> tuple[Any, Any]:
-            tracked = await client.start_grouped(
-                request.request_id,
-                prompt_ids=list(request.input_token_ids),
-                sampling_params=request_params(request),
-                routing_key=request.routing_key,
-            )
-            return request, tracked
+        async def start_one(request: BoundaryContinuationRequest) -> tuple[Any, Any, float, float]:
+            started = time.perf_counter()
+            wall_started = time.time()
+            try:
+                tracked = await client.start_grouped(
+                    request.request_id,
+                    prompt_ids=list(request.input_token_ids),
+                    sampling_params=request_params(request),
+                    routing_key=request.routing_key,
+                )
+            finally:
+                add_interval(
+                    "continuation_request_dispatch",
+                    started,
+                    time.perf_counter(),
+                    asynchronous=True,
+                    metadata={"request_id": request.request_id, "input_tokens": len(request.input_token_ids)},
+                )
+            return request, tracked, started, wall_started
 
         async def generate_one(
             request: BoundaryContinuationRequest,
             tracked: Any,
+            request_started: float,
+            request_wall_started: float,
         ) -> list[BoundaryContinuationBranchResult]:
+            request_interval_id = f"boundary-continuation:request:{_profile_uuid4().hex}"
             backend_result_task = asyncio.create_task(tracked.result())
             backend_result_tasks.append(backend_result_task)
             outputs = await asyncio.wait_for(
@@ -397,8 +445,50 @@ async def run_boundary_continuations(
                         actual_policy_version=int(actual_version) if actual_version is not None else None,
                         stop_reason=output.stop_reason,
                         finish_reason=extra_fields.get("finish_reason"),
+                        engine_timing=extra_fields.get("engine_timing"),
                     )
                 )
+                engine_timing = extra_fields.get("engine_timing") or {}
+                timing_parts = (
+                    ("continuation_queue", "arrival_time", "first_scheduled_time"),
+                    ("continuation_prefill_engine", "first_scheduled_time", "first_token_time"),
+                    ("continuation_decode_engine", "first_token_time", "finished_time"),
+                )
+                for name, start_key, end_key in timing_parts:
+                    if start_key in engine_timing and end_key in engine_timing:
+                        # vLLM reports epoch-clock timestamps. Anchor their
+                        # deltas to the request's local monotonic timestamp so
+                        # every interval in this process uses one clock domain.
+                        engine_start = request_started + float(engine_timing[start_key]) - request_wall_started
+                        engine_end = request_started + float(engine_timing[end_key]) - request_wall_started
+                        add_interval(
+                            name,
+                            engine_start,
+                            engine_end,
+                            parent_id=request_interval_id,
+                            asynchronous=True,
+                            metadata={
+                                "request_id": request.request_id,
+                                "input_tokens": len(request.input_token_ids),
+                                "tail_decode_tokens": len(output.token_ids),
+                                "branch_id": branch_id,
+                            },
+                        )
+            profiling_intervals.append(
+                ProfileInterval(
+                    interval_id=request_interval_id,
+                    name="continuation_request",
+                    wall_start=request_started,
+                    wall_end=time.perf_counter(),
+                    parent_id=continuation_parent_id,
+                    asynchronous=True,
+                    metadata={
+                        "request_id": request.request_id,
+                        "input_tokens": len(request.input_token_ids),
+                        "tail_decode_tokens": sum(len(result.tail_token_ids) for result in wave_results),
+                    },
+                )
+            )
             return wave_results
 
         async def cleanup(primary_error: BaseException, tasks: Sequence[asyncio.Task]) -> None:
@@ -502,21 +592,32 @@ async def run_boundary_continuations(
 
         start_results = await asyncio.gather(*(start_one(request) for request in wave), return_exceptions=True)
         primary_start_error = next((result for result in start_results if isinstance(result, BaseException)), None)
-        request_handles: list[tuple[BoundaryContinuationRequest, Any]] = []
+        request_handles: list[tuple[BoundaryContinuationRequest, Any, float, float]] = []
         for result in start_results:
             if not isinstance(result, BaseException):
-                request, tracked = result
+                request, tracked, request_started, request_wall_started = result
                 tracked_requests.append(tracked)
-                request_handles.append((request, tracked))
+                request_handles.append((request, tracked, request_started, request_wall_started))
         if primary_start_error is not None:
             await cleanup(primary_start_error, ())
             raise primary_start_error
 
-        tasks = [asyncio.create_task(generate_one(request, tracked)) for request, tracked in request_handles]
+        tasks = [
+            asyncio.create_task(generate_one(request, tracked, request_started, request_wall_started))
+            for request, tracked, request_started, request_wall_started in request_handles
+        ]
         try:
             grouped = await asyncio.gather(*tasks)
             for tracked in tracked_requests:
+                release_start = time.perf_counter()
                 await tracked.release()
+                add_interval(
+                    "continuation_cleanup_release",
+                    release_start,
+                    time.perf_counter(),
+                    asynchronous=False,
+                    metadata={"server_id": str(tracked.server_id)},
+                )
             return grouped
         except BaseException as primary_error:
             await cleanup(primary_error, tasks)
@@ -546,6 +647,18 @@ async def run_boundary_continuations(
         long_hit_response_cap[generation.parent_index] = (
             str(generation.finish_reason).lower() == "length" or len(generation.tail_token_ids) >= request.max_tokens
         )
+    continuation_end = time.perf_counter()
+    profiling_intervals.append(
+        ProfileInterval(
+            interval_id=continuation_parent_id,
+            name="boundary_continuation",
+            wall_start=continuation_start,
+            wall_end=continuation_end,
+            parent_id=None,
+            asynchronous=False,
+            metadata={"request_count": len(requests), "policy_version": int(policy_version)},
+        )
+    )
     return BoundaryContinuationCapture(
         hit_response_cap=hit_cap,
         requests=tuple(requests),
@@ -555,4 +668,5 @@ async def run_boundary_continuations(
         long_hit_response_cap=long_hit_response_cap,
         request_timeout_seconds=float(config.request_timeout_seconds),
         continuation_timeout_count=0,
+        profiling_intervals=tuple(profiling_intervals),
     )

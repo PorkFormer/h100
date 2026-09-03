@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -25,6 +26,7 @@ import torch
 from verl import DataProto
 from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
 from verl.experimental.agent_loop.single_turn_agent_loop import SingleTurnAgentLoop
+from verl.experimental.natural_continuation_boundary_return.profiling import analyze_interval_dag
 from verl.experimental.natural_continuation_boundary_return.runtime import (
     BoundaryContinuationBranchResult,
     BoundaryContinuationRequest,
@@ -280,6 +282,46 @@ def test_zero_token_tail_is_legal_and_sampling_matches_normal_rollout():
         "seed": capture.requests[0].seed,
         "max_tokens": 2,
     }
+
+
+def test_vllm_epoch_timestamps_are_mapped_into_the_monotonic_interval_clock():
+    async def factory(_request_id, _prompt_ids, _sampling_params, _routing_key):
+        await asyncio.sleep(0.01)
+        finished = time.time()
+        return [
+            SimpleNamespace(
+                token_ids=[88],
+                stop_reason="completed",
+                extra_fields={
+                    "branch_id": 0,
+                    "global_steps": 7,
+                    "finish_reason": "stop",
+                    "engine_timing": {
+                        "arrival_time": finished - 0.003,
+                        "first_scheduled_time": finished - 0.002,
+                        "first_token_time": finished - 0.001,
+                        "finished_time": finished,
+                    },
+                },
+            )
+        ]
+
+    capture = run_boundary_continuations(
+        config=_active_config(),
+        rollout_batch=_batch(),
+        client=_Client(factory=factory),
+        eos_token_id=99,
+        short_response_length=4,
+        max_model_len=8,
+        policy_version=7,
+        sampling_params=_normal_sampling(),
+    )
+    analysis = analyze_interval_dag(capture.profiling_intervals)
+    assert analysis["valid"], analysis["errors"]
+    timestamps = [
+        value for interval in capture.profiling_intervals for value in (interval.wall_start, interval.wall_end)
+    ]
+    assert max(timestamps) - min(timestamps) < 10.0
 
 
 def _request(identity: str, trajectory: str) -> BoundaryContinuationRequest:
