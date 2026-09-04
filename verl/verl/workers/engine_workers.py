@@ -424,13 +424,14 @@ class TrainingWorker(Worker, DistProfilerExtension):
 
             return replay_loss
 
-        # Materialize lazy kernels and Adam state before resetting peak-memory
-        # counters. The unmeasured warmup is restored to the identical initial
-        # model/optimizer/RNG state before the alternating observations.
-        restore()
-        warmup_diagnostics = ActorDiagnosticsAccumulator({**dict(diagnostics_config), "enable": False})
-        self.engine.train_batch(data.clone(), loss_function=make_replay_loss(warmup_diagnostics))
-        warmup_diagnostics.finalize(self.engine.get_data_parallel_group())
+        # Materialize lazy kernels, Adam state, and both diagnostics paths
+        # before resetting peak-memory counters. Each unmeasured warmup is
+        # restored to the identical initial model/optimizer/RNG state.
+        for enabled in (False, True):
+            restore()
+            warmup_diagnostics = ActorDiagnosticsAccumulator({**dict(diagnostics_config), "enable": enabled})
+            self.engine.train_batch(data.clone(), loss_function=make_replay_loss(warmup_diagnostics))
+            warmup_diagnostics.finalize(self.engine.get_data_parallel_group())
         restore()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
@@ -514,6 +515,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
             "rank": rank,
             "world_size": torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1,
             "unmeasured_allocator_and_optimizer_warmup": True,
+            "unmeasured_off_and_on_diagnostics_warmup": True,
             "observations": observations,
             "equivalence": equivalence,
             "equivalence_pass": all(equivalence.values()),

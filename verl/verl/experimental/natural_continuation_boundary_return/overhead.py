@@ -118,9 +118,18 @@ class FixedBatchReplayHarness:
             peak_reserved_bytes=peak_reserved,
         )
 
+    def _warmup_one(self, enabled: bool) -> None:
+        """Materialize each diagnostics path without adding a measured observation."""
+        self._restore()
+        self.step_fn(enabled)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
     def run(self, repeats: int = 2) -> dict[str, Any]:
         if repeats <= 0:
             raise ValueError("fixed replay repeats must be positive")
+        for enabled in (False, True):
+            self._warmup_one(enabled)
         observations = [self._run_one(enabled) for _ in range(repeats) for enabled in (False, True)]
         off = [item for item in observations if not item.diagnostics_enabled]
         on = [item for item in observations if item.diagnostics_enabled]
@@ -146,6 +155,7 @@ class FixedBatchReplayHarness:
 
         return {
             "schema_version": "fixed-actor-batch-replay-v1",
+            "unmeasured_off_and_on_diagnostics_warmup": True,
             "observations": [item.__dict__ for item in observations],
             "equivalence": equivalence,
             "equivalence_pass": all(equivalence.values()),
