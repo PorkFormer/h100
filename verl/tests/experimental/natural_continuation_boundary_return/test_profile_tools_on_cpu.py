@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import subprocess
 import sys
@@ -31,8 +32,12 @@ from tools.ncbr_profile.stage_local_assets import file_hashes, stage
 from tools.ncbr_profile.validate_gate0 import validate as validate_gate0
 from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata, validate_stage_artifacts
 from tools.ncbr_profile.verify_teardown import target_processes
-from verl.experimental.natural_continuation_boundary_return.dapo_trainer import _profile_json_default
+from verl.experimental.natural_continuation_boundary_return.dapo_trainer import (
+    RayDAPOBoundaryReturnTrainer,
+    _profile_json_default,
+)
 from verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return import task_runner_options
+from verl.experimental.natural_continuation_boundary_return.runtime import run_boundary_continuations
 from verl.single_controller.ray import base as ray_base
 
 
@@ -784,3 +789,11 @@ def test_gate0_validates_every_v1_candidate_batch_event_sequence():
     assert validate_gate0(records, "v1", "\n".join([complete_batch] * 3))["status"] == "PASS"
     malformed = "\n".join([complete_batch, complete_batch, "boundary_return event=short_reward_complete"])
     assert validate_gate0(records, "v1", malformed)["status"] == "FAIL"
+
+
+def test_continuation_complete_audit_event_has_one_owner():
+    marker = "boundary_return event=continuation_complete"
+    assert marker in inspect.getsource(run_boundary_continuations)
+    assert marker not in inspect.getsource(
+        RayDAPOBoundaryReturnTrainer._process_candidate_after_reward_before_filter
+    )

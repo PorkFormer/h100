@@ -724,11 +724,9 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 if capture is None:
                     raise AssertionError("active boundary_return returned no continuation capture")
                 if capture.generations:
-                    _emit_audit_event(
-                        "boundary_return event=continuation_complete policy_version=%d request_count=%d",
-                        policy_version,
-                        len(capture.generations),
-                    )
+                    # run_boundary_continuations owns the single completion audit
+                    # event; emitting it again here makes one request phase look
+                    # like two continuation phases to the Gate 0 order validator.
                     with marked_timer("boundary_long_reward", timing_raw, color="magenta"):
                         long_reward = self._score_long_generations_in_chunks(
                             candidate,
