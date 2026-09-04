@@ -12,14 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
+import hashlib
+import json
 import logging
 import os
+import random
+import statistics
+import time
+from collections.abc import Mapping
 from contextlib import nullcontext
 from copy import deepcopy
 from functools import partial
 from itertools import chain
+from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import psutil
 import torch
 from codetiming import Timer
@@ -57,6 +65,55 @@ from verl.workers.utils.losses import ppo_loss
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
+
+
+def _replay_tree_to_cpu(value):
+    if torch.is_tensor(value):
+        local = value.to_local() if hasattr(value, "to_local") else value
+        return local.detach().cpu().clone()
+    if isinstance(value, Mapping):
+        return {key: _replay_tree_to_cpu(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replay_tree_to_cpu(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_replay_tree_to_cpu(item) for item in value)
+    return deepcopy(value)
+
+
+def _replay_fingerprint(value) -> str:
+    digest = hashlib.sha256()
+
+    def update(item):
+        if torch.is_tensor(item):
+            local = item.to_local() if hasattr(item, "to_local") else item
+            tensor = local.detach().cpu().contiguous()
+            digest.update(b"tensor\0")
+            digest.update(str(tensor.dtype).encode())
+            digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode())
+            if tensor.numel():
+                digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+        elif isinstance(item, Mapping):
+            digest.update(b"mapping\0")
+            for key in sorted(item, key=lambda key: repr(key)):
+                update(key)
+                update(item[key])
+        elif isinstance(item, list | tuple):
+            digest.update(type(item).__name__.encode() + b"\0")
+            for value in item:
+                update(value)
+        elif isinstance(item, np.ndarray):
+            digest.update(b"numpy\0" + str(item.dtype).encode())
+            digest.update(json.dumps(list(item.shape), separators=(",", ":")).encode())
+            digest.update(item.tobytes())
+        elif isinstance(item, Metric):
+            digest.update(b"metric\0")
+            update(item.aggregation.value)
+            update(item.values)
+        else:
+            digest.update(type(item).__name__.encode() + b"\0" + repr(item).encode())
+
+    update(value)
+    return digest.hexdigest()
 
 
 def _with_routing_replay_flag(enabled: bool):
@@ -321,6 +378,165 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 output = None
         return output
 
+    def _fixed_actor_replay(self, data: TensorDict, diagnostics_config, replay_config):
+        """Alternate diagnostics off/on on one real optimizer mini-batch per rank."""
+        repeats = int(replay_config.get("repeats", 2))
+        receipt_dir = replay_config.get("receipt_dir")
+        if repeats < 2 or not receipt_dir:
+            raise ValueError("actor fixed replay requires repeats>=2 and a receipt directory")
+        module = getattr(self.engine, "module", None)
+        optimizer = getattr(self.engine, "optimizer", None)
+        if module is None or optimizer is None:
+            raise ValueError("actor fixed replay requires an initialized model and optimizer")
+        parameters = list(module.parameters())
+        parameter_state = [_replay_tree_to_cpu(parameter) for parameter in parameters]
+        optimizer_state = _replay_tree_to_cpu(optimizer.state_dict())
+        scaler = getattr(self.engine, "scaler", None)
+        scaler_state = _replay_tree_to_cpu(scaler.state_dict()) if scaler is not None else None
+        python_rng = random.getstate()
+        numpy_rng = deepcopy(np.random.get_state())
+        torch_rng = torch.random.get_rng_state().clone()
+        cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+
+        def restore():
+            with torch.no_grad():
+                for parameter, saved in zip(parameters, parameter_state, strict=True):
+                    parameter.copy_(saved.to(parameter.device))
+            optimizer.load_state_dict(deepcopy(optimizer_state))
+            optimizer.zero_grad(set_to_none=True)
+            if scaler is not None:
+                scaler.load_state_dict(deepcopy(scaler_state))
+            random.setstate(python_rng)
+            np.random.set_state(numpy_rng)
+            torch.random.set_rng_state(torch_rng)
+            if cuda_rng is not None:
+                torch.cuda.set_rng_state_all(cuda_rng)
+
+        observations = []
+        final_output = None
+        final_diagnostics = None
+
+        def make_replay_loss(accumulator):
+            def replay_loss(*, model_output, data, dp_group=None):
+                loss, loss_metrics = self.loss_fn(model_output=model_output, data=data, dp_group=dp_group)
+                accumulator.accumulate(model_output, data)
+                return loss, loss_metrics
+
+            return replay_loss
+
+        # Materialize lazy kernels and Adam state before resetting peak-memory
+        # counters. The unmeasured warmup is restored to the identical initial
+        # model/optimizer/RNG state before the alternating observations.
+        restore()
+        warmup_diagnostics = ActorDiagnosticsAccumulator({**dict(diagnostics_config), "enable": False})
+        self.engine.train_batch(data.clone(), loss_function=make_replay_loss(warmup_diagnostics))
+        warmup_diagnostics.finalize(self.engine.get_data_parallel_group())
+        restore()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        for _ in range(repeats):
+            for enabled in (False, True):
+                restore()
+                current_config = dict(diagnostics_config)
+                current_config["enable"] = enabled
+                diagnostics = ActorDiagnosticsAccumulator(current_config)
+                replay_loss = make_replay_loss(diagnostics)
+                replay_data = data.clone()
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    torch.cuda.reset_peak_memory_stats()
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    output = self.engine.train_batch(replay_data, loss_function=replay_loss)
+                    diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
+                    end.record()
+                    torch.cuda.synchronize()
+                    elapsed = start.elapsed_time(end) / 1000.0
+                    peak_allocated = torch.cuda.max_memory_allocated()
+                    peak_reserved = torch.cuda.max_memory_reserved()
+                else:
+                    started = time.perf_counter()
+                    output = self.engine.train_batch(replay_data, loss_function=replay_loss)
+                    diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
+                    elapsed = time.perf_counter() - started
+                    peak_allocated = "unavailable"
+                    peak_reserved = "unavailable"
+                gradients = [
+                    None if parameter.grad is None else _replay_tree_to_cpu(parameter.grad) for parameter in parameters
+                ]
+                observation = {
+                    "diagnostics_enabled": enabled,
+                    "loss_fingerprint": _replay_fingerprint(output.get("metrics", {})),
+                    "gradient_fingerprint": _replay_fingerprint(gradients),
+                    "parameter_fingerprint": _replay_fingerprint(parameters),
+                    "optimizer_fingerprint": _replay_fingerprint(optimizer.state_dict()),
+                    "rng_fingerprint": _replay_fingerprint(
+                        {
+                            "python": random.getstate(),
+                            "numpy": np.random.get_state(),
+                            "torch": torch.random.get_rng_state(),
+                            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                        }
+                    ),
+                    "elapsed_seconds": elapsed,
+                    "peak_allocated_bytes": peak_allocated,
+                    "peak_reserved_bytes": peak_reserved,
+                    "diagnostic_reduction_calls": diagnostic_result.reduction_calls,
+                }
+                observations.append(observation)
+                final_output = output
+                final_diagnostics = diagnostic_result
+        fields = (
+            "loss_fingerprint",
+            "gradient_fingerprint",
+            "parameter_fingerprint",
+            "optimizer_fingerprint",
+            "rng_fingerprint",
+        )
+        equivalence = {field: len({item[field] for item in observations}) == 1 for field in fields}
+        off = [item for item in observations if not item["diagnostics_enabled"]]
+        on = [item for item in observations if item["diagnostics_enabled"]]
+
+        def overhead(field):
+            off_values = [item[field] for item in off]
+            on_values = [item[field] for item in on]
+            if any(value == "unavailable" for value in (*off_values, *on_values)):
+                return "unavailable"
+            baseline = max(off_values) if field.startswith("peak_") else statistics.median(off_values)
+            compared = max(on_values) if field.startswith("peak_") else statistics.median(on_values)
+            return (compared - baseline) / baseline if baseline else 0.0
+
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        receipt = {
+            "schema_version": "real-fixed-actor-batch-replay-rank-v1",
+            "rank": rank,
+            "world_size": torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1,
+            "unmeasured_allocator_and_optimizer_warmup": True,
+            "observations": observations,
+            "equivalence": equivalence,
+            "equivalence_pass": all(equivalence.values()),
+            "actor_time_overhead_fraction": overhead("elapsed_seconds"),
+            "peak_allocated_overhead_fraction": overhead("peak_allocated_bytes"),
+            "peak_reserved_overhead_fraction": overhead("peak_reserved_bytes"),
+            "max_diagnostic_reduction_calls_per_optimizer_step": max(
+                item["diagnostic_reduction_calls"] for item in observations
+            ),
+        }
+        target_dir = Path(str(receipt_dir))
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"rank_{rank:05d}.json"
+        if target.exists():
+            raise FileExistsError(f"refusing to overwrite fixed actor replay receipt: {target}")
+        target.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if not receipt["equivalence_pass"]:
+            raise AssertionError(f"real actor diagnostics replay diverged on rank {rank}: {equivalence}")
+        if receipt["max_diagnostic_reduction_calls_per_optimizer_step"] > 1:
+            raise AssertionError("actor diagnostics performed more than one reduction per optimizer step")
+        self._fixed_actor_replay_complete = True
+        return final_output, final_diagnostics, statistics.median(item["elapsed_seconds"] for item in on)
+
     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="train"), blocking=False)
     @DistProfiler.annotate(color="red", role="train_batch")
     def train_batch(self, data: TensorDict) -> TensorDict:
@@ -345,25 +561,30 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 tu.assign_non_tensor(data, **{key: val})
 
         diagnostics_config = tu.get_non_tensor_data(data, "actor_diagnostics", {})
-        diagnostics = ActorDiagnosticsAccumulator(diagnostics_config)
+        fixed_replay_config = tu.get_non_tensor_data(data, "actor_fixed_replay", {})
+        with self.engine.train_mode(disable_auto_offload=disable_auto_offload):
+            if fixed_replay_config.get("enabled", False) and not getattr(
+                self, "_fixed_actor_replay_complete", False
+            ):
+                output, diagnostic_result, delta_time = self._fixed_actor_replay(
+                    data, diagnostics_config, fixed_replay_config
+                )
+            else:
+                diagnostics = ActorDiagnosticsAccumulator(diagnostics_config)
 
-        def loss_with_diagnostics(*, model_output, data, dp_group=None):
-            loss, loss_metrics = self.loss_fn(model_output=model_output, data=data, dp_group=dp_group)
-            diagnostics.accumulate(model_output, data)
-            return loss, loss_metrics
+                def loss_with_diagnostics(*, model_output, data, dp_group=None):
+                    loss, loss_metrics = self.loss_fn(model_output=model_output, data=data, dp_group=dp_group)
+                    diagnostics.accumulate(model_output, data)
+                    return loss, loss_metrics
 
-        with (
-            self.engine.train_mode(disable_auto_offload=disable_auto_offload),
-            Timer(name="train_batch", logger=None) as timer,
-        ):
-            output = self.engine.train_batch(data, loss_function=loss_with_diagnostics)
-            # containing loss, model_output and metrics
-            # for training, we only care about loss and metrics
-        delta_time = timer.last
-
-        # This is deliberately outside every micro-batch.  finalize() packs all
-        # sufficient statistics and performs at most one DP all-reduce.
-        diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
+                with Timer(name="train_batch", logger=None) as timer:
+                    output = self.engine.train_batch(data, loss_function=loss_with_diagnostics)
+                    # containing loss, model_output and metrics
+                    # for training, we only care about loss and metrics
+                delta_time = timer.last
+                # This is deliberately outside every micro-batch. finalize()
+                # packs all statistics and performs at most one DP all-reduce.
+                diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
 
         update_lr_scheduler = tu.get(data, key="update_lr_scheduler", default=False)
         # update lr scheduler

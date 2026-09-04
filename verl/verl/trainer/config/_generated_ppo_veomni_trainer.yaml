@@ -921,6 +921,19 @@ trainer:
   profile_max_steps: 6
   profile_cv_threshold: 0.1
   profile_coordination_timeout_seconds: 900
+  hard_prefix_source_path: null
+  diagnostic_dump_dir: null
+  nondeterminism_diagnostics:
+    enabled: false
+    output_dir: null
+    run_id: null
+  actor_fixed_replay:
+    enabled: false
+    repeats: 2
+    receipt_dir: null
+  mechanism_panel_path: null
+  mechanism_panel_receipt_path: null
+  mechanism_rows_path: null
   project_name: verl_examples
   experiment_name: gsm8k
   logger:

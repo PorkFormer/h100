@@ -34,6 +34,19 @@ def revision_metadata(root: Path) -> dict[str, str]:
     }
 
 
+def validate_stage_artifacts(stage: str, candidate: str, diagnostics: str, artifacts: dict) -> None:
+    if stage in {"fixed_replay", "acceptance"}:
+        selection = json.loads(Path(artifacts["profile_selection"]["path"]).read_text(encoding="utf-8"))
+        if selection.get("status") != "PASS" or selection.get("selected_candidate") != candidate:
+            raise SystemExit("stage candidate does not match the PASS profile selection")
+    if stage == "acceptance":
+        overhead = json.loads(Path(artifacts["diagnostics_overhead_gate"]["path"]).read_text(encoding="utf-8"))
+        if overhead.get("status") != "PASS":
+            raise SystemExit("acceptance requires a PASS diagnostics overhead gate")
+    if stage in {"fixed_replay", "acceptance", "formal_s300"} and diagnostics != "on":
+        raise SystemExit(f"{stage} requires diagnostics=on")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
@@ -41,7 +54,17 @@ def main() -> None:
     parser.add_argument("--arm", choices=("baseline", "v1"), required=True)
     parser.add_argument("--candidate", choices=("P0", "P1", "P2"), required=True)
     parser.add_argument(
-        "--stage", choices=("calibration", "gate0", "profile", "acceptance", "formal_s300"), required=True
+        "--stage",
+        choices=(
+            "calibration",
+            "gate0",
+            "profile",
+            "mechanism_panel",
+            "fixed_replay",
+            "acceptance",
+            "formal_s300",
+        ),
+        required=True,
     )
     parser.add_argument("--node", choices=("A", "B"), required=True)
     parser.add_argument("--diagnostics", choices=("on", "off"), required=True)
@@ -62,6 +85,17 @@ def main() -> None:
         raise SystemExit(f"code SHA mismatch: manifest {manifest.get('code_sha')}, checkout {actual_sha}")
     if status:
         raise SystemExit("GPU stage requires a clean worktree")
+    remote = manifest.get("code_remote", {})
+    if remote.get("sha") != actual_sha or not remote.get("name") or not remote.get("ref"):
+        raise SystemExit("stage manifest is missing pinned remote code provenance")
+    remote_output = subprocess.check_output(
+        ["git", "ls-remote", "--exit-code", remote["name"], remote["ref"]],
+        cwd=repo,
+        text=True,
+    ).splitlines()
+    remote_shas = {line.split()[0] for line in remote_output if line.split()}
+    if remote_shas != {actual_sha}:
+        raise SystemExit(f"remote code ref moved or is not pinned to checkout SHA: {sorted(remote_shas)}")
     model = manifest["model"]
     if model.get("repo_id") != "Qwen/Qwen3-1.7B-Base" or model.get("model_type") != "qwen3":
         raise SystemExit("model identity mismatch")
@@ -90,6 +124,37 @@ def main() -> None:
         path = Path(record["path"])
         if not path.is_file() or sha256(path) != record["sha256"]:
             raise SystemExit(f"frozen artifact hash mismatch: {name}: {path}")
+    artifacts = manifest.get("frozen_artifacts", {})
+    required_by_stage = {
+        "gate0": {
+            "hard_prefix_panel",
+            "hard_prefix_panel_manifest",
+            "calibration_workload_comparison",
+            "calibration_performance_comparison",
+        },
+        "profile": {
+            "hard_prefix_panel",
+            "hard_prefix_panel_manifest",
+            "calibration_workload_comparison",
+            "calibration_performance_comparison",
+        },
+        "mechanism_panel": {"hard_prefix_panel", "hard_prefix_panel_manifest"},
+        "fixed_replay": {"hard_prefix_panel", "hard_prefix_panel_manifest", "profile_selection"},
+        "acceptance": {"profile_selection", "diagnostics_overhead_gate"},
+        "formal_s300": {"s300_gate_receipt"},
+    }
+    missing_artifacts = required_by_stage.get(args.stage, set()) - artifacts.keys()
+    if missing_artifacts:
+        raise SystemExit(f"stage is missing required frozen artifacts: {sorted(missing_artifacts)}")
+    validate_stage_artifacts(args.stage, args.candidate, args.diagnostics, artifacts)
+    if args.stage == "formal_s300":
+        gate = json.loads(Path(artifacts["s300_gate_receipt"]["path"]).read_text(encoding="utf-8"))
+        if gate.get("status") != "PASS" or not gate.get("s300_authorized", False):
+            raise SystemExit("formal S300 gate receipt is not PASS/authorized")
+        if gate.get("code_sha") != actual_sha:
+            raise SystemExit("formal S300 gate receipt code SHA mismatch")
+        if gate.get("selected_candidate") != args.candidate:
+            raise SystemExit("formal S300 candidate does not match the gate selection")
     print(json.dumps({"status": "PASS", "code_sha": actual_sha, "identity": actual_identity}))
 
 

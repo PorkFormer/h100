@@ -229,6 +229,29 @@ trainer:
   # Maximum time to wait for the other arm's atomic CV receipt
   profile_coordination_timeout_seconds: 900
 
+  # Optional Base H=2048 cap-row JSONL source for a frozen mechanism panel
+  hard_prefix_source_path: null
+
+  # Optional real retained actor DataProto dump used by fixed-batch replay
+  diagnostic_dump_dir: null
+
+  # Exact calibration workload identities; disabled for ordinary training
+  nondeterminism_diagnostics:
+    enabled: false
+    output_dir: null
+    run_id: null
+
+  # Same-process real actor mini-batch diagnostics off/on replay gate
+  actor_fixed_replay:
+    enabled: false
+    repeats: 2
+    receipt_dir: null
+
+  # Frozen cap-prefix mechanism supplement, used only when natural coverage is insufficient
+  mechanism_panel_path: null
+  mechanism_panel_receipt_path: null
+  mechanism_rows_path: null
+
   # Project name for experiment tracking (e.g., wandb)
   project_name: verl_examples
 

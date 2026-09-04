@@ -3,14 +3,15 @@
 This protocol is pinned to `Qwen/Qwen3-1.7B-Base` revision
 `ea980cb0a6c2ae4b936e82123acc929f1cec04c1`, H=2048, L=8192,
 B256/G768/M16/N8 and seed 42. A stage manifest must bind the clean code SHA,
-diagnostics mode, node identity, every node-local model file, Hugging Face
+the live immutable remote branch ref at that same SHA, diagnostics mode, node
+identity, every node-local model file, Hugging Face
 revision metadata, train/AIME2024/AIME2025 data hashes, and any frozen workload
 or mechanism-panel artifact before a GPU process starts. AIME2024 and AIME2025
 remain separate in every report.
 
 The launcher is `examples/natural_continuation_boundary_return/run_qwen3_1p7b_profile_fsdp.sh`.
 It accepts only the two arms, P0/P1/P2, and `calibration`, `gate0`, `profile`,
-`acceptance`, or `formal_s300`. Calibration itself is fixed to Baseline/P0.
+`mechanism_panel`, `fixed_replay`, `acceptance`, or `formal_s300`. Calibration itself is fixed to Baseline/P0.
 `formal_s300` additionally fails closed unless the operator sets the explicit
 authorization token after every preceding gate passes. The user has authorized
 that automatic transition; profiling and five-step acceptance never write inside the
@@ -117,6 +118,14 @@ and `validate_checkpoint.py`; the latter loads all eight model/optimizer/extra
 shards, requires RNG/scheduler/dataloader/counter state and an HF export, and
 writes per-file SHA256.
 
+Calibration writes to node-specific directories, enables the exact boundary
+identity recorder, exports the retained actor `DataProto`, and collects Base
+H=2048 cap rows. `compare_calibration_workloads.py` strips node/process identity
+but requires prompt tokens, response tokens, finish reasons, rewards, keep/drop
+decisions, and effective retained ordering to match exactly. The cap source is
+then frozen by `register_hard_prefix_panel.py`; Gate 0 and profile manifests
+must carry its hashes and both calibration comparison receipts.
+
 ## Cost and selection
 
 Continuation control, input prefill, tail decode, long-reward row build, and
@@ -135,6 +144,20 @@ A score tie within 5% is resolved by fixed-workload peak memory, warnings/retrie
 smaller TP, then conservative offload/concurrency. Zero or fewer than 20 natural
 requests triggers the frozen hard-prompt/cap-prefix panel; passing it preserves
 system qualification but leaves natural mechanism coverage insufficient.
+`select_profile_candidate.py` consumes all six arm/candidate analyses plus
+component node factors, applies the safety/stability and Baseline 10% gates,
+then scores the worse normalized V1 Moderate/Stress regret. Candidate-level cap
+rows are retained separately with transition, tail length, task delta, UID,
+trajectory ID and `boundary_group_newly_locked`; that last field never enters
+the actor batch.
+
+For the final candidate, `fixed_replay` runs a real distributed actor
+mini-batch. Each rank snapshots its local FSDP parameter shard, optimizer,
+scaler and RNG state, performs an unmeasured allocator/optimizer warmup, then
+alternates diagnostics off/on twice. `aggregate_fixed_actor_replay.py` requires
+all eight ranks and exact loss, gradient, update, optimizer and RNG fingerprints.
+`compare_profile_diagnostics.py` supplies only workload-normalized unit costs to
+`evaluate_overhead.py`; stochastic raw step wall is excluded from the gate.
 
 ## S300 scheduling and entropy audit
 
@@ -157,3 +180,28 @@ conditional-distribution changes. Both report 256-token buckets, prefix/tail,
 token-weighted/sequence-balanced, cap/non-cap and answer-transition cohorts.
 Sampled-token surprisal is not a substitute for full-vocabulary categorical
 entropy.
+
+`generate_entropy_rollouts.py` produces 32 H8192 trajectories per unique AIME
+question from Base or an HF checkpoint export, and
+`annotate_entropy_transitions.py` joins checkpoint answers to Base by benchmark,
+prompt and rollout index. `build_entropy_panel.py` then enforces rollout indices
+`[0,8,16,24]` for every question and refuses pooled benchmark labels.
+`audit_checkpoint_entropy.py`
+streams the model with KV cache in bounded chunks, computes full-vocabulary
+categorical entropy, and emits token-weighted plus sequence-balanced 256-token,
+prefix/tail, cap and answer-transition cohorts separately for AIME2024 and
+AIME2025. `estimate_s300.py` adds one Step-0 validation, 30 periodic validations
+and six checkpoints to each of the Early/Moderate/Stress estimates.
+`build_cumulative_axes.py` converts the formal per-step JSONL records into the
+seven cumulative curve coordinates: optimizer step, candidate prompts, normal
+decode tokens, continuation input tokens, continuation tail-decode tokens,
+actor valid tokens, wall-clock, and GPU-hours. Baseline continuation coordinates
+are checked to remain exactly zero.
+
+The final `build_s300_gate.py` receipt is the only artifact that sets
+`s300_authorized=true`; it requires both Gate 0, selection, both real fixed
+replays, the diagnostics overhead gate, both acceptance validation/checkpoint
+receipts, and the S300 estimate. `schedule_s300.py` then probes whole eight-GPU
+Ray nodes, launches Baseline first, starts V1 only on the other complete idle
+node, and bounds the no-capacity polling window to 30 minutes. It never stops
+the shared Ray cluster and never authorizes Step 600 or a second seed.

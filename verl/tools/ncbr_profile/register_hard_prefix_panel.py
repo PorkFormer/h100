@@ -56,6 +56,7 @@ def main() -> None:
                 "prompt_token_ids": [int(token) for token in row["prompt_token_ids"]],
                 "prefix_token_ids": response,
                 "trajectory_id": str(row["trajectory_id"]),
+                "source_context": row.get("source_context", {}),
             }
         )
     eligible.sort(key=lambda row: (row["prompt_id"], row["trajectory_id"]))

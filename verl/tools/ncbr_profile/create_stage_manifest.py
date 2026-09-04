@@ -44,10 +44,22 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--code-sha", required=True)
+    parser.add_argument("--remote", default="origin")
+    parser.add_argument("--remote-ref", required=True)
     parser.add_argument("--arm", choices=("baseline", "v1"), required=True)
     parser.add_argument("--candidate", choices=("P0", "P1", "P2"), required=True)
     parser.add_argument(
-        "--stage", choices=("calibration", "gate0", "profile", "acceptance", "formal_s300"), required=True
+        "--stage",
+        choices=(
+            "calibration",
+            "gate0",
+            "profile",
+            "mechanism_panel",
+            "fixed_replay",
+            "acceptance",
+            "formal_s300",
+        ),
+        required=True,
     )
     parser.add_argument("--node", choices=("A", "B"), required=True)
     parser.add_argument("--diagnostics", choices=("on", "off"), required=True)
@@ -66,6 +78,16 @@ def main() -> None:
         raise SystemExit(f"code SHA mismatch: expected {args.code_sha}, got {actual_sha}")
     if status:
         raise SystemExit("refusing to manifest a dirty worktree")
+    remote_output = subprocess.check_output(
+        ["git", "ls-remote", "--exit-code", args.remote, args.remote_ref],
+        cwd=repo,
+        text=True,
+    ).splitlines()
+    remote_shas = {line.split()[0] for line in remote_output if line.split()}
+    if remote_shas != {actual_sha}:
+        raise SystemExit(
+            f"remote ref is not pinned to the local code SHA: {args.remote}/{args.remote_ref}: {sorted(remote_shas)}"
+        )
     model_config = json.loads((args.model_path / "config.json").read_text(encoding="utf-8"))
     if model_config.get("model_type") != "qwen3":
         raise SystemExit("model config model_type is not qwen3")
@@ -87,6 +109,7 @@ def main() -> None:
     manifest = {
         "schema_version": "qwen3-1p7b-ncbr-stage-manifest-v1",
         "code_sha": actual_sha,
+        "code_remote": {"name": args.remote, "ref": args.remote_ref, "sha": actual_sha},
         "arm": args.arm,
         "candidate": args.candidate,
         "stage": args.stage,

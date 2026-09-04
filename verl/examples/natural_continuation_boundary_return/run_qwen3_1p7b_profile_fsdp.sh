@@ -5,7 +5,7 @@ set -euo pipefail
 # generated stage manifest pinned to the final code SHA and model revision.
 arm="${NCBR_ARM:?set NCBR_ARM to baseline or v1}"
 candidate="${NCBR_PROFILE_CANDIDATE:?set NCBR_PROFILE_CANDIDATE to P0, P1, or P2}"
-stage="${NCBR_STAGE:?set NCBR_STAGE to calibration, gate0, profile, acceptance, or formal_s300}"
+stage="${NCBR_STAGE:?set NCBR_STAGE to calibration, gate0, profile, mechanism_panel, fixed_replay, acceptance, or formal_s300}"
 stage_manifest="${NCBR_STAGE_MANIFEST:?set NCBR_STAGE_MANIFEST to the approved manifest path}"
 node="${NCBR_NODE:?set NCBR_NODE to A or B}"
 diagnostics_mode="${NCBR_DIAGNOSTICS_MODE:?set NCBR_DIAGNOSTICS_MODE to on or off}"
@@ -134,7 +134,7 @@ case "${stage}" in
     save_freq=-1
     gate_cycles=0
     logger='["console"]'
-    run_dir="${artifact_root}/calibration/baseline_P0_diag_${diagnostics_mode}"
+    run_dir="${artifact_root}/calibration/node_${node}/baseline_P0_diag_${diagnostics_mode}"
     ;;
   gate0)
     total_steps=1
@@ -154,6 +154,37 @@ case "${stage}" in
     gate_cycles=0
     logger='["console","wandb"]'
     run_dir="${artifact_root}/profile/${candidate}/${arm}_s4_or_s6_diag_${diagnostics_mode}"
+    ;;
+  mechanism_panel)
+    if [[ "${arm}" != v1 ]]; then
+      echo "the mechanism panel is restricted to the V1 arm" >&2
+      exit 2
+    fi
+    mechanism_panel_path="$(
+      python -c \
+        'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["frozen_artifacts"]["hard_prefix_panel"]["path"])' \
+        "${stage_manifest}"
+    )"
+    total_steps=1
+    val_before_train=false
+    test_freq=-1
+    save_freq=-1
+    gate_cycles=0
+    logger='["console"]'
+    run_dir="${artifact_root}/mechanism_panel/${candidate}/node_${node}/v1"
+    ;;
+  fixed_replay)
+    if [[ "${diagnostics_mode}" != on ]]; then
+      echo "fixed replay internally alternates diagnostics off/on and requires NCBR_DIAGNOSTICS_MODE=on" >&2
+      exit 2
+    fi
+    total_steps=1
+    val_before_train=false
+    test_freq=-1
+    save_freq=-1
+    gate_cycles=0
+    logger='["console"]'
+    run_dir="${artifact_root}/fixed_replay/${candidate}/${arm}"
     ;;
   acceptance)
     total_steps=5
@@ -327,6 +358,17 @@ command=(
   trainer.profile_max_steps=6
   trainer.profile_cv_threshold=0.10
   trainer.profile_coordination_timeout_seconds=900
+  trainer.hard_prefix_source_path=null
+  trainer.diagnostic_dump_dir=null
+  trainer.nondeterminism_diagnostics.enabled=false
+  trainer.nondeterminism_diagnostics.output_dir=null
+  trainer.nondeterminism_diagnostics.run_id=null
+  trainer.actor_fixed_replay.enabled=false
+  trainer.actor_fixed_replay.repeats=2
+  trainer.actor_fixed_replay.receipt_dir=null
+  trainer.mechanism_panel_path=null
+  trainer.mechanism_panel_receipt_path=null
+  trainer.mechanism_rows_path=null
   "trainer.default_local_dir=${run_dir}/checkpoints"
   trainer.resume_mode=disable
   "+ray_kwargs.ray_init.address=${ray_address}"
@@ -338,6 +380,35 @@ command=(
   "+ray_kwargs.ray_init.runtime_env.env_vars.TORCH_EXTENSIONS_DIR=${TORCH_EXTENSIONS_DIR}"
   "+ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR=${WANDB_DIR}"
 )
+
+if [[ "${stage}" == calibration ]]; then
+  command+=(
+    "trainer.hard_prefix_source_path=${run_dir}/mechanism/h2048_cap_source.jsonl"
+    "trainer.diagnostic_dump_dir=${run_dir}/actor_batch"
+    trainer.nondeterminism_diagnostics.enabled=true
+    "trainer.nondeterminism_diagnostics.output_dir=${run_dir}/workload"
+    "trainer.nondeterminism_diagnostics.run_id=calibration_node_${node}"
+  )
+fi
+
+if [[ "${stage}" == fixed_replay ]]; then
+  command+=(
+    trainer.actor_fixed_replay.enabled=true
+    trainer.actor_fixed_replay.repeats=2
+    "trainer.actor_fixed_replay.receipt_dir=${run_dir}/receipts/fixed_actor_replay"
+  )
+fi
+
+if [[ "${stage}" == mechanism_panel ]]; then
+  command+=(
+    "trainer.mechanism_panel_path=${mechanism_panel_path}"
+    "trainer.mechanism_panel_receipt_path=${run_dir}/receipts/mechanism_panel.json"
+  )
+fi
+
+if [[ "${arm}" == v1 && "${diagnostics_mode}" == on && "${stage}" =~ ^(gate0|profile)$ ]]; then
+  command+=("trainer.mechanism_rows_path=${run_dir}/receipts/candidate_mechanism_rows.jsonl")
+fi
 
 if [[ -n "${WANDB_RUN_ID:-}" ]]; then
   command+=("+ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_ID=${WANDB_RUN_ID}")

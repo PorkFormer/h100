@@ -19,6 +19,7 @@ def main() -> None:
     checks = {
         "different_node_labels": left.get("node") != right.get("node"),
         "same_code_sha": left.get("code_sha") == right.get("code_sha"),
+        "same_code_remote": left.get("code_remote") == right.get("code_remote"),
         "same_arm": left.get("arm") == right.get("arm"),
         "same_candidate": left.get("candidate") == right.get("candidate"),
         "same_stage": left.get("stage") == right.get("stage"),

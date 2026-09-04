@@ -1564,6 +1564,10 @@ class RayPPOTrainer:
             clip_ratio_high=clip_ratio_high,
             clip_ratio_c=self.config.actor_rollout_ref.actor.clip_ratio_c,
             actor_diagnostics=OmegaConf.to_container(self.config.actor_rollout_ref.actor.diagnostics, resolve=True),
+            actor_fixed_replay=OmegaConf.to_container(
+                self.config.trainer.actor_fixed_replay,
+                resolve=True,
+            ),
         )
         actor_output = self.actor_rollout_wg.update_actor(batch_td)
         actor_output = tu.get(actor_output, "metrics")

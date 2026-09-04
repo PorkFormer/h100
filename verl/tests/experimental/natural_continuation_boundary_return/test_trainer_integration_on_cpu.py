@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 import torch
 from omegaconf import OmegaConf
+from tensordict import TensorDict
 
 from verl import DataProto
 from verl.experimental.natural_continuation_boundary_return.accumulator import (
@@ -41,6 +42,68 @@ from verl.experimental.natural_continuation_boundary_return.runtime import Bound
 from verl.experimental.probe_credit.dapo_trainer import RayDAPOProbeCreditTrainer
 from verl.trainer.config import ProbeCreditConfig
 from verl.workers.config.rollout import BoundaryReturnConfig, ForcedAnswerProbeConfig
+
+
+def test_baseline_calibration_exports_only_exact_cap_prefix_rows(tmp_path):
+    trainer = RayDAPOBoundaryReturnTrainer.__new__(RayDAPOBoundaryReturnTrainer)
+    trainer.config = SimpleNamespace(
+        trainer=SimpleNamespace(hard_prefix_source_path=str(tmp_path / "cap-source.jsonl")),
+        actor_rollout_ref=SimpleNamespace(rollout=SimpleNamespace(response_length=4)),
+    )
+    trainer._typed_boundary_return_config = BoundaryReturnConfig(mode="off")
+    trainer._rollout_policy_version = 0
+    batch = DataProto(
+        batch=TensorDict(
+            {
+                "prompts": torch.tensor([[1, 2], [3, 4]]),
+                "responses": torch.tensor([[5, 6, 7, 8], [9, 10, 0, 0]]),
+                "attention_mask": torch.tensor([[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0]]),
+                "response_mask": torch.tensor([[1, 1, 1, 1], [1, 1, 0, 0]]),
+            },
+            batch_size=2,
+        ),
+        non_tensor_batch={
+            "finish_reason": np.asarray(["length", "stop"], dtype=object),
+            "trajectory_id": np.asarray(["t0", "t1"], dtype=object),
+            "rollout_policy_version": np.asarray([0, 0], dtype=object),
+            "prompt_id": np.asarray(["p0", "p1"], dtype=object),
+            "data_source": np.asarray(["a", "b"], dtype=object),
+        },
+    )
+    trainer._after_normal_rollout(batch)
+    rows = [json.loads(line) for line in (tmp_path / "cap-source.jsonl").read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["prompt_id"] == "p0"
+    assert rows[0]["response_token_ids"] == [5, 6, 7, 8]
+    assert rows[0]["source_context"]["data_source"] == "a"
+
+
+def test_candidate_mechanism_rows_keep_newly_locked_outside_actor_labels(tmp_path):
+    trainer = RayDAPOBoundaryReturnTrainer.__new__(RayDAPOBoundaryReturnTrainer)
+    trainer.config = SimpleNamespace(trainer=SimpleNamespace(mechanism_rows_path=str(tmp_path / "rows.jsonl")))
+    trainer._typed_boundary_return_config = BoundaryReturnConfig(mode="replace", correctness_threshold=0.5)
+    trainer.global_steps = 2
+    candidate = DataProto(
+        batch=TensorDict({}, batch_size=4),
+        non_tensor_batch={
+            "trajectory_id": np.asarray(["t0", "t1", "t2", "t3"], dtype=object),
+        },
+    )
+    result = SimpleNamespace(
+        uids=np.asarray(["newly-locked", "newly-locked", "unchanged", "unchanged"], dtype=object),
+        short_acc=np.asarray([0.0, 1.0, 0.0, 0.0]),
+        long_acc=np.asarray([0.0, 0.0, np.nan, np.nan]),
+        boundary_acc=np.asarray([0.0, 0.0, 0.0, 0.0]),
+        task_score_delta=np.asarray([0.0, -1.0, 0.0, 0.0]),
+        tail_token_lengths=np.asarray([10, 20, 0, 0]),
+        long_hit_response_cap=np.asarray([False, False, False, False]),
+        hit_response_cap=np.asarray([True, True, False, False]),
+    )
+    trainer._write_candidate_mechanism_rows(candidate, result, generation_batch_index=1)
+    rows = [json.loads(line) for line in (tmp_path / "rows.jsonl").read_text().splitlines()]
+    assert len(rows) == 2
+    assert all(row["boundary_group_newly_locked"] for row in rows)
+    assert "boundary_group_newly_locked" not in candidate.batch
 
 
 def _result(

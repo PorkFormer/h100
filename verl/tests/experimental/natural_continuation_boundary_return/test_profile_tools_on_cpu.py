@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -7,11 +8,23 @@ from argparse import Namespace
 
 import pytest
 
+from tools.ncbr_profile.aggregate_fixed_actor_replay import aggregate as aggregate_replay
+from tools.ncbr_profile.annotate_entropy_transitions import annotate
+from tools.ncbr_profile.audit_checkpoint_entropy import aggregate
+from tools.ncbr_profile.build_cumulative_axes import build as build_cumulative_axes
+from tools.ncbr_profile.build_entropy_panel import select_rows
+from tools.ncbr_profile.build_s300_gate import REQUIRED as S300_REQUIRED
+from tools.ncbr_profile.build_s300_gate import build as build_s300_gate
 from tools.ncbr_profile.compare_calibration import compare
+from tools.ncbr_profile.compare_calibration_workloads import compare as compare_workloads
 from tools.ncbr_profile.create_stage_manifest import files_manifest, revision_provenance
+from tools.ncbr_profile.estimate_s300 import estimate
 from tools.ncbr_profile.evaluate_overhead import evaluate, overhead_fraction
+from tools.ncbr_profile.schedule_s300 import choose_assignments
+from tools.ncbr_profile.select_profile_candidate import UNIT_NAMES, select
 from tools.ncbr_profile.stage_local_assets import file_hashes, stage
-from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata
+from tools.ncbr_profile.validate_gate0 import validate as validate_gate0
+from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata, validate_stage_artifacts
 from tools.ncbr_profile.verify_teardown import target_processes
 from verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return import task_runner_options
 from verl.single_controller.ray import base as ray_base
@@ -92,6 +105,22 @@ def test_model_manifest_excludes_mutable_cache_but_attests_revision_metadata(tmp
         revision_provenance(model, "wrong-revision")
 
 
+def test_late_stage_manifest_binds_selected_candidate_and_diagnostics(tmp_path):
+    selection = tmp_path / "selection.json"
+    selection.write_text(json.dumps({"status": "PASS", "selected_candidate": "P1"}), encoding="utf-8")
+    overhead = tmp_path / "overhead.json"
+    overhead.write_text(json.dumps({"status": "PASS"}), encoding="utf-8")
+    artifacts = {
+        "profile_selection": {"path": str(selection)},
+        "diagnostics_overhead_gate": {"path": str(overhead)},
+    }
+    validate_stage_artifacts("acceptance", "P1", "on", artifacts)
+    with pytest.raises(SystemExit, match="profile selection"):
+        validate_stage_artifacts("acceptance", "P0", "on", artifacts)
+    with pytest.raises(SystemExit, match="diagnostics=on"):
+        validate_stage_artifacts("acceptance", "P1", "off", artifacts)
+
+
 def test_cross_node_manifest_comparison_allows_local_paths_only(tmp_path):
     common = {
         "code_sha": "a" * 40,
@@ -146,9 +175,18 @@ def test_overhead_gate_uses_maximum_normalized_stage_cost_and_fixed_replay_memor
         "peak_allocated_overhead_fraction": 0.015,
         "peak_reserved_overhead_fraction": 0.01,
     }
-    result = evaluate(fixed, {"actor": {"off": 2.0, "on": 2.04}, "reward": {"off": 1.0, "on": 1.025}})
+    other_arm = {
+        **fixed,
+        "actor_time_overhead_fraction": 0.02,
+        "peak_allocated_overhead_fraction": 0.018,
+    }
+    result = evaluate(
+        [fixed, other_arm],
+        {"actor": {"off": 2.0, "on": 2.04}, "reward": {"off": 1.0, "on": 1.025}},
+    )
     assert result["max_time_overhead_fraction"] == pytest.approx(0.025)
-    assert result["max_memory_overhead_fraction"] == pytest.approx(0.015)
+    assert result["max_memory_overhead_fraction"] == pytest.approx(0.018)
+    assert result["fixed_replay_receipt_count"] == 2
     assert result["status"] == "PASS"
 
 
@@ -276,3 +314,327 @@ def test_profile_analyzer_derives_workload_unit_costs_and_coverage(tmp_path):
     assert result["stable_window_unit_cost_medians"]["u_normal"] == pytest.approx(0.1)
     assert result["stable_window_unit_cost_medians"]["u_actor"] == pytest.approx(0.18)
     assert result["mechanism_coverage_insufficient"]
+
+
+def _write_calibration_boundary(root, *, response_hash="same"):
+    target = root / "run" / "rank_00000" / "step_000001" / "generation_batch_0001" / "boundary_1_candidate"
+    target.mkdir(parents=True)
+    record = {
+        "generation_batch_index": 1,
+        "request_order": 0,
+        "prompt_token_hash": "prompt",
+        "prompt_token_count": 3,
+        "rollout_index": 0,
+        "response_token_ids_hash": response_hash,
+        "response_length": 2,
+        "finish_reason": "stop",
+    }
+    payload = json.dumps(record, sort_keys=True) + "\n"
+    (target / "records.jsonl").write_text(payload, encoding="utf-8")
+    manifest = {
+        "status": "COMPLETE",
+        "boundary": 1,
+        "global_step": 1,
+        "generation_batch_index": 1,
+        "effective_training_batch": False,
+        "record_count": 1,
+        "records_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+    }
+    (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_calibration_workload_comparison_ignores_node_identity_but_not_tokens(tmp_path):
+    node_a = tmp_path / "a"
+    node_b = tmp_path / "b"
+    _write_calibration_boundary(node_a)
+    _write_calibration_boundary(node_b)
+    assert compare_workloads(node_a, node_b)["status"] == "PASS"
+    changed = tmp_path / "changed"
+    _write_calibration_boundary(changed, response_hash="different")
+    assert compare_workloads(node_a, changed)["status"] == "FAIL"
+
+
+def _profile_analysis(unit_scale):
+    workloads = {
+        "request_count": 10.0,
+        "continuation_input_tokens": 30.0,
+        "tail_decode_tokens": 20.0,
+        "long_reward_rows": 10.0,
+        "long_reward_full_response_tokens": 50.0,
+        "normal_decode_tokens": 100.0,
+        "normal_trajectories": 80.0,
+        "actor_valid_tokens": 60.0,
+        "candidate_batches": 2.0,
+    }
+    return {
+        "records": [{"workloads": workloads} for _ in range(4)],
+        "unstable": False,
+        "stable_window_unit_cost_medians": {
+            name: unit_scale
+            for name in (
+                "u_request",
+                "u_cont_input",
+                "u_tail_decode",
+                "u_long_row",
+                "u_long_token",
+                "u_normal",
+                "u_actor",
+                "u_candidate",
+            )
+        },
+    }
+
+
+def test_profile_selector_applies_baseline_gate_then_documented_tiebreak(tmp_path):
+    profiles = {}
+    scales = {"P0": 1.0, "P1": 1.01, "P2": 1.3}
+    for candidate, scale in scales.items():
+        profiles[candidate] = {}
+        for arm in ("baseline", "v1"):
+            path = tmp_path / f"{candidate}_{arm}.json"
+            path.write_text(json.dumps(_profile_analysis(scale)), encoding="utf-8")
+            profiles[candidate][arm] = {"analysis": path.name, "node": "A", "safety_status": "PASS"}
+    unit_factors = {
+        node: {
+            name: 1.0
+            for name in (
+                "u_request",
+                "u_cont_input",
+                "u_tail_decode",
+                "u_long_row",
+                "u_long_token",
+                "u_normal",
+                "u_actor",
+                "u_candidate",
+            )
+        }
+        for node in ("A", "B")
+    }
+    systems = {
+        candidate: {
+            "fixed_workload_peak_memory_bytes": memory,
+            "retry_warning_count": 0,
+            "tensor_model_parallel_size": 1 if candidate != "P2" else 2,
+            "optimizer_offload": candidate != "P1",
+            "ref_param_offload": candidate != "P1",
+            "max_num_seqs": 384 if candidate == "P1" else 256,
+            "gpu_memory_utilization": 0.55 if candidate == "P1" else 0.45,
+        }
+        for candidate, memory in {"P0": 200, "P1": 100, "P2": 50}.items()
+    }
+    result = select(
+        {"profiles": profiles, "node_unit_cost_factors": unit_factors, "systems": systems},
+        tmp_path,
+    )
+    assert "baseline_more_than_10_percent_slower" in result["excluded"]["P2"]
+    assert result["score_tie_candidates_within_5_percentage_points"] == ["P0", "P1"]
+    assert result["selected_candidate"] == "P1"
+
+
+def test_profile_selector_excludes_a_safety_failure_without_requiring_analysis(tmp_path):
+    profiles = {}
+    for candidate in ("P0", "P1", "P2"):
+        profiles[candidate] = {}
+        for arm in ("baseline", "v1"):
+            if candidate == "P2":
+                profiles[candidate][arm] = {"node": "A", "safety_status": "FAIL"}
+                continue
+            path = tmp_path / f"{candidate}_{arm}.json"
+            path.write_text(json.dumps(_profile_analysis(1.0)), encoding="utf-8")
+            profiles[candidate][arm] = {"analysis": path.name, "node": "A", "safety_status": "PASS"}
+    factors = {node: {name: 1.0 for name in UNIT_NAMES} for node in ("A", "B")}
+    systems = {
+        candidate: {
+            "fixed_workload_peak_memory_bytes": 100,
+            "retry_warning_count": 0,
+            "tensor_model_parallel_size": 1,
+            "optimizer_offload": True,
+            "ref_param_offload": True,
+            "max_num_seqs": 256,
+            "gpu_memory_utilization": 0.45,
+        }
+        for candidate in ("P0", "P1", "P2")
+    }
+    result = select({"profiles": profiles, "node_unit_cost_factors": factors, "systems": systems}, tmp_path)
+    assert result["selected_candidate"] in {"P0", "P1"}
+    assert result["excluded"]["P2"] == [
+        "baseline:analysis_unavailable",
+        "baseline:safety",
+        "v1:analysis_unavailable",
+        "v1:safety",
+    ]
+
+
+def test_entropy_panel_and_aggregation_keep_benchmarks_and_estimators_separate():
+    rows = [
+        {
+            "benchmark": benchmark,
+            "prompt_id": f"{benchmark}-q0",
+            "rollout_index": index,
+            "prompt_token_ids": [1, 2],
+            "response_token_ids": [3, 4],
+        }
+        for benchmark in ("AIME2024", "AIME2025")
+        for index in (0, 8, 16, 24)
+    ]
+    selected = select_rows(rows)
+    assert len(selected) == 8
+    measured = [
+        {
+            **row,
+            "categorical_entropy": [1.0, 3.0],
+            "cap_hit": row["rollout_index"] == 24,
+            "answer_transition": "wrong_to_correct" if row["rollout_index"] == 24 else "unchanged",
+        }
+        for row in selected
+    ]
+    result = aggregate(measured, bucket_size=1, prefix_length=1)
+    assert set(result) == {"AIME2024", "AIME2025"}
+    for benchmark in result:
+        first_bucket = next(item for item in result[benchmark] if item["cohort"] == "0000_0001")
+        assert first_bucket["token_weighted"] == 1.0
+        assert first_bucket["sequence_balanced"] == 1.0
+        assert first_bucket["trajectory_count"] == 4
+
+
+def test_distributed_fixed_replay_requires_all_ranks_and_uses_worst_overhead(tmp_path):
+    for rank, overhead in enumerate((0.01, 0.02)):
+        receipt = {
+            "rank": rank,
+            "world_size": 2,
+            "equivalence_pass": True,
+            "max_diagnostic_reduction_calls_per_optimizer_step": 1,
+            "actor_time_overhead_fraction": overhead,
+            "peak_allocated_overhead_fraction": overhead / 2,
+            "peak_reserved_overhead_fraction": overhead / 2,
+        }
+        (tmp_path / f"rank_{rank:05d}.json").write_text(json.dumps(receipt), encoding="utf-8")
+    result = aggregate_replay(tmp_path, 2)
+    assert result["status"] == "PASS"
+    assert result["actor_time_overhead_fraction"] == pytest.approx(0.02)
+    assert result["peak_allocated_overhead_fraction"] == pytest.approx(0.01)
+
+
+def test_s300_estimate_includes_step0_thirty_validations_and_six_checkpoints():
+    arm = {
+        "training_step_seconds": {"early": 1, "moderate": 2, "stress": 3},
+        "validation_step0_seconds": 10,
+        "validation_periodic_seconds": 5,
+        "checkpoint_seconds": 2,
+        "checkpoint_bytes": 100,
+        "uncertainty_fraction": {"early": 0.1, "moderate": 0.2, "stress": 0.3},
+    }
+    result = estimate({"arms": {"baseline": arm, "v1": arm}})
+    moderate = result["scenarios"]["moderate"]
+    assert moderate["arms"]["baseline"]["wall_clock_seconds"] == 600 + 10 + 150 + 12
+    assert moderate["arms"]["baseline"]["checkpoint_disk_bytes"] == 600
+    assert moderate["combined_gpu_hours"] == pytest.approx(2 * (772 * 8 / 3600))
+
+
+def test_cumulative_axes_use_measured_work_and_keep_baseline_continuation_zero():
+    records = [
+        {
+            "step_metrics": {
+                "training/global_step": 2,
+                "train/generated_prompt_groups": 4,
+                "train/generated_response_tokens": 40,
+                "actor_diagnostics/all/token_count": 30,
+            },
+            "trainer_timing_raw": {"step": 20},
+        },
+        {
+            "training/global_step": 1,
+            "train/generated_prompt_groups": 3,
+            "train/generated_response_tokens": 30,
+            "actor_diagnostics/all/token_count": 20,
+            "timing_s/step": 10,
+        },
+    ]
+    rows = build_cumulative_axes(records, "baseline")
+    assert [row["optimizer_step"] for row in rows] == [1, 2]
+    assert rows[-1] == {
+        "optimizer_step": 2,
+        "candidate_prompts": 7.0,
+        "normal_decode_tokens": 70.0,
+        "continuation_input_tokens": 0.0,
+        "continuation_tail_decode_tokens": 0.0,
+        "actor_valid_tokens": 50.0,
+        "wall_clock_seconds": 30.0,
+        "gpu_hours": pytest.approx(30 * 8 / 3600),
+    }
+    records[0]["step_metrics"]["boundary_return/continuation_input_tokens"] = 1
+    with pytest.raises(ValueError, match="exactly zero"):
+        build_cumulative_axes(records, "baseline")
+
+
+def test_s300_scheduler_assigns_baseline_first_and_never_uses_partial_nodes():
+    assert choose_assignments(["B"], {}) == [("baseline", "B")]
+    assert choose_assignments(["A", "B"], {}) == [("baseline", "A"), ("v1", "B")]
+    assert choose_assignments(["A"], {"baseline": "B"}) == [("v1", "A")]
+    assert choose_assignments([], {}) == []
+
+
+def test_entropy_answer_transitions_join_on_benchmark_prompt_and_rollout():
+    base = [
+        {"benchmark": "AIME2024", "prompt_id": "q", "rollout_index": 0, "correctness": 0.0},
+        {"benchmark": "AIME2025", "prompt_id": "q", "rollout_index": 0, "correctness": 1.0},
+    ]
+    checkpoint = [
+        {"benchmark": "AIME2024", "prompt_id": "q", "rollout_index": 0, "correctness": 1.0},
+        {"benchmark": "AIME2025", "prompt_id": "q", "rollout_index": 0, "correctness": 0.0},
+    ]
+    rows = annotate(base, checkpoint)
+    assert [row["answer_transition"] for row in rows] == ["wrong_to_correct", "correct_to_wrong"]
+
+
+def test_s300_gate_requires_every_receipt_and_keeps_step600_unauthorized(tmp_path):
+    receipts = {}
+    for name in S300_REQUIRED:
+        path = tmp_path / f"{name}.json"
+        payload = {"status": "PASS"}
+        if name == "selection":
+            payload["selected_candidate"] = "P1"
+            payload["mechanism_required_candidates"] = []
+        if name == "overhead":
+            payload["fixed_replay_receipt_count"] = 2
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        receipts[name] = path.name
+    result = build_s300_gate(
+        {
+            "code_sha": "a" * 40,
+            "selected_candidate": "P1",
+            "mechanism_required": False,
+            "receipts": receipts,
+        },
+        tmp_path,
+    )
+    assert result["s300_authorized"]
+    assert not result["scope"]["step_600_authorized"]
+    assert not result["scope"]["second_seed_authorized"]
+
+
+def test_gate0_validates_every_v1_candidate_batch_event_sequence():
+    records = [
+        {
+            "cycle": cycle,
+            "target_cycles": 3,
+            "candidate_batches": 1,
+            "retained_uid_groups": 256,
+            "retained_trajectories": 2048,
+            "stopped_before": ["old_log_prob", "ref_log_prob", "advantage", "actor_update"],
+            "status": "PASS",
+            "arm": "v1",
+        }
+        for cycle in (1, 2, 3)
+    ]
+    complete_batch = "\n".join(
+        (
+            "boundary_return event=short_reward_complete",
+            "boundary_return event=continuation_complete",
+            "boundary_return event=long_reward_complete",
+            "boundary_return event=filter metric=boundary_acc",
+        )
+    )
+    assert validate_gate0(records, "v1", "\n".join([complete_batch] * 3))["status"] == "PASS"
+    malformed = "\n".join([complete_batch, complete_batch, "boundary_return event=short_reward_complete"])
+    assert validate_gate0(records, "v1", malformed)["status"] == "FAIL"

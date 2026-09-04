@@ -55,6 +55,7 @@ def main() -> None:
                 metrics.get("boundary_return/long_reward_full_response_tokens", 0.0)
             ),
             "normal_decode_tokens": float(metrics.get("train/generated_response_tokens", 0.0)),
+            "normal_trajectories": float(metrics.get("train/generated_trajectories", 0.0)),
             "actor_valid_tokens": float(metrics.get("actor_diagnostics/all/token_count", 0.0)),
             "candidate_batches": float(metrics.get("train/num_gen_batches", 0.0)),
         }

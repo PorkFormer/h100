@@ -610,6 +610,9 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         """Avoid synchronizing a generic Probe run solely for disabled profiling."""
         return {}
 
+    def _after_normal_rollout(self, candidate: DataProto) -> None:
+        """Optional specialized-trainer hook after response masks and identities exist."""
+
     def _flush_step_profile(self, timing_raw: dict[str, float], metrics: dict[str, float]) -> None:
         """Optional specialized-trainer hook after the complete training-step timer closes."""
 
@@ -729,6 +732,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     candidate.batch["response_mask"] = compute_response_mask(candidate)
                     normal_tokens = int(candidate.batch["response_mask"].sum().item())
                     total_generated_response_tokens += normal_tokens
+                    self._after_normal_rollout(candidate)
 
                     short_reward_metadata = {
                         "candidate_batch_index": num_gen_batches,

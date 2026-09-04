@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ from typing import Any, Iterator
 
 import numpy as np
 import torch
+from tensordict import TensorDict
 
 from verl import DataProto
 from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
@@ -39,6 +41,7 @@ from verl.experimental.natural_continuation_boundary_return.profiling import (
     coordinate_profile_extension,
 )
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import (
+    BOUNDARY_NUMERIC_TOLERANCE,
     BoundaryRewardOutput,
     apply_boundary_return,
     build_long_reward_batch,
@@ -237,6 +240,155 @@ def _assert_shadow_candidate_noop(before: DataProto, after: DataProto) -> None:
 class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
     """Override only the two DAPO candidate/filter hooks; inherit the full fit loop."""
 
+    def fit(self):
+        panel_path = _config_get(self.config.trainer, "mechanism_panel_path")
+        if panel_path not in (None, "null"):
+            return self._run_mechanism_panel(Path(str(panel_path)))
+        return super().fit()
+
+    def _run_mechanism_panel(self, panel_path: Path) -> None:
+        """Exercise continuation and long reward on a frozen Base cap-prefix panel."""
+        boundary = self._boundary_config()
+        if boundary.mode != "replace":
+            raise ValueError("the mechanism panel is restricted to boundary_return.mode=replace")
+        receipt_value = _config_get(self.config.trainer, "mechanism_panel_receipt_path")
+        if receipt_value in (None, "null"):
+            raise ValueError("the mechanism panel requires a receipt path")
+        receipt_path = Path(str(receipt_value))
+        row_path = receipt_path.with_suffix(".rows.jsonl")
+        if receipt_path.exists() or row_path.exists():
+            raise FileExistsError("refusing to overwrite frozen mechanism-panel receipts")
+        rows = [json.loads(line) for line in panel_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if len(rows) < 20:
+            raise ValueError("mechanism panel requires at least 20 cap-prefix requests")
+        if any(
+            len(row["prefix_token_ids"]) != int(self.config.actor_rollout_ref.rollout.response_length)
+            for row in rows
+        ):
+            raise ValueError("mechanism panel contains a non-H=2048 prefix")
+
+        prompt_width = max(len(row["prompt_token_ids"]) for row in rows)
+        response_width = int(self.config.actor_rollout_ref.rollout.response_length)
+        pad = int(self.tokenizer.pad_token_id)
+        prompts = torch.full((len(rows), prompt_width), pad, dtype=torch.long)
+        responses = torch.full((len(rows), response_width), pad, dtype=torch.long)
+        prompt_mask = torch.zeros_like(prompts)
+        response_mask = torch.ones_like(responses)
+        for index, row in enumerate(rows):
+            prompt = torch.tensor(row["prompt_token_ids"], dtype=torch.long)
+            response = torch.tensor(row["prefix_token_ids"], dtype=torch.long)
+            prompts[index, -len(prompt) :] = prompt
+            prompt_mask[index, -len(prompt) :] = 1
+            responses[index] = response
+        attention_mask = torch.cat((prompt_mask, response_mask), dim=-1)
+        input_ids = torch.cat((prompts, responses), dim=-1)
+        position_ids = torch.clamp(attention_mask.cumsum(-1) - 1, min=0)
+        context_keys = sorted({key for row in rows for key in row.get("source_context", {})})
+        non_tensor = {
+            "uid": np.asarray([str(row["prompt_id"]) for row in rows], dtype=object),
+            "trajectory_id": np.asarray([str(row["trajectory_id"]) for row in rows], dtype=object),
+            "finish_reason": np.asarray(["length"] * len(rows), dtype=object),
+            "rollout_policy_version": np.asarray([0] * len(rows), dtype=object),
+        }
+        for key in context_keys:
+            non_tensor[key] = np.asarray([row.get("source_context", {}).get(key) for row in rows], dtype=object)
+        candidate = DataProto(
+            batch=TensorDict(
+                {
+                    "prompts": prompts,
+                    "responses": responses,
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "position_ids": position_ids,
+                    "response_mask": response_mask,
+                },
+                batch_size=len(rows),
+            ),
+            non_tensor_batch=non_tensor,
+            meta_info={"temperature": float(self.config.actor_rollout_ref.rollout.temperature)},
+        )
+        prefix_before = candidate.batch["responses"].clone()
+        self.global_steps = 0
+        self._load_checkpoint()
+        self._publish_rollout_policy_version(self.global_steps)
+        cleanup_ack = False
+        try:
+            capture = run_boundary_continuations(
+                config=boundary,
+                rollout_batch=candidate,
+                client=self.llm_server_manager.get_client(),
+                eos_token_id=self.tokenizer.eos_token_id,
+                short_response_length=response_width,
+                max_model_len=int(self.config.actor_rollout_ref.rollout.max_model_len),
+                policy_version=self.global_steps,
+                sampling_params=build_rollout_sampling_params(self.config.actor_rollout_ref.rollout),
+            )
+            if capture is None or len(capture.generations) != len(rows):
+                raise AssertionError("mechanism panel did not return exactly one continuation per frozen prefix")
+            long_reward = self._score_long_generations_in_chunks(candidate, capture.generations, boundary)
+            scores = extract_required_reward_scalars(
+                long_reward,
+                expected_count=len(rows),
+                correctness_key=boundary.correctness_key,
+                task_score_key=boundary.task_score_key,
+            )
+            if not torch.equal(prefix_before, candidate.batch["responses"]):
+                raise AssertionError("mechanism panel leaked continuation tails into prefix actor tensors")
+            actual_versions = {generation.actual_policy_version for generation in capture.generations}
+            if actual_versions != {self.global_steps}:
+                raise AssertionError(f"mechanism panel policy-version mismatch: {actual_versions}")
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            with row_path.open("x", encoding="utf-8") as stream:
+                for row, generation, correctness, task_score in zip(
+                    rows,
+                    capture.generations,
+                    scores.correctness,
+                    scores.task_score,
+                    strict=True,
+                ):
+                    stream.write(
+                        json.dumps(
+                            {
+                                "prompt_id": row["prompt_id"],
+                                "trajectory_id": row["trajectory_id"],
+                                "request_id": generation.request_id,
+                                "policy_version": generation.actual_policy_version,
+                                "prefix_tokens": len(generation.prefix_token_ids),
+                                "tail_tokens": len(generation.tail_token_ids),
+                                "long_correctness": float(correctness),
+                                "long_task_score": float(task_score),
+                                "finish_reason": generation.finish_reason,
+                                "stop_reason": generation.stop_reason,
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    )
+            receipt = {
+                "schema_version": "qwen3-1p7b-ncbr-mechanism-panel-v1",
+                "status": "PASS",
+                "request_count": len(capture.requests),
+                "generation_count": len(capture.generations),
+                "long_reward_rows": len(scores.correctness),
+                "policy_version": self.global_steps,
+                "prefix_actor_tensor_unchanged": True,
+                "actor_update_invoked": False,
+                "tail_decode_tokens": sum(len(item.tail_token_ids) for item in capture.generations),
+                "continuation_input_tokens": sum(len(item.input_token_ids) for item in capture.requests),
+                "long_reward_full_response_tokens": sum(
+                    len(item.prefix_token_ids) + len(item.tail_token_ids) for item in capture.generations
+                ),
+                "profiling_intervals": [
+                    interval.to_dict() for interval in (*capture.profiling_intervals, *long_reward.profiling_intervals)
+                ],
+                "rows": str(row_path.resolve()),
+            }
+        finally:
+            self.checkpoint_manager.sleep_replicas()
+            cleanup_ack = True
+        receipt["replica_sleep_cleanup_ack"] = cleanup_ack
+        receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
     def _boundary_config(self) -> BoundaryReturnConfig:
         cached = getattr(self, "_typed_boundary_return_config", None)
         if cached is None:
@@ -295,6 +447,150 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
 
     def _profile_actor_metadata(self, batch: DataProto) -> dict[str, Any]:
         return {"actor_valid_tokens": int(batch.batch["response_mask"].sum().item())}
+
+    def _after_normal_rollout(self, candidate: DataProto) -> None:
+        """Persist Base H=2048 cap rows without changing the candidate batch."""
+        path_value = _config_get(_config_get(self.config, "trainer", {}), "hard_prefix_source_path")
+        if path_value in (None, "null"):
+            return
+        if self._boundary_config().mode != "off":
+            raise ValueError("hard-prefix source collection is restricted to the Baseline arm")
+        path = Path(str(path_value))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        initialized = bool(getattr(self, "_hard_prefix_source_initialized", False))
+        if not initialized and path.exists():
+            raise FileExistsError(f"refusing to overwrite hard-prefix source: {path}")
+
+        prompt_width = candidate.batch["prompts"].shape[-1]
+        prompt_mask = candidate.batch["attention_mask"][:, :prompt_width].bool()
+        response_mask = candidate.batch["response_mask"].bool()
+        finish_reasons = candidate.non_tensor_batch.get("finish_reason")
+        if finish_reasons is None or len(finish_reasons) != len(candidate):
+            raise ValueError("hard-prefix source requires row-aligned finish_reason")
+        trajectory_ids = candidate.non_tensor_batch.get("trajectory_id")
+        if trajectory_ids is None or len(trajectory_ids) != len(candidate):
+            raise ValueError("hard-prefix source requires row-aligned trajectory_id")
+
+        def safe(value: Any) -> Any:
+            if isinstance(value, np.generic):
+                return safe(value.item())
+            if isinstance(value, np.ndarray):
+                return [safe(item) for item in value.tolist()]
+            if torch.is_tensor(value):
+                return safe(value.detach().cpu().tolist())
+            if isinstance(value, dict):
+                return {str(key): safe(item) for key, item in value.items()}
+            if isinstance(value, list | tuple):
+                return [safe(item) for item in value]
+            if value is None or isinstance(value, str | int | float | bool):
+                return value
+            return repr(value)
+
+        rows = []
+        expected_length = int(self.config.actor_rollout_ref.rollout.response_length)
+        policy_version = self._validate_rollout_policy_version(candidate)
+        for row in range(len(candidate)):
+            response = candidate.batch["responses"][row][response_mask[row]].detach().cpu().tolist()
+            reason = getattr(finish_reasons[row], "value", finish_reasons[row])
+            if str(reason).lower().split(".")[-1] != "length" or len(response) != expected_length:
+                continue
+            prompt = candidate.batch["prompts"][row][prompt_mask[row]].detach().cpu().tolist()
+            prompt_digest = hashlib.sha256(
+                ",".join(str(int(token)) for token in prompt).encode("ascii")
+            ).hexdigest()
+            prompt_id: Any = prompt_digest
+            for key in ("prompt_id", "dataset_row_id", "index"):
+                values = candidate.non_tensor_batch.get(key)
+                if values is not None and len(values) == len(candidate):
+                    prompt_id = safe(values[row])
+                    break
+            source_context = {
+                key: safe(values[row])
+                for key in ("data_source", "reward_model", "extra_info", "raw_prompt")
+                if (values := candidate.non_tensor_batch.get(key)) is not None and len(values) == len(candidate)
+            }
+            rows.append(
+                {
+                    "prompt_id": str(prompt_id),
+                    "prompt_token_ids": [int(token) for token in prompt],
+                    "response_token_ids": [int(token) for token in response],
+                    "trajectory_id": str(trajectory_ids[row]),
+                    "finish_reason": "length",
+                    "policy_version": policy_version,
+                    "source_context": source_context,
+                }
+            )
+        with path.open("a" if initialized else "x", encoding="utf-8") as stream:
+            for row in rows:
+                stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        self._hard_prefix_source_initialized = True
+
+    def _write_candidate_mechanism_rows(
+        self,
+        candidate: DataProto,
+        result: Any,
+        generation_batch_index: int,
+    ) -> None:
+        path_value = _config_get(_config_get(self.config, "trainer", {}), "mechanism_rows_path")
+        if path_value in (None, "null"):
+            return
+        path = Path(str(path_value))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        initialized = bool(getattr(self, "_mechanism_rows_initialized", False))
+        if not initialized and path.exists():
+            raise FileExistsError(f"refusing to overwrite candidate mechanism rows: {path}")
+        grouped_short: dict[str, list[float]] = {}
+        grouped_boundary: dict[str, list[float]] = {}
+        for uid, short, boundary in zip(
+            result.uids.tolist(),
+            result.short_acc.tolist(),
+            result.boundary_acc.tolist(),
+            strict=True,
+        ):
+            grouped_short.setdefault(str(uid), []).append(float(short))
+            grouped_boundary.setdefault(str(uid), []).append(float(boundary))
+        newly_locked = {
+            uid
+            for uid, values in grouped_short.items()
+            if np.std(np.asarray(values, dtype=np.float64)) > BOUNDARY_NUMERIC_TOLERANCE
+            and np.std(np.asarray(grouped_boundary[uid], dtype=np.float64)) <= BOUNDARY_NUMERIC_TOLERANCE
+        }
+        trajectory_ids = candidate.non_tensor_batch["trajectory_id"]
+        threshold = self._boundary_config().correctness_threshold
+        with path.open("a" if initialized else "x", encoding="utf-8") as stream:
+            for row in np.flatnonzero(result.hit_response_cap).tolist():
+                short_success = result.short_acc[row] >= threshold
+                long_success = result.long_acc[row] >= threshold
+                transition = (
+                    f"h_{'correct' if short_success else 'wrong'}_"
+                    f"l_{'correct' if long_success else 'wrong'}"
+                )
+                uid = str(result.uids[row])
+                stream.write(
+                    json.dumps(
+                        {
+                            "global_step": int(self.global_steps),
+                            "generation_batch_index": int(generation_batch_index),
+                            "uid": uid,
+                            "trajectory_id": str(trajectory_ids[row]),
+                            "transition_class": transition,
+                            "tail_length": int(result.tail_token_lengths[row]),
+                            "short_acc": float(result.short_acc[row]),
+                            "long_acc": float(result.long_acc[row]),
+                            "boundary_acc": float(result.boundary_acc[row]),
+                            "task_delta": float(result.task_score_delta[row]),
+                            "long_hit_cap": bool(result.long_hit_response_cap[row]),
+                            "boundary_group_newly_locked": uid in newly_locked,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+            stream.flush()
+            os.fsync(stream.fileno())
+        self._mechanism_rows_initialized = True
 
     def _score_long_generations_in_chunks(
         self,
@@ -368,7 +664,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         timing_raw: dict[str, float],
         generation_batch_index: int,
     ) -> DataProto:
-        del metrics, generation_batch_index
+        del metrics
         boundary = self._boundary_config()
         if boundary.mode == "off":
             return candidate
@@ -438,6 +734,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                     _assert_shadow_candidate_noop(shadow_snapshot, candidate)
                     result.metrics["boundary_return/shadow_candidate_noop_gate_pass_count"] = 1.0
                 self._step_accumulator().add(result)
+                self._write_candidate_mechanism_rows(candidate, result, generation_batch_index)
                 profile_intervals = getattr(self, "_boundary_profile_intervals", None)
                 if profile_intervals is None:
                     profile_intervals = []
