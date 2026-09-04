@@ -50,6 +50,7 @@ def test_baseline_calibration_exports_only_exact_cap_prefix_rows(tmp_path):
         trainer=SimpleNamespace(hard_prefix_source_path=str(tmp_path / "cap-source.jsonl")),
         actor_rollout_ref=SimpleNamespace(rollout=SimpleNamespace(response_length=4)),
     )
+    trainer.tokenizer = SimpleNamespace(eos_token_id=99)
     trainer._typed_boundary_return_config = BoundaryReturnConfig(mode="off")
     trainer._rollout_policy_version = 0
     batch = DataProto(
@@ -76,6 +77,37 @@ def test_baseline_calibration_exports_only_exact_cap_prefix_rows(tmp_path):
     assert rows[0]["prompt_id"] == "p0"
     assert rows[0]["response_token_ids"] == [5, 6, 7, 8]
     assert rows[0]["source_context"]["data_source"] == "a"
+
+
+def test_baseline_calibration_uses_runtime_cap_fallback_when_finish_reason_is_absent(tmp_path):
+    trainer = RayDAPOBoundaryReturnTrainer.__new__(RayDAPOBoundaryReturnTrainer)
+    trainer.config = SimpleNamespace(
+        trainer=SimpleNamespace(hard_prefix_source_path=str(tmp_path / "cap-source.jsonl")),
+        actor_rollout_ref=SimpleNamespace(rollout=SimpleNamespace(response_length=4)),
+    )
+    trainer.tokenizer = SimpleNamespace(eos_token_id=99)
+    trainer._typed_boundary_return_config = BoundaryReturnConfig(mode="off")
+    trainer._rollout_policy_version = 0
+    batch = DataProto(
+        batch=TensorDict(
+            {
+                "prompts": torch.tensor([[1], [2]]),
+                "responses": torch.tensor([[5, 6, 7, 8], [9, 99, 10, 11]]),
+                "attention_mask": torch.ones((2, 5), dtype=torch.long),
+                "response_mask": torch.ones((2, 4), dtype=torch.long),
+            },
+            batch_size=2,
+        ),
+        non_tensor_batch={
+            "trajectory_id": np.asarray(["cap", "eos"], dtype=object),
+            "rollout_policy_version": np.asarray([0, 0], dtype=object),
+        },
+    )
+    trainer._after_normal_rollout(batch)
+    rows = [json.loads(line) for line in (tmp_path / "cap-source.jsonl").read_text().splitlines()]
+    assert [row["trajectory_id"] for row in rows] == ["cap"]
+    assert rows[0]["raw_finish_reason"] is None
+    assert rows[0]["cap_detection"] == "backend_reason_or_full_without_eos"
 
 
 def test_candidate_mechanism_rows_keep_newly_locked_outside_actor_labels(tmp_path):

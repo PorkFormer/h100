@@ -53,6 +53,7 @@ from verl.experimental.probe_credit.dapo_trainer import (
     _config_get,
 )
 from verl.trainer.ppo.core_algos import AdvantageEstimator
+from verl.trainer.ppo.forced_answer_probe import detect_hit_response_cap
 from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.debug import marked_timer
 from verl.workers.config.rollout import BoundaryReturnConfig
@@ -465,8 +466,8 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         prompt_mask = candidate.batch["attention_mask"][:, :prompt_width].bool()
         response_mask = candidate.batch["response_mask"].bool()
         finish_reasons = candidate.non_tensor_batch.get("finish_reason")
-        if finish_reasons is None or len(finish_reasons) != len(candidate):
-            raise ValueError("hard-prefix source requires row-aligned finish_reason")
+        if finish_reasons is not None and len(finish_reasons) != len(candidate):
+            raise ValueError("hard-prefix source finish_reason must be row-aligned when present")
         trajectory_ids = candidate.non_tensor_batch.get("trajectory_id")
         if trajectory_ids is None or len(trajectory_ids) != len(candidate):
             raise ValueError("hard-prefix source requires row-aligned trajectory_id")
@@ -489,10 +490,20 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         rows = []
         expected_length = int(self.config.actor_rollout_ref.rollout.response_length)
         policy_version = self._validate_rollout_policy_version(candidate)
+        response_tokens = [
+            candidate.batch["responses"][row][response_mask[row]].detach().cpu().tolist()
+            for row in range(len(candidate))
+        ]
+        hit_cap = detect_hit_response_cap(
+            finish_reasons=finish_reasons,
+            response_lengths=[len(tokens) for tokens in response_tokens],
+            max_response_length=expected_length,
+            response_token_ids=response_tokens,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
         for row in range(len(candidate)):
-            response = candidate.batch["responses"][row][response_mask[row]].detach().cpu().tolist()
-            reason = getattr(finish_reasons[row], "value", finish_reasons[row])
-            if str(reason).lower().split(".")[-1] != "length" or len(response) != expected_length:
+            response = response_tokens[row]
+            if not hit_cap[row]:
                 continue
             prompt = candidate.batch["prompts"][row][prompt_mask[row]].detach().cpu().tolist()
             prompt_digest = hashlib.sha256(
@@ -516,6 +527,8 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                     "response_token_ids": [int(token) for token in response],
                     "trajectory_id": str(trajectory_ids[row]),
                     "finish_reason": "length",
+                    "raw_finish_reason": safe(finish_reasons[row]) if finish_reasons is not None else None,
+                    "cap_detection": "backend_reason_or_full_without_eos",
                     "policy_version": policy_version,
                     "source_context": source_context,
                 }
