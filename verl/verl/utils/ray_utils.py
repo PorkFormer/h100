@@ -25,6 +25,37 @@ from typing import Any, Optional
 import ray
 
 
+def required_ray_node_resource(config: Any) -> Optional[str]:
+    """Return the optional resource label used to keep one trainer on one Ray node."""
+    trainer = config.get("trainer") if hasattr(config, "get") else getattr(config, "trainer", None)
+    if trainer is None:
+        return None
+    resource = trainer.get("ray_node_resource") if hasattr(trainer, "get") else getattr(
+        trainer, "ray_node_resource", None
+    )
+    return str(resource) if resource else None
+
+
+def alive_cpu_node_ids(required_resource: Optional[str] = None) -> list[str]:
+    """List eligible live CPU nodes, failing closed when a requested label is absent."""
+    node_ids = [
+        node["NodeID"]
+        for node in ray.nodes()
+        if node["Alive"]
+        and node["Resources"].get("CPU", 0) > 0
+        and (required_resource is None or node["Resources"].get(required_resource, 0) > 0)
+    ]
+    if required_resource is not None and not node_ids:
+        raise RuntimeError(f"no live CPU node advertises required Ray resource {required_resource!r}")
+    return node_ids
+
+
+def required_resource_options(config: Any, quantity: float = 1e-3) -> dict[str, object]:
+    """Build Ray actor options that hard-pin an auxiliary actor to a labelled node."""
+    resource = required_ray_node_resource(config)
+    return {"resources": {resource: quantity}} if resource is not None else {}
+
+
 def ray_noset_visible_devices(env_vars=os.environ):
     # Refer to
     # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/nvidia_gpu.py#L95-L96

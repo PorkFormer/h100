@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import json
 import subprocess
 import sys
 from argparse import Namespace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -32,13 +34,17 @@ from tools.ncbr_profile.stage_local_assets import file_hashes, stage
 from tools.ncbr_profile.validate_gate0 import validate as validate_gate0
 from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata, validate_stage_artifacts
 from tools.ncbr_profile.verify_teardown import target_processes
+from verl.experimental.agent_loop import AgentLoopManager
 from verl.experimental.natural_continuation_boundary_return.dapo_trainer import (
     RayDAPOBoundaryReturnTrainer,
     _profile_json_default,
 )
 from verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return import task_runner_options
 from verl.experimental.natural_continuation_boundary_return.runtime import run_boundary_continuations
+from verl.experimental.reward_loop import RewardLoopManager
 from verl.single_controller.ray import base as ray_base
+from verl.utils import ray_utils
+from verl.workers.rollout import llm_server
 
 
 def test_profile_json_default_serializes_numpy_and_torch_telemetry():
@@ -159,6 +165,82 @@ def test_shared_ray_node_resource_pins_controller_and_every_gpu_bundle(monkeypat
         trainer = Trainer()
 
     assert task_runner_options(Config()) == {"num_cpus": 1, "resources": {"ncbr_node_B": 1e-3}}
+
+
+def test_shared_ray_node_resource_pins_auxiliary_cpu_actors_and_fails_closed(monkeypatch):
+    node_a = "a" * 56
+    node_b = "b" * 56
+    nodes = [
+        {"NodeID": node_a, "Alive": True, "Resources": {"CPU": 240, "ncbr_node_A": 1}},
+        {"NodeID": node_b, "Alive": True, "Resources": {"CPU": 240, "ncbr_node_B": 1}},
+    ]
+    monkeypatch.setattr(ray_utils.ray, "nodes", lambda: nodes)
+
+    config = {"trainer": {"ray_node_resource": "ncbr_node_A"}}
+    assert ray_utils.required_ray_node_resource(config) == "ncbr_node_A"
+    assert ray_utils.alive_cpu_node_ids("ncbr_node_A") == [node_a]
+    assert ray_utils.required_resource_options(config) == {"resources": {"ncbr_node_A": 1e-3}}
+
+    with pytest.raises(RuntimeError, match="no live CPU node advertises"):
+        ray_utils.alive_cpu_node_ids("missing_node")
+
+    actor_options = []
+
+    class FakeRemoteActor:
+        @classmethod
+        def options(cls, **options):
+            actor_options.append(options)
+            return cls
+
+        @staticmethod
+        def remote(*args, **kwargs):
+            return object()
+
+    config = SimpleNamespace(
+        trainer={"ray_node_resource": "ncbr_node_A"},
+        reward=SimpleNamespace(num_workers=2),
+    )
+    agent_manager = object.__new__(AgentLoopManager)
+    agent_manager.config = config
+    agent_manager.rollout_config = SimpleNamespace(agent=SimpleNamespace(num_workers=2))
+    agent_manager.llm_client = object()
+    agent_manager.teacher_client = None
+    agent_manager.reward_loop_worker_handles = None
+    agent_manager.agent_loop_workers_class = FakeRemoteActor
+    asyncio.run(agent_manager._init_agent_loop_workers())
+    assert len(actor_options) == 2
+    assert all(item["scheduling_strategy"].node_id == node_a for item in actor_options)
+    assert all(item["scheduling_strategy"].soft is False for item in actor_options)
+
+    actor_options.clear()
+    reward_manager = object.__new__(RewardLoopManager)
+    reward_manager.config = config
+    reward_manager.reward_loop_workers_class = FakeRemoteActor
+    reward_manager.reward_router_address = None
+    reward_manager._init_reward_loop_workers()
+    assert len(actor_options) == 2
+    assert all(item["scheduling_strategy"].node_id == node_a for item in actor_options)
+    assert all(item["scheduling_strategy"].soft is False for item in actor_options)
+
+    load_balancer_options = []
+
+    class FakeLoadBalancer:
+        @classmethod
+        def options(cls, **options):
+            load_balancer_options.append(options)
+            return cls
+
+        @staticmethod
+        def remote(**kwargs):
+            return kwargs
+
+    monkeypatch.setattr(llm_server, "GlobalRequestLoadBalancer", FakeLoadBalancer)
+    server_manager = object.__new__(llm_server.LLMServerManager)
+    server_manager.config = config
+    server_manager.server_addresses = ["server"]
+    server_manager.server_handles = [object()]
+    asyncio.run(server_manager._init_global_load_balancer())
+    assert load_balancer_options == [{"resources": {"ncbr_node_A": 1e-3}}]
 
 
 def test_local_asset_staging_is_verified_read_only_and_idempotent(tmp_path):

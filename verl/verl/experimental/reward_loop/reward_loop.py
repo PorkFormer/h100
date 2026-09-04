@@ -28,7 +28,7 @@ from verl.single_controller.ray.base import RayResourcePool
 from verl.trainer.ppo.reward import load_reward_manager, resolve_reward_manager_cls
 from verl.utils import hf_tokenizer
 from verl.utils.fs import copy_to_local
-from verl.utils.ray_utils import get_event_loop
+from verl.utils.ray_utils import alive_cpu_node_ids, get_event_loop, required_ray_node_resource
 
 from .reward_model import RewardModelManager
 
@@ -327,10 +327,11 @@ class RewardLoopManager:
     def _init_reward_loop_workers(self):
         self.reward_loop_workers = []
         num_workers = self.config.reward.num_workers
-        node_ids = [node["NodeID"] for node in ray.nodes() if node["Alive"] and node["Resources"].get("CPU", 0) > 0]
+        required_resource = required_ray_node_resource(self.config)
+        node_ids = alive_cpu_node_ids(required_resource)
 
         for i in range(num_workers):
-            # Round-robin scheduling over the all nodes
+            # Round-robin over all nodes unless the trainer requires one labelled node.
             node_id = node_ids[i % len(node_ids)]
 
             self.reward_loop_workers.append(
@@ -338,7 +339,7 @@ class RewardLoopManager:
                     name=f"reward_loop_worker_{i}",
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=node_id,
-                        soft=True,
+                        soft=required_resource is None,
                     ),
                 ).remote(self.config, self.reward_router_address)
             )

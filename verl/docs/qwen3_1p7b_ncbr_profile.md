@@ -103,10 +103,14 @@ files to `/tmp/qwen17-ncbr-assets-5904152e`, verifies every SHA256, and removes
 all write bits. `verify_shared_ray.py` requires exactly two live labelled
 nodes, 16 total and available GPUs, the exact hostname/IP/GPU inventories,
 idle GPU memory, no compute process, both local asset sets, equal CPU/object
-store capacity, and no worker-port registration error. The task runner and
-every GPU placement-group bundle request the selected `ncbr_node_A/B` resource,
-so an eight-GPU arm cannot land on the wrong node or span nodes. The legacy
-standalone one-shot controller is not used for this shared-cluster execution.
+store capacity, and no worker-port registration error. The task runner, global
+request load balancer, every AgentLoop/RewardLoop CPU actor, and every GPU
+placement-group bundle request the selected `ncbr_node_A/B` resource. CPU
+actors use hard node affinity and fail closed if the labelled node is
+unavailable, so an arm cannot silently mix candidate or reward processing from
+the peer node; an eight-GPU arm cannot land on the wrong node or span nodes.
+The legacy standalone one-shot controller is not used for this shared-cluster
+execution.
 
 Create one manifest per node only after the final code SHA is pushed. Use
 `compare_node_manifests.py` to require equal code, recipe identity, model-file,
