@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections.abc import Mapping
 import ctypes
 import json
 import logging
@@ -40,6 +41,41 @@ VLLM_LORA_PATH = "simon_lora_path"
 VLLM_ASCEND_REQUIRED_ENV_VARS = {"VLLM_ALL2ALL_BACKEND": "flashinfer_all2allv", "VLLM_ASCEND_ENABLE_NZ": "0"}
 
 
+def request_engine_timing_diagnostics(request_metrics: Any) -> dict[str, Any]:
+    """Return a JSON-safe snapshot when vLLM request timing cannot be normalized."""
+    field_names = (
+        "arrival_time",
+        "first_scheduled_time",
+        "first_token_time",
+        "finished_time",
+        "queued_ts",
+        "scheduled_ts",
+        "first_token_ts",
+        "last_token_ts",
+    )
+
+    def get_value(name: str) -> Any:
+        if isinstance(request_metrics, Mapping):
+            return request_metrics.get(name)
+        return getattr(request_metrics, name, None)
+
+    values = {}
+    for name in field_names:
+        value = get_value(name)
+        if isinstance(value, bool | int | float | str) or value is None:
+            values[name] = value
+        else:
+            values[name] = repr(value)
+    return {
+        "metrics_type": (
+            None
+            if request_metrics is None
+            else f"{type(request_metrics).__module__}.{type(request_metrics).__qualname__}"
+        ),
+        "fields": values,
+    }
+
+
 def extract_request_engine_timing(request_metrics: Any) -> dict[str, float | str] | None:
     """Normalize vLLM request metrics across legacy and current field names.
 
@@ -51,6 +87,11 @@ def extract_request_engine_timing(request_metrics: Any) -> dict[str, float | str
     if request_metrics is None:
         return None
 
+    def get_value(name: str) -> Any:
+        if isinstance(request_metrics, Mapping):
+            return request_metrics.get(name)
+        return getattr(request_metrics, name, None)
+
     legacy_fields = {
         "arrival_time": "arrival_time",
         "first_scheduled_time": "first_scheduled_time",
@@ -58,7 +99,7 @@ def extract_request_engine_timing(request_metrics: Any) -> dict[str, float | str
         "finished_time": "finished_time",
     }
     legacy_values = {
-        output_name: getattr(request_metrics, source_name, None)
+        output_name: get_value(source_name)
         for output_name, source_name in legacy_fields.items()
     }
     if all(value is not None for value in legacy_values.values()):
@@ -78,7 +119,7 @@ def extract_request_engine_timing(request_metrics: Any) -> dict[str, float | str
         "finished_time": "last_token_ts",
     }
     current_values = {
-        output_name: getattr(request_metrics, source_name, None)
+        output_name: get_value(source_name)
         for output_name, source_name in current_fields.items()
     }
     if all(value is not None and float(value) > 0.0 for value in current_values.values()):

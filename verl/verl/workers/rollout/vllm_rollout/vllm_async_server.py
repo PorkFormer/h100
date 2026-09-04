@@ -52,6 +52,7 @@ from verl.workers.rollout.vllm_rollout.utils import (
     extract_request_engine_timing,
     extract_prompt_logprobs,
     get_vllm_max_lora_rank,
+    request_engine_timing_diagnostics,
 )
 
 _VLLM_VERSION = version.parse(vllm.__version__)
@@ -557,9 +558,21 @@ class vLLMHttpServer:
             )
 
         extra_fields = {"global_steps": self.global_steps}
-        engine_timing = extract_request_engine_timing(getattr(final_res, "metrics", None))
+        request_metrics = getattr(final_res, "metrics", None)
+        engine_timing = extract_request_engine_timing(request_metrics)
         if engine_timing is not None:
             extra_fields["engine_timing"] = engine_timing
+        boundary_config = self.config.get("boundary_return", None)
+        if (
+            engine_timing is None
+            and boundary_config is not None
+            and boundary_config.get("mode", "off") != "off"
+        ):
+            logger.warning(
+                "boundary_return event=engine_timing_unavailable request_id=%s diagnostics=%s",
+                request_id,
+                json.dumps(request_engine_timing_diagnostics(request_metrics), sort_keys=True),
+            )
         extract_prompt_logprobs(
             output=final_res,
             num_prompt_logprobs=sampling_params.prompt_logprobs,
@@ -576,7 +589,6 @@ class vLLMHttpServer:
 
         # Determine stop reason from finish_reason
         finish_reason = final_res.outputs[0].finish_reason
-        boundary_config = self.config.get("boundary_return", None)
         if self.config.forced_answer_probe.enable or (
             boundary_config is not None and boundary_config.get("mode", "off") != "off"
         ):

@@ -37,7 +37,10 @@ from verl.experimental.natural_continuation_boundary_return.runtime import (
 )
 from verl.workers.config.rollout import BoundaryReturnConfig
 from verl.workers.rollout.replica import TokenOutput
-from verl.workers.rollout.vllm_rollout.utils import extract_request_engine_timing
+from verl.workers.rollout.vllm_rollout.utils import (
+    extract_request_engine_timing,
+    request_engine_timing_diagnostics,
+)
 
 
 def _batch(*, finish_reasons=("length", "stop"), versions=(7, 7)) -> DataProto:
@@ -353,6 +356,36 @@ def test_vllm_request_metrics_normalize_legacy_and_current_clock_domains():
         "first_scheduled_time": 201.0,
         "first_token_time": 202.0,
         "finished_time": 203.0,
+    }
+
+    assert extract_request_engine_timing(
+        {"queued_ts": 300.0, "scheduled_ts": 301.0, "first_token_ts": 302.0, "last_token_ts": 303.0}
+    ) == {
+        "clock_domain": "monotonic",
+        "arrival_time": 300.0,
+        "first_scheduled_time": 301.0,
+        "first_token_time": 302.0,
+        "finished_time": 303.0,
+    }
+
+
+def test_vllm_request_metrics_diagnostics_are_json_safe_and_complete():
+    diagnostics = request_engine_timing_diagnostics(
+        SimpleNamespace(queued_ts=0.0, scheduled_ts=2.0, first_token_ts=3.0, last_token_ts=4.0)
+    )
+    assert diagnostics["metrics_type"] == "types.SimpleNamespace"
+    assert diagnostics["fields"]["queued_ts"] == 0.0
+    assert diagnostics["fields"]["scheduled_ts"] == 2.0
+    assert diagnostics["fields"]["arrival_time"] is None
+    assert set(diagnostics["fields"]) == {
+        "arrival_time",
+        "first_scheduled_time",
+        "first_token_time",
+        "finished_time",
+        "queued_ts",
+        "scheduled_ts",
+        "first_token_ts",
+        "last_token_ts",
     }
 
 
