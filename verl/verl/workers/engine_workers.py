@@ -382,8 +382,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
         """Alternate diagnostics off/on on one real optimizer mini-batch per rank."""
         repeats = int(replay_config.get("repeats", 2))
         receipt_dir = replay_config.get("receipt_dir")
-        if repeats < 2 or not receipt_dir:
-            raise ValueError("actor fixed replay requires repeats>=2 and a receipt directory")
+        if repeats < 2 or repeats % 2 or not receipt_dir:
+            raise ValueError("actor fixed replay requires even repeats>=2 and a receipt directory")
         module = getattr(self.engine, "module", None)
         optimizer = getattr(self.engine, "optimizer", None)
         if module is None or optimizer is None:
@@ -436,57 +436,62 @@ class TrainingWorker(Worker, DistProfilerExtension):
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        for _ in range(repeats):
-            for enabled in (False, True):
-                restore()
-                current_config = dict(diagnostics_config)
-                current_config["enable"] = enabled
-                diagnostics = ActorDiagnosticsAccumulator(current_config)
-                replay_loss = make_replay_loss(diagnostics)
-                replay_data = data.clone()
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                    torch.cuda.reset_peak_memory_stats()
-                    start = torch.cuda.Event(enable_timing=True)
-                    end = torch.cuda.Event(enable_timing=True)
-                    start.record()
-                    output = self.engine.train_batch(replay_data, loss_function=replay_loss)
-                    diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
-                    end.record()
-                    torch.cuda.synchronize()
-                    elapsed = start.elapsed_time(end) / 1000.0
-                    peak_allocated = torch.cuda.max_memory_allocated()
-                    peak_reserved = torch.cuda.max_memory_reserved()
-                else:
-                    started = time.perf_counter()
-                    output = self.engine.train_batch(replay_data, loss_function=replay_loss)
-                    diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
-                    elapsed = time.perf_counter() - started
-                    peak_allocated = "unavailable"
-                    peak_reserved = "unavailable"
-                gradients = [
-                    None if parameter.grad is None else _replay_tree_to_cpu(parameter.grad) for parameter in parameters
-                ]
-                observation = {
-                    "diagnostics_enabled": enabled,
-                    "loss_fingerprint": _replay_fingerprint(output.get("metrics", {})),
-                    "gradient_fingerprint": _replay_fingerprint(gradients),
-                    "parameter_fingerprint": _replay_fingerprint(parameters),
-                    "optimizer_fingerprint": _replay_fingerprint(optimizer.state_dict()),
-                    "rng_fingerprint": _replay_fingerprint(
-                        {
-                            "python": random.getstate(),
-                            "numpy": np.random.get_state(),
-                            "torch": torch.random.get_rng_state(),
-                            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-                        }
-                    ),
-                    "elapsed_seconds": elapsed,
-                    "peak_allocated_bytes": peak_allocated,
-                    "peak_reserved_bytes": peak_reserved,
-                    "diagnostic_reduction_calls": diagnostic_result.reduction_calls,
-                }
-                observations.append(observation)
+        measurement_order = [
+            enabled
+            for repeat_index in range(repeats)
+            for enabled in ((False, True) if repeat_index % 2 == 0 else (True, False))
+        ]
+        for enabled in measurement_order:
+            restore()
+            current_config = dict(diagnostics_config)
+            current_config["enable"] = enabled
+            diagnostics = ActorDiagnosticsAccumulator(current_config)
+            replay_loss = make_replay_loss(diagnostics)
+            replay_data = data.clone()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                start.record()
+                output = self.engine.train_batch(replay_data, loss_function=replay_loss)
+                diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
+                end.record()
+                torch.cuda.synchronize()
+                elapsed = start.elapsed_time(end) / 1000.0
+                peak_allocated = torch.cuda.max_memory_allocated()
+                peak_reserved = torch.cuda.max_memory_reserved()
+            else:
+                started = time.perf_counter()
+                output = self.engine.train_batch(replay_data, loss_function=replay_loss)
+                diagnostic_result = diagnostics.finalize(self.engine.get_data_parallel_group())
+                elapsed = time.perf_counter() - started
+                peak_allocated = "unavailable"
+                peak_reserved = "unavailable"
+            gradients = [
+                None if parameter.grad is None else _replay_tree_to_cpu(parameter.grad) for parameter in parameters
+            ]
+            observation = {
+                "diagnostics_enabled": enabled,
+                "loss_fingerprint": _replay_fingerprint(output.get("metrics", {})),
+                "gradient_fingerprint": _replay_fingerprint(gradients),
+                "parameter_fingerprint": _replay_fingerprint(parameters),
+                "optimizer_fingerprint": _replay_fingerprint(optimizer.state_dict()),
+                "rng_fingerprint": _replay_fingerprint(
+                    {
+                        "python": random.getstate(),
+                        "numpy": np.random.get_state(),
+                        "torch": torch.random.get_rng_state(),
+                        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                    }
+                ),
+                "elapsed_seconds": elapsed,
+                "peak_allocated_bytes": peak_allocated,
+                "peak_reserved_bytes": peak_reserved,
+                "diagnostic_reduction_calls": diagnostic_result.reduction_calls,
+            }
+            observations.append(observation)
+            if enabled:
                 final_output = output
                 final_diagnostics = diagnostic_result
         fields = (
@@ -516,6 +521,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
             "world_size": torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1,
             "unmeasured_allocator_and_optimizer_warmup": True,
             "unmeasured_off_and_on_diagnostics_warmup": True,
+            "balanced_measurement_order": True,
+            "measurement_order": measurement_order,
             "observations": observations,
             "equivalence": equivalence,
             "equivalence_pass": all(equivalence.values()),

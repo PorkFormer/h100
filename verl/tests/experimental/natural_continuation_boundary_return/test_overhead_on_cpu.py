@@ -25,8 +25,10 @@ def test_fixed_batch_harness_restores_full_state_and_proves_diagnostics_inert(mo
         return loss
 
     result = FixedBatchReplayHarness(model, optimizer, step).run(repeats=2)
-    assert calls == [False, True, False, True, False, True]
+    assert calls == [False, True, False, True, True, False]
     assert result["unmeasured_off_and_on_diagnostics_warmup"] is True
+    assert result["balanced_measurement_order"] is True
+    assert result["measurement_order"] == [False, True, True, False]
     assert len(result["observations"]) == 4
     assert result["equivalence_pass"]
     assert all(result["equivalence"].values())

@@ -61,6 +61,8 @@ def test_real_actor_replay_restores_model_optimizer_and_rng(monkeypatch, tmp_pat
     receipt = json.loads((tmp_path / "rank_00000.json").read_text(encoding="utf-8"))
     assert worker.engine.train_batch_calls == 6
     assert receipt["unmeasured_off_and_on_diagnostics_warmup"] is True
+    assert receipt["balanced_measurement_order"] is True
+    assert receipt["measurement_order"] == [False, True, True, False]
     assert len(receipt["observations"]) == 4
     assert receipt["equivalence_pass"]
     assert receipt["max_diagnostic_reduction_calls_per_optimizer_step"] == 1

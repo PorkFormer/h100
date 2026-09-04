@@ -126,11 +126,16 @@ class FixedBatchReplayHarness:
             torch.cuda.synchronize()
 
     def run(self, repeats: int = 2) -> dict[str, Any]:
-        if repeats <= 0:
-            raise ValueError("fixed replay repeats must be positive")
+        if repeats <= 0 or repeats % 2:
+            raise ValueError("fixed replay repeats must be a positive even integer for counterbalancing")
         for enabled in (False, True):
             self._warmup_one(enabled)
-        observations = [self._run_one(enabled) for _ in range(repeats) for enabled in (False, True)]
+        measurement_order = [
+            enabled
+            for repeat_index in range(repeats)
+            for enabled in ((False, True) if repeat_index % 2 == 0 else (True, False))
+        ]
+        observations = [self._run_one(enabled) for enabled in measurement_order]
         off = [item for item in observations if not item.diagnostics_enabled]
         on = [item for item in observations if item.diagnostics_enabled]
         equivalence_fields = (
@@ -156,6 +161,8 @@ class FixedBatchReplayHarness:
         return {
             "schema_version": "fixed-actor-batch-replay-v1",
             "unmeasured_off_and_on_diagnostics_warmup": True,
+            "balanced_measurement_order": True,
+            "measurement_order": measurement_order,
             "observations": [item.__dict__ for item in observations],
             "equivalence": equivalence,
             "equivalence_pass": all(equivalence.values()),
