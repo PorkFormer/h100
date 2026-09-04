@@ -22,6 +22,13 @@ from verl.experimental.natural_continuation_boundary_return.profiling import (  
 )
 
 
+def _actor_valid_tokens(metrics: dict) -> float:
+    for key in ("actor/actor_diagnostics/all/token_count", "actor_diagnostics/all/token_count"):
+        if key in metrics:
+            return float(metrics[key])
+    return 0.0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -56,7 +63,7 @@ def main() -> None:
             ),
             "normal_decode_tokens": float(metrics.get("train/generated_response_tokens", 0.0)),
             "normal_trajectories": float(metrics.get("train/generated_trajectories", 0.0)),
-            "actor_valid_tokens": float(metrics.get("actor_diagnostics/all/token_count", 0.0)),
+            "actor_valid_tokens": _actor_valid_tokens(metrics),
             "candidate_batches": float(metrics.get("train/num_gen_batches", 0.0)),
         }
         if automatic_workloads["actor_valid_tokens"] <= 0:

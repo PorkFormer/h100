@@ -21,6 +21,7 @@ from tools.ncbr_profile.compare_calibration import compare
 from tools.ncbr_profile.compare_calibration_workloads import compare as compare_workloads
 from tools.ncbr_profile.create_stage_manifest import files_manifest, revision_provenance
 from tools.ncbr_profile.estimate_s300 import estimate
+from tools.ncbr_profile.extract_calibration import extract as extract_calibration
 from tools.ncbr_profile.evaluate_overhead import evaluate, overhead_fraction
 from tools.ncbr_profile.schedule_s300 import choose_assignments
 from tools.ncbr_profile.sample_shared_gpus import _parse_csv
@@ -302,6 +303,41 @@ def test_cross_node_calibration_uses_geometric_mean_and_requests_crossover_above
     assert result["crossover_required"]
 
 
+def test_calibration_extractor_accepts_prefixed_actor_metrics_and_parent_intervals():
+    intervals = [
+        ("normal_rollout", 0.0, 10.0),
+        ("short_reward", 10.0, 11.0),
+        ("dynamic_sampling_filter", 11.0, 12.0),
+        ("old_and_reference_log_prob", 12.0, 16.0),
+        ("advantage_and_actor_update", 16.0, 21.0),
+    ]
+    profile = {
+        "intervals": [
+            {
+                "interval_id": name,
+                "name": name,
+                "wall_start": start,
+                "wall_end": end,
+                "parent_id": None,
+                "asynchronous": False,
+                "metadata": {},
+            }
+            for name, start, end in intervals
+        ],
+        "step_metrics": {
+            "train/generated_response_tokens": 100,
+            "train/num_gen_batches": 2,
+            "actor/actor_diagnostics/all/token_count": 50,
+        },
+    }
+    result = extract_calibration(profile, {"gpu_utilization_percent": [80, 100]})
+    assert result["normal_decode_tokens_per_second"] == pytest.approx(10)
+    assert result["reward_full_response_tokens_per_second"] == pytest.approx(100)
+    assert result["actor_valid_tokens_per_second"] == pytest.approx(50 / 9)
+    assert result["candidate_batches_per_second"] == pytest.approx(1)
+    assert result["actor_interval_source"] == "combined_parent_intervals"
+
+
 def test_profile_analyzer_derives_workload_unit_costs_and_coverage(tmp_path):
     interval_names = (
         ("normal_rollout", 0.0, 10.0, {"normal_decode_tokens": 100}),
@@ -335,7 +371,7 @@ def test_profile_analyzer_derives_workload_unit_costs_and_coverage(tmp_path):
                         "step_metrics": {
                             "train/generated_response_tokens": 100,
                             "train/num_gen_batches": 1,
-                            "actor_diagnostics/all/token_count": 50,
+                            "actor/actor_diagnostics/all/token_count": 50,
                             "boundary_return/continuation_request_count": 0,
                         },
                     }
@@ -604,7 +640,7 @@ def test_cumulative_axes_use_measured_work_and_keep_baseline_continuation_zero()
                 "training/global_step": 2,
                 "train/generated_prompt_groups": 4,
                 "train/generated_response_tokens": 40,
-                "actor_diagnostics/all/token_count": 30,
+                "actor/actor_diagnostics/all/token_count": 30,
             },
             "trainer_timing_raw": {"step": 20},
         },

@@ -9,6 +9,13 @@ import json
 from pathlib import Path
 
 
+def _actor_valid_tokens(metrics: dict) -> float:
+    for key in ("actor/actor_diagnostics/all/token_count", "actor_diagnostics/all/token_count"):
+        if key in metrics:
+            return float(metrics[key])
+    raise KeyError("actor diagnostics token count is unavailable")
+
+
 def build(records: list[dict], arm: str) -> list[dict]:
     totals = {
         "candidate_prompts": 0.0,
@@ -33,7 +40,7 @@ def build(records: list[dict], arm: str) -> list[dict]:
             "normal_decode_tokens": float(metrics["train/generated_response_tokens"]),
             "continuation_input_tokens": float(metrics.get("boundary_return/continuation_input_tokens", 0.0)),
             "continuation_tail_decode_tokens": float(metrics.get("boundary_return/tail_decode_tokens", 0.0)),
-            "actor_valid_tokens": float(metrics["actor_diagnostics/all/token_count"]),
+            "actor_valid_tokens": _actor_valid_tokens(metrics),
             "wall_clock_seconds": float(timing.get("step", metrics.get("timing_s/step"))),
         }
         if arm == "baseline" and (

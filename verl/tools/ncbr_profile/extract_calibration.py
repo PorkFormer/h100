@@ -18,6 +18,13 @@ from verl.experimental.natural_continuation_boundary_return.profiling import (
 )
 
 
+def _actor_valid_tokens(metrics: dict) -> float:
+    for key in ("actor/actor_diagnostics/all/token_count", "actor_diagnostics/all/token_count"):
+        if key in metrics:
+            return float(metrics[key])
+    raise KeyError("actor diagnostics token count is unavailable")
+
+
 def extract(profile: dict, gpu_samples: dict) -> dict:
     intervals = [ProfileInterval(**item) for item in profile["intervals"]]
     by_name: dict[str, list[ProfileInterval]] = {}
@@ -25,18 +32,23 @@ def extract(profile: dict, gpu_samples: dict) -> dict:
         by_name.setdefault(interval.name, []).append(interval)
     metrics = profile["step_metrics"]
     normal_tokens = float(metrics["train/generated_response_tokens"])
-    actor_tokens = float(metrics["actor_diagnostics/all/token_count"])
+    actor_tokens = _actor_valid_tokens(metrics)
     candidate_batches = float(metrics["train/num_gen_batches"])
+    combined_actor_intervals = [
+        interval
+        for name in ("old_and_reference_log_prob", "advantage_and_actor_update")
+        for interval in by_name.get(name, [])
+    ]
+    if not all(by_name.get(name) for name in ("old_and_reference_log_prob", "advantage_and_actor_update")):
+        combined_actor_intervals = [
+            interval
+            for name in ("old_log_prob", "reference_log_prob", "advantage", "actor_update")
+            for interval in by_name.get(name, [])
+        ]
     seconds = {
         "normal": interval_union_seconds(by_name.get("normal_rollout", [])),
         "reward": interval_union_seconds(by_name.get("short_reward", [])),
-        "actor": interval_union_seconds(
-            [
-                interval
-                for name in ("old_log_prob", "reference_log_prob", "advantage", "actor_update")
-                for interval in by_name.get(name, [])
-            ]
-        ),
+        "actor": interval_union_seconds(combined_actor_intervals),
         "candidate": interval_union_seconds(
             [
                 interval
@@ -64,6 +76,11 @@ def extract(profile: dict, gpu_samples: dict) -> dict:
             "candidate_batches": candidate_batches,
         },
         "stage_seconds": seconds,
+        "actor_interval_source": (
+            "combined_parent_intervals"
+            if all(by_name.get(name) for name in ("old_and_reference_log_prob", "advantage_and_actor_update"))
+            else "fine_grained_intervals"
+        ),
     }
 
 
