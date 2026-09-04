@@ -209,58 +209,71 @@ class ActorDiagnosticsAccumulator:
             # This representation preserves the exact packed key order while
             # reducing the local accumulation to one vector addition.
             masks = torch.stack(tuple(cohort_masks.values()), dim=0)
-            valid = masks & finite.unsqueeze(0)
-            raw_values = raw.unsqueeze(0)
-            numerical_values = numerical.unsqueeze(0)
-            effective_values = effective.unsqueeze(0)
-            ratio_values = ratio.unsqueeze(0)
-            effective_ratio_values = effective_ratio.unsqueeze(0)
-            reduce_dims = (1, 2)
+            numeric_dtype = current.dtype
+            finite_numeric = finite.to(dtype=numeric_dtype)
+            finite_raw = raw.masked_fill(~finite, 0)
+            finite_numerical = numerical * finite_numeric
+            finite_effective = effective * finite_numeric
+            finite_effective_ratio = effective_ratio * finite_numeric
+            if entropy is not None:
+                entropy_finite = torch.isfinite(entropy)
+                entropy_safe = entropy.masked_fill(~entropy_finite, 0)
+                entropy_numeric = entropy_finite.to(dtype=numeric_dtype)
+            else:
+                entropy_finite = torch.zeros_like(finite)
+                entropy_safe = torch.zeros_like(raw)
+                entropy_numeric = torch.zeros_like(raw)
 
-            def masked_sum(values: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
-                return values.masked_fill(~selection, 0).sum(dim=reduce_dims)
-
-            ratio_fields = [
-                valid.sum(dim=reduce_dims),
-                masked_sum(raw_values, valid),
-                masked_sum(raw_values.square(), valid),
-                masked_sum(numerical_values, valid),
-                masked_sum(numerical_values.square(), valid),
-                masked_sum(effective_values, valid),
-                masked_sum(effective_values.square(), valid),
-                (masks & ~finite.unsqueeze(0)).sum(dim=reduce_dims),
+            # Reduce the token-level fields for every cohort with one small
+            # matrix multiplication.  Building each field with a separate
+            # masked reduction launches dozens of tiny eager kernels per PPO
+            # micro-batch even though all fields use the same cohort masks.
+            token_features = torch.stack(
                 (
-                    valid
-                    & ((raw_values < self.log_ratio_min) | (raw_values > self.log_ratio_max))
-                ).sum(dim=reduce_dims),
-                (valid & (ratio_values < lower)).sum(dim=reduce_dims),
-                (valid & (ratio_values > upper)).sum(dim=reduce_dims),
-                masked_sum(effective_ratio_values, valid),
-                masked_sum(effective_ratio_values.square(), valid),
-            ]
+                    finite_numeric,
+                    finite_raw,
+                    finite_raw.square(),
+                    finite_numerical,
+                    finite_numerical.square(),
+                    finite_effective,
+                    finite_effective.square(),
+                    (~finite).to(dtype=numeric_dtype),
+                    (
+                        finite & ((raw < self.log_ratio_min) | (raw > self.log_ratio_max))
+                    ).to(dtype=numeric_dtype),
+                    (finite & (ratio < lower)).to(dtype=numeric_dtype),
+                    (finite & (ratio > upper)).to(dtype=numeric_dtype),
+                    finite_effective_ratio,
+                    finite_effective_ratio.square(),
+                    entropy_safe,
+                    entropy_numeric,
+                ),
+                dim=-1,
+            )
+            cohort_matrix = masks.reshape(len(cohort_masks), -1).to(dtype=numeric_dtype)
+            token_sums = cohort_matrix @ token_features.reshape(-1, token_features.shape[-1])
 
             if entropy is not None:
-                entropy_values = entropy.unsqueeze(0)
-                entropy_mask = masks & torch.isfinite(entropy_values)
+                entropy_mask = masks & entropy_finite.unsqueeze(0)
                 entropy_row_counts = entropy_mask.sum(dim=-1)
-                entropy_row_sums = entropy_values.masked_fill(~entropy_mask, 0).sum(dim=-1)
+                entropy_row_sums = entropy_safe.unsqueeze(0).masked_fill(~entropy_mask, 0).sum(dim=-1)
                 entropy_active = entropy_row_counts > 0
                 entropy_sequence_means = entropy_row_sums / entropy_row_counts.clamp_min(1)
-                ratio_fields.extend(
-                    [
-                        entropy_row_sums.sum(dim=-1),
-                        entropy_row_counts.sum(dim=-1),
+                entropy_sequence_fields = torch.stack(
+                    (
                         entropy_sequence_means.masked_fill(~entropy_active, 0).sum(dim=-1),
                         entropy_active.sum(dim=-1),
-                    ]
+                    ),
+                    dim=-1,
                 )
             else:
-                zeros = torch.zeros(len(cohort_masks), device=current.device)
-                ratio_fields.extend([zeros, zeros, zeros, zeros])
+                entropy_sequence_fields = torch.zeros(
+                    (len(cohort_masks), 2), dtype=numeric_dtype, device=current.device
+                )
 
-            ratio_packed = torch.stack(
-                [field.to(dtype=torch.float64) for field in ratio_fields], dim=-1
-            ).reshape(-1)
+            ratio_packed = (
+                torch.cat((token_sums, entropy_sequence_fields), dim=-1).to(dtype=torch.float64).reshape(-1)
+            )
 
             if entropy is not None:
                 bucket_ids = positions.div(self.entropy_bucket_size, rounding_mode="floor")
@@ -270,19 +283,25 @@ class ActorDiagnosticsAccumulator:
                     & torch.isfinite(entropy).unsqueeze(0)
                     & (bucket_ids.unsqueeze(0) == bucket_range)
                 )
+                bucket_matrix = bucket_mask.reshape(8, -1).to(dtype=numeric_dtype)
+                bucket_features = torch.stack((entropy_safe, torch.ones_like(entropy_safe)), dim=-1)
+                bucket_token_sums = bucket_matrix @ bucket_features.reshape(-1, 2)
                 bucket_row_counts = bucket_mask.sum(dim=-1)
-                bucket_row_sums = entropy.unsqueeze(0).masked_fill(~bucket_mask, 0).sum(dim=-1)
+                bucket_row_sums = entropy_safe.unsqueeze(0).masked_fill(~bucket_mask, 0).sum(dim=-1)
                 bucket_active = bucket_row_counts > 0
                 bucket_sequence_means = bucket_row_sums / bucket_row_counts.clamp_min(1)
-                bucket_fields = [
-                    bucket_row_sums.sum(dim=-1),
-                    bucket_row_counts.sum(dim=-1),
-                    bucket_sequence_means.masked_fill(~bucket_active, 0).sum(dim=-1),
-                    bucket_active.sum(dim=-1),
-                ]
-                bucket_packed = torch.stack(
-                    [field.to(dtype=torch.float64) for field in bucket_fields], dim=-1
-                ).reshape(-1)
+                bucket_sequence_fields = torch.stack(
+                    (
+                        bucket_sequence_means.masked_fill(~bucket_active, 0).sum(dim=-1),
+                        bucket_active.sum(dim=-1),
+                    ),
+                    dim=-1,
+                )
+                bucket_packed = (
+                    torch.cat((bucket_token_sums, bucket_sequence_fields), dim=-1)
+                    .to(dtype=torch.float64)
+                    .reshape(-1)
+                )
             else:
                 bucket_packed = torch.zeros(
                     8 * len(_ENTROPY_BUCKET_FIELDS), dtype=torch.float64, device=current.device

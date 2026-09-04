@@ -412,6 +412,12 @@ class TrainingWorker(Worker, DistProfilerExtension):
             if cuda_rng is not None:
                 torch.cuda.set_rng_state_all(cuda_rng)
 
+        def synchronize_replay_ranks():
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                group = self.engine.get_data_parallel_group()
+                if torch.distributed.get_world_size(group) > 1:
+                    torch.distributed.barrier(group=group)
+
         observations = []
         final_output = None
         final_diagnostics = None
@@ -448,6 +454,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
             diagnostics = ActorDiagnosticsAccumulator(current_config)
             replay_loss = make_replay_loss(diagnostics)
             replay_data = data.clone()
+            synchronize_replay_ranks()
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 torch.cuda.reset_peak_memory_stats()
@@ -523,6 +530,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
             "unmeasured_off_and_on_diagnostics_warmup": True,
             "balanced_measurement_order": True,
             "measurement_order": measurement_order,
+            "unmeasured_dp_barrier_before_each_observation": True,
             "observations": observations,
             "equivalence": equivalence,
             "equivalence_pass": all(equivalence.values()),
