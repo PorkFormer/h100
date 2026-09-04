@@ -110,16 +110,10 @@ class ActorDiagnosticsAccumulator:
             raise ValueError("actor diagnostics log-ratio bounds must be increasing")
         if self.entropy_bucket_size <= 0:
             raise ValueError("actor diagnostics entropy_bucket_size must be positive")
-        self._values: dict[str, torch.Tensor] = {}
+        self._packed_values: torch.Tensor | None = None
         self._device: torch.device | None = None
         self._has_boundary_labels: bool | None = None
         self.reduction_calls = 0
-
-    def _add(self, key: str, value: torch.Tensor | float | int, device: torch.device) -> None:
-        tensor = torch.as_tensor(value, dtype=torch.float64, device=device).detach()
-        if tensor.numel() != 1:
-            raise ValueError(f"actor diagnostic statistic {key!r} must be scalar")
-        self._values[key] = self._values.get(key, torch.zeros((), dtype=torch.float64, device=device)) + tensor
 
     @staticmethod
     def _row_field(data: TensorDict, key: str, rows: int, device: torch.device) -> torch.Tensor:
@@ -207,66 +201,98 @@ class ActorDiagnosticsAccumulator:
                     raise ValueError("old_policy_entropies must align with response_mask")
                 entropy = entropy.to(device=current.device, dtype=torch.float32).detach()
 
-            for cohort, mask in cohort_masks.items():
-                valid = mask & finite
-                count = valid.sum()
-                prefix = f"ratio/{cohort}"
-                self._add(f"{prefix}/count", count, current.device)
-                self._add(f"{prefix}/raw_sum", raw.masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/raw_sq_sum", raw.square().masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/numerical_sum", numerical.masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/numerical_sq_sum", numerical.square().masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/effective_sum", effective.masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/effective_sq_sum", effective.square().masked_fill(~valid, 0).sum(), current.device)
-                self._add(f"{prefix}/nonfinite_count", (mask & ~finite).sum(), current.device)
-                self._add(
-                    f"{prefix}/numerical_clamp_count",
-                    (valid & ((raw < self.log_ratio_min) | (raw > self.log_ratio_max))).sum(),
-                    current.device,
-                )
-                self._add(f"{prefix}/clip_lower_count", (valid & (ratio < 1.0 - clip_low)).sum(), current.device)
-                self._add(f"{prefix}/clip_upper_count", (valid & (ratio > 1.0 + clip_high)).sum(), current.device)
-                self._add(f"{prefix}/ratio_sum", effective_ratio.masked_fill(~valid, 0).sum(), current.device)
-                self._add(
-                    f"{prefix}/ratio_sq_sum", effective_ratio.square().masked_fill(~valid, 0).sum(), current.device
-                )
-                if entropy is not None:
-                    entropy_mask = mask & torch.isfinite(entropy)
-                    row_counts = entropy_mask.sum(dim=-1)
-                    row_sums = entropy.masked_fill(~entropy_mask, 0).sum(dim=-1)
-                    active_rows = row_counts > 0
-                    self._add(f"{prefix}/entropy_sum", row_sums.sum(), current.device)
-                    self._add(f"{prefix}/entropy_token_count", row_counts.sum(), current.device)
-                    self._add(
-                        f"{prefix}/entropy_sequence_mean_sum",
-                        (row_sums[active_rows] / row_counts[active_rows]).sum(),
-                        current.device,
-                    )
-                    self._add(f"{prefix}/entropy_trajectory_count", active_rows.sum(), current.device)
-                else:
-                    for field in _RATIO_FIELDS[-4:]:
-                        self._add(f"{prefix}/{field}", 0.0, current.device)
+            # Stack cohort masks and reduce every sufficient-statistic field for
+            # all cohorts at once.  The former scalar-at-a-time implementation
+            # launched one reduction and one accumulator-add kernel per field
+            # and cohort for every PPO micro-batch.  With a per-GPU micro-batch
+            # size of one that diagnostic-only launch overhead was measurable.
+            # This representation preserves the exact packed key order while
+            # reducing the local accumulation to one vector addition.
+            masks = torch.stack(tuple(cohort_masks.values()), dim=0)
+            valid = masks & finite.unsqueeze(0)
+            raw_values = raw.unsqueeze(0)
+            numerical_values = numerical.unsqueeze(0)
+            effective_values = effective.unsqueeze(0)
+            ratio_values = ratio.unsqueeze(0)
+            effective_ratio_values = effective_ratio.unsqueeze(0)
+            reduce_dims = (1, 2)
+
+            def masked_sum(values: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
+                return values.masked_fill(~selection, 0).sum(dim=reduce_dims)
+
+            ratio_fields = [
+                valid.sum(dim=reduce_dims),
+                masked_sum(raw_values, valid),
+                masked_sum(raw_values.square(), valid),
+                masked_sum(numerical_values, valid),
+                masked_sum(numerical_values.square(), valid),
+                masked_sum(effective_values, valid),
+                masked_sum(effective_values.square(), valid),
+                (masks & ~finite.unsqueeze(0)).sum(dim=reduce_dims),
+                (
+                    valid
+                    & ((raw_values < self.log_ratio_min) | (raw_values > self.log_ratio_max))
+                ).sum(dim=reduce_dims),
+                (valid & (ratio_values < lower)).sum(dim=reduce_dims),
+                (valid & (ratio_values > upper)).sum(dim=reduce_dims),
+                masked_sum(effective_ratio_values, valid),
+                masked_sum(effective_ratio_values.square(), valid),
+            ]
 
             if entropy is not None:
-                for bucket in range(8):
-                    start = bucket * self.entropy_bucket_size
-                    stop = min(response_width, start + self.entropy_bucket_size)
-                    bucket_mask = torch.zeros_like(response_mask)
-                    if start < response_width:
-                        bucket_mask[:, start:stop] = response_mask[:, start:stop]
-                    bucket_mask &= torch.isfinite(entropy)
-                    counts = bucket_mask.sum(dim=-1)
-                    sums = entropy.masked_fill(~bucket_mask, 0).sum(dim=-1)
-                    active = counts > 0
-                    prefix = f"entropy/bucket_{bucket:02d}"
-                    self._add(f"{prefix}/entropy_sum", sums.sum(), current.device)
-                    self._add(f"{prefix}/token_count", counts.sum(), current.device)
-                    self._add(
-                        f"{prefix}/sequence_mean_sum",
-                        (sums[active] / counts[active]).sum(),
-                        current.device,
-                    )
-                    self._add(f"{prefix}/trajectory_count", active.sum(), current.device)
+                entropy_values = entropy.unsqueeze(0)
+                entropy_mask = masks & torch.isfinite(entropy_values)
+                entropy_row_counts = entropy_mask.sum(dim=-1)
+                entropy_row_sums = entropy_values.masked_fill(~entropy_mask, 0).sum(dim=-1)
+                entropy_active = entropy_row_counts > 0
+                entropy_sequence_means = entropy_row_sums / entropy_row_counts.clamp_min(1)
+                ratio_fields.extend(
+                    [
+                        entropy_row_sums.sum(dim=-1),
+                        entropy_row_counts.sum(dim=-1),
+                        entropy_sequence_means.masked_fill(~entropy_active, 0).sum(dim=-1),
+                        entropy_active.sum(dim=-1),
+                    ]
+                )
+            else:
+                zeros = torch.zeros(len(cohort_masks), device=current.device)
+                ratio_fields.extend([zeros, zeros, zeros, zeros])
+
+            ratio_packed = torch.stack(
+                [field.to(dtype=torch.float64) for field in ratio_fields], dim=-1
+            ).reshape(-1)
+
+            if entropy is not None:
+                bucket_ids = positions.div(self.entropy_bucket_size, rounding_mode="floor")
+                bucket_range = torch.arange(8, device=current.device).view(8, 1, 1)
+                bucket_mask = (
+                    response_mask.unsqueeze(0)
+                    & torch.isfinite(entropy).unsqueeze(0)
+                    & (bucket_ids.unsqueeze(0) == bucket_range)
+                )
+                bucket_row_counts = bucket_mask.sum(dim=-1)
+                bucket_row_sums = entropy.unsqueeze(0).masked_fill(~bucket_mask, 0).sum(dim=-1)
+                bucket_active = bucket_row_counts > 0
+                bucket_sequence_means = bucket_row_sums / bucket_row_counts.clamp_min(1)
+                bucket_fields = [
+                    bucket_row_sums.sum(dim=-1),
+                    bucket_row_counts.sum(dim=-1),
+                    bucket_sequence_means.masked_fill(~bucket_active, 0).sum(dim=-1),
+                    bucket_active.sum(dim=-1),
+                ]
+                bucket_packed = torch.stack(
+                    [field.to(dtype=torch.float64) for field in bucket_fields], dim=-1
+                ).reshape(-1)
+            else:
+                bucket_packed = torch.zeros(
+                    8 * len(_ENTROPY_BUCKET_FIELDS), dtype=torch.float64, device=current.device
+                )
+
+            packed = torch.cat((ratio_packed, bucket_packed)).detach()
+            if self._packed_values is None:
+                self._packed_values = packed
+            else:
+                self._packed_values.add_(packed)
 
     def _expected_keys(self) -> list[str]:
         cohorts = list(_BASE_COHORTS)
@@ -282,9 +308,9 @@ class ActorDiagnosticsAccumulator:
         if self._device is None:
             raise ValueError("enabled actor diagnostics observed no micro-batches")
         keys = self._expected_keys()
-        packed = torch.stack(
-            [self._values.get(key, torch.zeros((), dtype=torch.float64, device=self._device)) for key in keys]
-        )
+        if self._packed_values is None or self._packed_values.numel() != len(keys):
+            raise ValueError("actor diagnostics packed sufficient-statistic shape mismatch")
+        packed = self._packed_values
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             if torch.distributed.get_world_size(dp_group) > 1:
                 torch.distributed.all_reduce(packed, op=torch.distributed.ReduceOp.SUM, group=dp_group)
