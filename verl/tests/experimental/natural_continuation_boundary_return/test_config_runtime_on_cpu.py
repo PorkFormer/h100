@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from verl import DataProto
 from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
@@ -37,6 +38,7 @@ from verl.experimental.natural_continuation_boundary_return.runtime import (
 )
 from verl.workers.config.rollout import BoundaryReturnConfig
 from verl.workers.rollout.replica import TokenOutput
+from verl.workers.rollout.vllm_rollout.vllm_async_server import vLLMHttpServer
 from verl.workers.rollout.vllm_rollout.utils import (
     extract_request_engine_timing,
     request_engine_timing_diagnostics,
@@ -386,6 +388,54 @@ def test_vllm_request_metrics_diagnostics_are_json_safe_and_complete():
         "scheduled_ts",
         "first_token_ts",
         "last_token_ts",
+    }
+
+
+def test_vllm_grouped_generation_propagates_current_engine_timing():
+    class FakeEngine:
+        async def generate(self, **_kwargs):
+            yield SimpleNamespace(
+                outputs=[SimpleNamespace(token_ids=[17, 18], finish_reason="stop", text="ok")],
+                metrics={
+                    "queued_ts": 300.0,
+                    "scheduled_ts": 301.0,
+                    "first_token_ts": 302.0,
+                    "last_token_ts": 303.0,
+                },
+            )
+
+    server = object.__new__(vLLMHttpServer)
+    server.config = OmegaConf.create(
+        {
+            "max_model_len": 16,
+            "repetition_penalty": 1.0,
+            "forced_answer_probe": {"enable": False},
+            "boundary_return": {"mode": "replace"},
+            "enable_rollout_routing_replay": False,
+            "mtp": None,
+        }
+    )
+    server.model_config = OmegaConf.create(
+        {"processor": None, "lora_rank": 0, "lora": {"rank": 0, "merge": False}}
+    )
+    server.engine = FakeEngine()
+    server.global_steps = 7
+
+    outputs = asyncio.run(
+        server.generate_grouped(
+            prompt_ids=[1, 2],
+            sampling_params={"max_tokens": 2, "n": 1, "temperature": 1.0},
+            request_id="grouped-timing-test",
+        )
+    )
+    assert len(outputs) == 1
+    assert outputs[0].extra_fields["global_steps"] == 7
+    assert outputs[0].extra_fields["engine_timing"] == {
+        "clock_domain": "monotonic",
+        "arrival_time": 300.0,
+        "first_scheduled_time": 301.0,
+        "first_token_time": 302.0,
+        "finished_time": 303.0,
     }
 
 
