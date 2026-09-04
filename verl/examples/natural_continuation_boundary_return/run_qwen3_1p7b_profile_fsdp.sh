@@ -22,6 +22,21 @@ case "${node}" in
     ;;
 esac
 
+task_key="${stage}_${candidate}_${arm}_diag_${diagnostics_mode}"
+runtime_root="${NCBR_RUNTIME_ROOT:-/tmp/q17ncbr/${node}/${task_key}}"
+export XDG_CACHE_HOME="${runtime_root}/xdg-cache"
+export XDG_CONFIG_HOME="${runtime_root}/xdg-config"
+export FLASHINFER_WORKSPACE_BASE="${runtime_root}/flashinfer"
+export PYTHONPYCACHEPREFIX="${runtime_root}/pycache"
+export TORCH_EXTENSIONS_DIR="${runtime_root}/torch-extensions"
+export PYTHONPATH="${repo_root}"
+mkdir -p \
+  "${XDG_CACHE_HOME}" \
+  "${XDG_CONFIG_HOME}" \
+  "${FLASHINFER_WORKSPACE_BASE}" \
+  "${PYTHONPYCACHEPREFIX}" \
+  "${TORCH_EXTENSIONS_DIR}"
+
 python "${repo_root}/tools/ncbr_profile/validate_stage_manifest.py" \
   --manifest "${stage_manifest}" \
   --repo "${repo_root}" \
@@ -176,6 +191,8 @@ esac
 
 mkdir -p "${run_dir}/profiling" "${run_dir}/receipts"
 export NCBR_PROFILE_INTERVALS_PATH="${run_dir}/profiling/intervals.jsonl"
+export WANDB_DIR="${run_dir}/wandb"
+mkdir -p "${WANDB_DIR}"
 
 command=(
   python -m verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return
@@ -313,7 +330,21 @@ command=(
   "trainer.default_local_dir=${run_dir}/checkpoints"
   trainer.resume_mode=disable
   "+ray_kwargs.ray_init.address=${ray_address}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH=${PYTHONPATH}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.XDG_CACHE_HOME=${XDG_CACHE_HOME}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.XDG_CONFIG_HOME=${XDG_CONFIG_HOME}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.FLASHINFER_WORKSPACE_BASE=${FLASHINFER_WORKSPACE_BASE}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.TORCH_EXTENSIONS_DIR=${TORCH_EXTENSIONS_DIR}"
+  "+ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR=${WANDB_DIR}"
 )
+
+if [[ -n "${WANDB_RUN_ID:-}" ]]; then
+  command+=("+ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_ID=${WANDB_RUN_ID}")
+fi
+if [[ -n "${WANDB_RESUME:-}" ]]; then
+  command+=("+ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RESUME=${WANDB_RESUME}")
+fi
 
 if [[ "${NCBR_PRINT_COMMAND_ONLY:-0}" == 1 ]]; then
   printf '%q ' "${command[@]}" "$@"

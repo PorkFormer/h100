@@ -93,7 +93,9 @@ store, and one unique resource (`ncbr_node_A` or `ncbr_node_B`) under
 to register only 99 of 240 prestarted workers and is rejected. Ray, XDG,
 FlashInfer, Python, Torch-extension, log, metrics, profiler, and output paths
 remain stage-specific. Node B is joined manually; there is no persistent HMAC
-service.
+service. The launcher exports those writable cache roots locally and repeats
+them in `ray_kwargs.ray_init.runtime_env.env_vars`, so a remote task runner
+cannot fall back to read-only `/root/.cache` or import a different checkout.
 
 `stage_local_assets.py` idempotently copies the model and all three parquet
 files to `/tmp/qwen17-ncbr-assets-5904152e`, verifies every SHA256, and removes
