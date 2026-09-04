@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from tools.ncbr_profile.aggregate_fixed_actor_replay import aggregate as aggregate_replay
+from tools.ncbr_profile.analyze_mechanism_panel import analyze as analyze_mechanism_panel
 from tools.ncbr_profile.annotate_entropy_transitions import annotate
 from tools.ncbr_profile.audit_checkpoint_entropy import aggregate
 from tools.ncbr_profile.build_cumulative_axes import build as build_cumulative_axes
@@ -49,6 +50,49 @@ def test_profile_json_default_serializes_numpy_and_torch_telemetry():
     }
     with pytest.raises(TypeError, match="not JSON serializable"):
         json.dumps({"unsupported": object()}, default=_profile_json_default)
+
+
+def test_mechanism_panel_rejects_missing_engine_timers():
+    receipt = {
+        "request_count": 1,
+        "continuation_input_tokens": 4,
+        "tail_decode_tokens": 2,
+        "long_reward_rows": 1,
+        "long_reward_full_response_tokens": 6,
+        "profiling_intervals": [
+            {
+                "interval_id": "continuation",
+                "name": "boundary_continuation",
+                "wall_start": 1.0,
+                "wall_end": 2.0,
+                "parent_id": None,
+                "asynchronous": True,
+                "metadata": {},
+            },
+            {
+                "interval_id": "long-row",
+                "name": "long_reward_batch_build",
+                "wall_start": 2.0,
+                "wall_end": 2.1,
+                "parent_id": None,
+                "asynchronous": False,
+                "metadata": {},
+            },
+            {
+                "interval_id": "long-token",
+                "name": "long_reward_model_forward",
+                "wall_start": 2.1,
+                "wall_end": 2.2,
+                "parent_id": None,
+                "asynchronous": False,
+                "metadata": {},
+            },
+        ],
+    }
+    result = analyze_mechanism_panel(receipt)
+    assert result["status"] == "FAIL"
+    assert result["unit_costs"]["u_cont_input"] == 0.0
+    assert result["unit_costs"]["u_tail_decode"] == 0.0
 
 
 def test_shared_gpu_sampler_parses_exact_inventory():

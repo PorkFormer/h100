@@ -40,6 +40,59 @@ VLLM_LORA_PATH = "simon_lora_path"
 VLLM_ASCEND_REQUIRED_ENV_VARS = {"VLLM_ALL2ALL_BACKEND": "flashinfer_all2allv", "VLLM_ASCEND_ENABLE_NZ": "0"}
 
 
+def extract_request_engine_timing(request_metrics: Any) -> dict[str, float | str] | None:
+    """Normalize vLLM request metrics across legacy and current field names.
+
+    Legacy vLLM metrics expose wall-clock timestamps while current vLLM V1
+    exposes engine-core monotonic timestamps.  Keeping the clock domain
+    explicit prevents a caller from mixing the two when constructing timing
+    intervals.
+    """
+    if request_metrics is None:
+        return None
+
+    legacy_fields = {
+        "arrival_time": "arrival_time",
+        "first_scheduled_time": "first_scheduled_time",
+        "first_token_time": "first_token_time",
+        "finished_time": "finished_time",
+    }
+    legacy_values = {
+        output_name: getattr(request_metrics, source_name, None)
+        for output_name, source_name in legacy_fields.items()
+    }
+    if all(value is not None for value in legacy_values.values()):
+        normalized = {name: float(value) for name, value in legacy_values.items()}
+        if (
+            normalized["arrival_time"]
+            <= normalized["first_scheduled_time"]
+            <= normalized["first_token_time"]
+            <= normalized["finished_time"]
+        ):
+            return {"clock_domain": "epoch", **normalized}
+
+    current_fields = {
+        "arrival_time": "queued_ts",
+        "first_scheduled_time": "scheduled_ts",
+        "first_token_time": "first_token_ts",
+        "finished_time": "last_token_ts",
+    }
+    current_values = {
+        output_name: getattr(request_metrics, source_name, None)
+        for output_name, source_name in current_fields.items()
+    }
+    if all(value is not None and float(value) > 0.0 for value in current_values.values()):
+        normalized = {name: float(value) for name, value in current_values.items()}
+        if (
+            normalized["arrival_time"]
+            <= normalized["first_scheduled_time"]
+            <= normalized["first_token_time"]
+            <= normalized["finished_time"]
+        ):
+            return {"clock_domain": "monotonic", **normalized}
+    return None
+
+
 def set_death_signal():
     """Kill the current process when the parent process exits."""
     if platform.system() != "Linux":

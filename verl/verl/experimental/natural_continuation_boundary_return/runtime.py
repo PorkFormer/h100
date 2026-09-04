@@ -456,11 +456,19 @@ async def run_boundary_continuations(
                 )
                 for name, start_key, end_key in timing_parts:
                     if start_key in engine_timing and end_key in engine_timing:
-                        # vLLM reports epoch-clock timestamps. Anchor their
-                        # deltas to the request's local monotonic timestamp so
-                        # every interval in this process uses one clock domain.
-                        engine_start = request_started + float(engine_timing[start_key]) - request_wall_started
-                        engine_end = request_started + float(engine_timing[end_key]) - request_wall_started
+                        if engine_timing.get("clock_domain", "epoch") == "monotonic":
+                            # Current vLLM V1 reports engine-core monotonic
+                            # timestamps.  All replicas for one arm are on one
+                            # physical node, so these retain scheduler overlap.
+                            engine_start = float(engine_timing[start_key])
+                            engine_end = float(engine_timing[end_key])
+                        else:
+                            # Legacy vLLM reports epoch-clock timestamps.
+                            # Anchor their deltas to the request's local
+                            # monotonic timestamp so every interval in this
+                            # process uses one clock domain.
+                            engine_start = request_started + float(engine_timing[start_key]) - request_wall_started
+                            engine_end = request_started + float(engine_timing[end_key]) - request_wall_started
                         add_interval(
                             name,
                             engine_start,

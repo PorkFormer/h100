@@ -57,7 +57,11 @@ def analyze(receipt: dict) -> dict:
     units = {
         name: normalized_unit_cost(value, workloads[denominators[name]]) for name, value in seconds.items()
     }
-    status = "PASS" if all(isinstance(value, int | float) for value in units.values()) else "FAIL"
+    status = (
+        "PASS"
+        if all(isinstance(value, int | float) and float(value) > 0.0 for value in units.values())
+        else "FAIL"
+    )
     return {
         "schema_version": "qwen3-1p7b-ncbr-mechanism-panel-analysis-v1",
         "status": status,

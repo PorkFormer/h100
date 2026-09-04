@@ -37,6 +37,7 @@ from verl.experimental.natural_continuation_boundary_return.runtime import (
 )
 from verl.workers.config.rollout import BoundaryReturnConfig
 from verl.workers.rollout.replica import TokenOutput
+from verl.workers.rollout.vllm_rollout.utils import extract_request_engine_timing
 
 
 def _batch(*, finish_reasons=("length", "stop"), versions=(7, 7)) -> DataProto:
@@ -322,6 +323,82 @@ def test_vllm_epoch_timestamps_are_mapped_into_the_monotonic_interval_clock():
         value for interval in capture.profiling_intervals for value in (interval.wall_start, interval.wall_end)
     ]
     assert max(timestamps) - min(timestamps) < 10.0
+
+
+def test_vllm_request_metrics_normalize_legacy_and_current_clock_domains():
+    legacy = SimpleNamespace(
+        arrival_time=100.0,
+        first_scheduled_time=101.0,
+        first_token_time=102.0,
+        finished_time=103.0,
+    )
+    assert extract_request_engine_timing(legacy) == {
+        "clock_domain": "epoch",
+        "arrival_time": 100.0,
+        "first_scheduled_time": 101.0,
+        "first_token_time": 102.0,
+        "finished_time": 103.0,
+    }
+
+    current = SimpleNamespace(
+        arrival_time=1_000_000.0,
+        queued_ts=200.0,
+        scheduled_ts=201.0,
+        first_token_ts=202.0,
+        last_token_ts=203.0,
+    )
+    assert extract_request_engine_timing(current) == {
+        "clock_domain": "monotonic",
+        "arrival_time": 200.0,
+        "first_scheduled_time": 201.0,
+        "first_token_time": 202.0,
+        "finished_time": 203.0,
+    }
+
+
+def test_vllm_monotonic_timestamps_preserve_engine_intervals():
+    async def factory(_request_id, _prompt_ids, _sampling_params, _routing_key):
+        await asyncio.sleep(0.01)
+        finished = time.perf_counter()
+        return [
+            SimpleNamespace(
+                token_ids=[88],
+                stop_reason="completed",
+                extra_fields={
+                    "branch_id": 0,
+                    "global_steps": 7,
+                    "finish_reason": "stop",
+                    "engine_timing": {
+                        "clock_domain": "monotonic",
+                        "arrival_time": finished - 0.003,
+                        "first_scheduled_time": finished - 0.002,
+                        "first_token_time": finished - 0.001,
+                        "finished_time": finished,
+                    },
+                },
+            )
+        ]
+
+    capture = run_boundary_continuations(
+        config=_active_config(),
+        rollout_batch=_batch(),
+        client=_Client(factory=factory),
+        eos_token_id=99,
+        short_response_length=4,
+        max_model_len=8,
+        policy_version=7,
+        sampling_params=_normal_sampling(),
+    )
+    intervals = {interval.name: interval for interval in capture.profiling_intervals}
+    assert intervals["continuation_queue"].wall_end - intervals["continuation_queue"].wall_start == pytest.approx(
+        0.001
+    )
+    assert intervals["continuation_prefill_engine"].wall_end - intervals[
+        "continuation_prefill_engine"
+    ].wall_start == pytest.approx(0.001)
+    assert intervals["continuation_decode_engine"].wall_end - intervals[
+        "continuation_decode_engine"
+    ].wall_start == pytest.approx(0.001)
 
 
 def _request(identity: str, trajectory: str) -> BoundaryContinuationRequest:
