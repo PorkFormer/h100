@@ -391,7 +391,7 @@ if [[ "${stage}" == calibration ]]; then
   )
 fi
 
-if [[ "${stage}" == fixed_replay ]]; then
+if [[ "${stage}" == fixed_replay || "${stage}" == calibration ]]; then
   command+=(
     trainer.actor_fixed_replay.enabled=true
     trainer.actor_fixed_replay.repeats=2

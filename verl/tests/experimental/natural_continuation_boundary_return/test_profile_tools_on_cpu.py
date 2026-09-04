@@ -23,6 +23,7 @@ from tools.ncbr_profile.create_stage_manifest import files_manifest, revision_pr
 from tools.ncbr_profile.estimate_s300 import estimate
 from tools.ncbr_profile.evaluate_overhead import evaluate, overhead_fraction
 from tools.ncbr_profile.schedule_s300 import choose_assignments
+from tools.ncbr_profile.sample_shared_gpus import _parse_csv
 from tools.ncbr_profile.select_profile_candidate import UNIT_NAMES, select
 from tools.ncbr_profile.stage_local_assets import file_hashes, stage
 from tools.ncbr_profile.validate_gate0 import validate as validate_gate0
@@ -47,6 +48,31 @@ def test_profile_json_default_serializes_numpy_and_torch_telemetry():
     }
     with pytest.raises(TypeError, match="not JSON serializable"):
         json.dumps({"unsupported": object()}, default=_profile_json_default)
+
+
+def test_shared_gpu_sampler_parses_exact_inventory():
+    rows = _parse_csv(
+        "0, GPU-a, 123, 40960, 87\n"
+        "1, GPU-b, 456, 40960, 0\n"
+    )
+    assert rows == [
+        {
+            "index": 0,
+            "uuid": "GPU-a",
+            "memory_used_mib": 123,
+            "memory_total_mib": 40960,
+            "utilization_percent": 87.0,
+        },
+        {
+            "index": 1,
+            "uuid": "GPU-b",
+            "memory_used_mib": 456,
+            "memory_total_mib": 40960,
+            "utilization_percent": 0.0,
+        },
+    ]
+    with pytest.raises(ValueError, match="unexpected nvidia-smi row"):
+        _parse_csv("0, too, few")
 
 
 def test_shared_ray_node_resource_pins_controller_and_every_gpu_bundle(monkeypatch):
@@ -336,8 +362,6 @@ def test_profile_analyzer_derives_workload_unit_costs_and_coverage(tmp_path):
 
 
 def _write_calibration_boundary(root, *, response_hash="same"):
-    target = root / "run" / "rank_00000" / "step_000001" / "generation_batch_0001" / "boundary_1_candidate"
-    target.mkdir(parents=True)
     record = {
         "generation_batch_index": 1,
         "request_order": 0,
@@ -348,21 +372,25 @@ def _write_calibration_boundary(root, *, response_hash="same"):
         "response_length": 2,
         "finish_reason": "stop",
     }
-    payload = json.dumps(record, sort_keys=True) + "\n"
-    (target / "records.jsonl").write_text(payload, encoding="utf-8")
-    manifest = {
-        "status": "COMPLETE",
-        "boundary": 1,
-        "global_step": 1,
-        "generation_batch_index": 1,
-        "effective_training_batch": False,
-        "record_count": 1,
-        "records_sha256": hashlib.sha256(payload.encode()).hexdigest(),
-    }
-    (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    base = root / "run" / "rank_00000" / "step_000001" / "generation_batch_0001"
+    for boundary in (0, 1):
+        target = base / f"boundary_{boundary}_candidate"
+        target.mkdir(parents=True)
+        payload = json.dumps(record, sort_keys=True) + "\n"
+        (target / "records.jsonl").write_text(payload, encoding="utf-8")
+        manifest = {
+            "status": "COMPLETE",
+            "boundary": boundary,
+            "global_step": 1,
+            "generation_batch_index": 1,
+            "effective_training_batch": False,
+            "record_count": 1,
+            "records_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+        }
+        (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def test_calibration_workload_comparison_ignores_node_identity_but_not_tokens(tmp_path):
+def test_calibration_workload_comparison_requires_inputs_not_stochastic_outputs(tmp_path):
     node_a = tmp_path / "a"
     node_b = tmp_path / "b"
     _write_calibration_boundary(node_a)
@@ -370,7 +398,26 @@ def test_calibration_workload_comparison_ignores_node_identity_but_not_tokens(tm
     assert compare_workloads(node_a, node_b)["status"] == "PASS"
     changed = tmp_path / "changed"
     _write_calibration_boundary(changed, response_hash="different")
-    assert compare_workloads(node_a, changed)["status"] == "FAIL"
+    result = compare_workloads(node_a, changed)
+    assert result["status"] == "PASS"
+    assert not result["stochastic_response_reward_and_retained_outputs_match_observed"]
+
+
+def test_calibration_workload_comparison_fails_on_prompt_input_change(tmp_path):
+    node_a = tmp_path / "a"
+    node_b = tmp_path / "b"
+    _write_calibration_boundary(node_a)
+    _write_calibration_boundary(node_b)
+    records_path = next(node_b.rglob("boundary_0_candidate/records.jsonl"))
+    record = json.loads(records_path.read_text(encoding="utf-8"))
+    record["prompt_token_hash"] = "different-prompt"
+    payload = json.dumps(record, sort_keys=True) + "\n"
+    records_path.write_text(payload, encoding="utf-8")
+    manifest_path = records_path.with_name("manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["records_sha256"] = hashlib.sha256(payload.encode()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert compare_workloads(node_a, node_b)["status"] == "FAIL"
 
 
 def _profile_analysis(unit_scale):

@@ -119,12 +119,17 @@ shards, requires RNG/scheduler/dataloader/counter state and an HF export, and
 writes per-file SHA256.
 
 Calibration writes to node-specific directories, enables the exact boundary
-identity recorder, exports the retained actor `DataProto`, and collects Base
-H=2048 cap rows. `compare_calibration_workloads.py` strips node/process identity
-but requires prompt tokens, response tokens, finish reasons, rewards, keep/drop
-decisions, and effective retained ordering to match exactly. The cap source is
+identity recorder, exports the retained actor `DataProto`, runs a local fixed-batch
+actor replay, and collects Base H=2048 cap rows. `compare_calibration_workloads.py`
+strips node/process identity and requires prompt-token and candidate-batch inputs
+to match exactly. Independent stochastic launches are not required to reproduce
+response tokens, rewards, or retained ordering bitwise; those differences remain
+recorded, and component costs are normalized by their actual token/row workloads. The cap source is
 then frozen by `register_hard_prefix_panel.py`; Gate 0 and profile manifests
 must carry its hashes and both calibration comparison receipts.
+`sample_shared_gpus.py` is started only after both calibration logs enter the
+training loop, samples all eight GPUs on each labelled node, and exits on an
+explicit stop file without reserving or stopping a GPU.
 
 ## Cost and selection
 

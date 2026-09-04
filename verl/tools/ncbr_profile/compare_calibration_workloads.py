@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that two calibration launches processed the same token workloads."""
+"""Prove equal calibration inputs while preserving stochastic-output evidence."""
 
 from __future__ import annotations
 
@@ -113,11 +113,37 @@ def workload_manifest(root: Path) -> dict[str, Any]:
 def compare(node_a: Path, node_b: Path) -> dict[str, Any]:
     left = workload_manifest(node_a)
     right = workload_manifest(node_b)
-    equal = left["workload_sha256"] == right["workload_sha256"] and left["batches"] == right["batches"]
+    left_inputs = [item for item in left["batches"] if item["boundary"] == 0]
+    right_inputs = [item for item in right["batches"] if item["boundary"] == 0]
+    input_equal = left_inputs == right_inputs
+
+    def candidate_structure(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                key: item[key]
+                for key in (
+                    "global_step",
+                    "generation_batch_index",
+                    "boundary",
+                    "effective_training_batch",
+                    "record_count",
+                )
+            }
+            for item in manifest["batches"]
+            if item["boundary"] in {0, 1, 2}
+        ]
+
+    structure_equal = candidate_structure(left) == candidate_structure(right)
+    outputs_equal = left["workload_sha256"] == right["workload_sha256"] and left["batches"] == right["batches"]
+    equal = input_equal and structure_equal
     return {
-        "schema_version": "qwen3-1p7b-calibration-workload-comparison-v1",
+        "schema_version": "qwen3-1p7b-calibration-workload-comparison-v2",
         "status": "PASS" if equal else "FAIL",
-        "exact_prompt_response_reward_and_retained_workload_match": equal,
+        "exact_prompt_and_candidate_batch_input_match": input_equal,
+        "candidate_batch_structure_match": structure_equal,
+        "stochastic_response_reward_and_retained_outputs_match_observed": outputs_equal,
+        "stochastic_output_match_required": False,
+        "normal_reward_and_actor_costs_require_token_or_row_normalization": True,
         "node_A": left,
         "node_B": right,
     }
@@ -133,7 +159,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if result["status"] != "PASS":
-        raise SystemExit("cross-node calibration workloads differ")
+        raise SystemExit("cross-node calibration prompt inputs or candidate batch structure differ")
 
 
 if __name__ == "__main__":
