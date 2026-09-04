@@ -6,7 +6,9 @@ import subprocess
 import sys
 from argparse import Namespace
 
+import numpy as np
 import pytest
+import torch
 
 from tools.ncbr_profile.aggregate_fixed_actor_replay import aggregate as aggregate_replay
 from tools.ncbr_profile.annotate_entropy_transitions import annotate
@@ -26,8 +28,25 @@ from tools.ncbr_profile.stage_local_assets import file_hashes, stage
 from tools.ncbr_profile.validate_gate0 import validate as validate_gate0
 from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata, validate_stage_artifacts
 from tools.ncbr_profile.verify_teardown import target_processes
+from verl.experimental.natural_continuation_boundary_return.dapo_trainer import _profile_json_default
 from verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return import task_runner_options
 from verl.single_controller.ray import base as ray_base
+
+
+def test_profile_json_default_serializes_numpy_and_torch_telemetry():
+    payload = {
+        "numpy_scalar": np.int32(7),
+        "numpy_array": np.asarray([1.25, 2.5], dtype=np.float32),
+        "torch_tensor": torch.tensor([3, 4], dtype=torch.int64),
+    }
+    encoded = json.dumps(payload, default=_profile_json_default, sort_keys=True)
+    assert json.loads(encoded) == {
+        "numpy_array": [1.25, 2.5],
+        "numpy_scalar": 7,
+        "torch_tensor": [3, 4],
+    }
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        json.dumps({"unsupported": object()}, default=_profile_json_default)
 
 
 def test_shared_ray_node_resource_pins_controller_and_every_gpu_bundle(monkeypatch):

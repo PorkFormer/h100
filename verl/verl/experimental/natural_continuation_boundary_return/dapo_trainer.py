@@ -62,6 +62,17 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _profile_json_default(value: Any) -> Any:
+    """Convert numeric telemetry containers without weakening JSON validation."""
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if torch.is_tensor(value):
+        return value.detach().cpu().tolist()
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
 def _emit_audit_event(message: str, *args: Any, level: int = logging.INFO) -> None:
     """Emit step-order evidence even when Ray worker logging is not forwarded."""
     rendered = message % args
@@ -858,7 +869,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                 "step_metrics": dict(metrics or {}),
             }
             with profile_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, sort_keys=True) + "\n")
+                handle.write(json.dumps(record, default=_profile_json_default, sort_keys=True) + "\n")
         self._boundary_profile_intervals = []
 
     def _write_dynamic_sampling_gate_receipt(self, record: dict[str, Any]) -> None:
