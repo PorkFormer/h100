@@ -118,6 +118,7 @@ class RayResourcePool(ResourcePool):
         max_colocate_count: int = 10,
         detached=False,
         accelerator_type: Optional[str] = None,
+        required_resource: Optional[str] = None,
     ) -> None:
         super().__init__(process_on_nodes, max_colocate_count)
         self.use_gpu = use_gpu
@@ -126,6 +127,7 @@ class RayResourcePool(ResourcePool):
         self.pgs = None
         self.detached = detached
         self.accelerator_type = accelerator_type
+        self.required_resource = required_resource
 
     def get_placement_groups(self, strategy="STRICT_PACK", name=None, device_name="cuda"):
         if self.pgs is not None:
@@ -145,6 +147,8 @@ class RayResourcePool(ResourcePool):
             bundle[device_name] = 1
             if self.accelerator_type is not None:
                 bundle[self.accelerator_type] = 1e-4
+            if self.required_resource is not None:
+                bundle[self.required_resource] = 1e-4
         pg_scheme = [[bundle.copy() for _ in range(process_count)] for process_count in self._store]
 
         lifetime = "detached" if self.detached else None
@@ -187,6 +191,7 @@ class ResourcePoolManager:
     resource_pool_spec: dict[str, list[int]]
     mapping: dict[int, str]
     max_colocate_count: int = 3
+    required_resource: Optional[str] = None
     resource_pool_dict: dict[str, RayResourcePool] = field(default_factory=dict)
 
     def create_resource_pool(self):
@@ -207,6 +212,7 @@ class ResourcePoolManager:
                 use_gpu=True,
                 max_colocate_count=self.max_colocate_count,
                 name_prefix=resource_pool_name,
+                required_resource=self.required_resource,
             )
             self.resource_pool_dict[resource_pool_name] = resource_pool
 
@@ -233,6 +239,17 @@ class ResourcePoolManager:
         total_required_gpus = sum(
             [n_gpus for process_on_nodes in self.resource_pool_spec.values() for n_gpus in process_on_nodes]
         )
+        if self.required_resource is not None:
+            eligible_gpus = sum(
+                node_available_gpus[node]
+                for node, node_info in node_available_resources.items()
+                if node_info.get(self.required_resource, 0) > 0
+            )
+            if eligible_gpus < total_required_gpus:
+                raise ValueError(
+                    f"GPUs available on required Ray resource {self.required_resource!r} "
+                    f"({eligible_gpus}) are less than total desired GPUs ({total_required_gpus})"
+                )
         if total_available_gpus < total_required_gpus:
             raise ValueError(
                 f"Total available GPUs {total_available_gpus} is less than total desired GPUs {total_required_gpus}"

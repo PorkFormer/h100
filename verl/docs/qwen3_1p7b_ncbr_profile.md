@@ -11,8 +11,9 @@ remain separate in every report.
 The launcher is `examples/natural_continuation_boundary_return/run_qwen3_1p7b_profile_fsdp.sh`.
 It accepts only the two arms, P0/P1/P2, and `calibration`, `gate0`, `profile`,
 `acceptance`, or `formal_s300`. Calibration itself is fixed to Baseline/P0.
-`formal_s300` additionally fails closed unless the later explicit authorization
-token is present. Profiling and five-step acceptance never write inside the
+`formal_s300` additionally fails closed unless the operator sets the explicit
+authorization token after every preceding gate passes. The user has authorized
+that automatic transition; profiling and five-step acceptance never write inside the
 formal S300 namespaces. The effective vLLM engine seed and NCBR seed are both
 42; disabled interventions, including distillation and rollout correction, are
 explicit in the resolved command.
@@ -38,8 +39,11 @@ additionally requires the already compared cross-node minimum
   used without deleting outliers; otherwise both stop at Step 4. A stale file,
   missing peer, identity mismatch, or timeout fails closed.
 - Acceptance starts at Base, validates Step 0 and Step 5, saves Step 5, and
-  verifies a complete loadable checkpoint. It then stops. It does not authorize
-  S300, recovery, Step 600, or another seed.
+  verifies a complete loadable checkpoint. It then stops. Acceptance alone does
+  not authorize S300, but after every calibration, Gate 0, profile, mechanism,
+  replay, overhead, and acceptance gate passes, the already authorized S300
+  transition is automatic. Recovery, Step 600, and another seed remain outside
+  scope.
 
 ## Diagnostics and profiling semantics
 
@@ -78,25 +82,28 @@ The real profile launcher binds diagnostics `on` or `off` in its stage manifest
 and writes the variants to separate namespaces. `evaluate_overhead.py` applies
 the 3% time and 2% identical-workload memory gates.
 
-## Standalone Ray topology
+## Shared two-node Ray topology
 
-After separate approval to stop the old shared cluster, node A uses GCS 6397,
-object/node ports 7111/7112 and workers 22000-22511. Node B uses GCS 6398,
-object/node ports 7211/7212 and workers 23000-23511. Each advertises exactly
-eight GPUs and `min(240, online_cpus-16)` CPUs under `ulimit -n 524288`.
-Object-store capacity is the smaller node's floor-GiB value of
-`min(20% MemTotal, 50% available /dev/shm, 128 GiB)` and must be at least 32
-GiB. Ray, XDG, FlashInfer, Python, Torch-extension, log, metrics, profiler, and
-output paths are node/stage-specific. Node B runs the one-shot controller
-manually; there is no persistent HMAC service.
+This execution uses one user-approved shared 16-GPU cluster and never tears it
+down between stages. Node A is the head at `10.8.191.127:6395`; both nodes use
+object/node-manager ports 7011/7012, worker ports 21000-21511, and agent ports
+52365-52368. Each advertises exactly eight GPUs, 240 CPUs, a 128 GiB object
+store, and one unique resource (`ncbr_node_A` or `ncbr_node_B`) under
+`ulimit -n 524288`. The 512-port range is mandatory: 21000-21099 was observed
+to register only 99 of 240 prestarted workers and is rejected. Ray, XDG,
+FlashInfer, Python, Torch-extension, log, metrics, profiler, and output paths
+remain stage-specific. Node B is joined manually; there is no persistent HMAC
+service.
 
-`preflight_node.py` rejects residual GPU compute processes and a wrong node IP;
-profile, acceptance, and formal stages also verify W&B identity/connectivity.
-`verify_local_ray.py` then requires exactly one live Ray node, eight GPUs, the
-local hostname and exact GPU UUID inventory, and all declared fixed ports. The
-one-shot controller owns cleanup only after its `ray start` succeeds, records
-all teardown output, and `verify_teardown.py` requires both target-process and
-port inventories to be empty.
+`stage_local_assets.py` idempotently copies the model and all three parquet
+files to `/tmp/qwen17-ncbr-assets-5904152e`, verifies every SHA256, and removes
+all write bits. `verify_shared_ray.py` requires exactly two live labelled
+nodes, 16 total and available GPUs, the exact hostname/IP/GPU inventories,
+idle GPU memory, no compute process, both local asset sets, equal CPU/object
+store capacity, and no worker-port registration error. The task runner and
+every GPU placement-group bundle request the selected `ncbr_node_A/B` resource,
+so an eight-GPU arm cannot land on the wrong node or span nodes. The legacy
+standalone one-shot controller is not used for this shared-cluster execution.
 
 Create one manifest per node only after the final code SHA is pushed. Use
 `compare_node_manifests.py` to require equal code, recipe identity, model-file,
@@ -127,11 +134,16 @@ smaller TP, then conservative offload/concurrency. Zero or fewer than 20 natural
 requests triggers the frozen hard-prompt/cap-prefix panel; passing it preserves
 system qualification but leaves natural mechanism coverage insufficient.
 
-## Future S300 and entropy audit
+## S300 scheduling and entropy audit
 
-Only a later explicit approval can start S300. Formal runs are one node/eight
-GPUs, Step 0 validation, validation every 10, and full checkpoints every 50
-through Step 300. An arm may resume only from a complete checkpoint in its own
+After all gates pass, formal runs start without another approval. Each uses one
+complete node/eight GPUs, Step 0 validation, validation every 10, and full
+checkpoints every 50 through Step 300. If both nodes are idle, both arms start;
+if only one is idle, Baseline starts there first and V1 starts when the other
+complete node becomes idle. If neither is idle, resource monitoring is bounded
+to 30 minutes and the same Baseline-first rule applies as soon as a complete
+node is free. Partial GPU availability or unexplained memory/process occupancy
+never qualifies. An arm may resume only from a complete checkpoint in its own
 formal directory, including model, optimizer, RNG, scheduler, dataloader and
 counters.
 

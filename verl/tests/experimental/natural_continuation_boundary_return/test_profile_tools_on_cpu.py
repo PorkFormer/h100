@@ -3,14 +3,74 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from argparse import Namespace
 
 import pytest
 
 from tools.ncbr_profile.compare_calibration import compare
 from tools.ncbr_profile.create_stage_manifest import files_manifest, revision_provenance
 from tools.ncbr_profile.evaluate_overhead import evaluate, overhead_fraction
+from tools.ncbr_profile.stage_local_assets import file_hashes, stage
 from tools.ncbr_profile.validate_stage_manifest import model_files, revision_metadata
 from tools.ncbr_profile.verify_teardown import target_processes
+from verl.experimental.natural_continuation_boundary_return.main_dapo_boundary_return import task_runner_options
+from verl.single_controller.ray import base as ray_base
+
+
+def test_shared_ray_node_resource_pins_controller_and_every_gpu_bundle(monkeypatch):
+    captured = []
+
+    class FakePlacementGroup:
+        def ready(self):
+            return object()
+
+    def fake_placement_group(**kwargs):
+        captured.append(kwargs)
+        return FakePlacementGroup()
+
+    monkeypatch.setattr(ray_base, "placement_group", fake_placement_group)
+    monkeypatch.setattr(ray_base.ray, "get", lambda refs: refs)
+    monkeypatch.setattr(ray_base, "sort_placement_group_by_node_ip", lambda groups: groups)
+    pool = ray_base.RayResourcePool(
+        process_on_nodes=[2], max_colocate_count=1, required_resource="ncbr_node_B"
+    )
+    pool.get_placement_groups()
+    assert captured[0]["strategy"] == "STRICT_PACK"
+    assert captured[0]["bundles"] == [
+        {"CPU": 1, "GPU": 1, "ncbr_node_B": 1e-4},
+        {"CPU": 1, "GPU": 1, "ncbr_node_B": 1e-4},
+    ]
+
+    class Trainer:
+        @staticmethod
+        def get(name):
+            assert name == "ray_node_resource"
+            return "ncbr_node_B"
+
+    class Config:
+        trainer = Trainer()
+
+    assert task_runner_options(Config()) == {"num_cpus": 1, "resources": {"ncbr_node_B": 1e-3}}
+
+
+def test_local_asset_staging_is_verified_read_only_and_idempotent(tmp_path):
+    source_model = tmp_path / "source-model"
+    source_model.mkdir()
+    (source_model / "config.json").write_text('{"model_type":"qwen3"}\n', encoding="utf-8")
+    metadata = source_model / ".cache" / "huggingface" / "download"
+    metadata.mkdir(parents=True)
+    (metadata / "config.json.metadata").write_text("revision\n", encoding="utf-8")
+    source_data = tmp_path / "source-data"
+    source_data.mkdir()
+    for name in ("dapo_math_17k_train.parquet", "aime-2024-verl.parquet", "aime-2025-verl.parquet"):
+        (source_data / name).write_bytes(name.encode())
+    destination = tmp_path / "destination"
+    args = Namespace(node="B", destination=destination, model_source=source_model, data_source=source_data)
+    stage(args)
+    stage(args)
+    local_model = destination / "model" / "Qwen3-1.7B-Base"
+    assert file_hashes(local_model) == file_hashes(source_model)
+    assert not (destination / "node_B_writable_files.txt").read_text(encoding="utf-8")
 
 
 def test_model_manifest_excludes_mutable_cache_but_attests_revision_metadata(tmp_path):

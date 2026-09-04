@@ -97,6 +97,15 @@ class BoundaryReturnTaskRunner(TaskRunner):
         trainer.fit()
 
 
+def task_runner_options(config) -> dict[str, object]:
+    """Pin the controller itself to the same attested node as its GPU pool."""
+    options: dict[str, object] = {"num_cpus": 1}
+    ray_node_resource = config.trainer.get("ray_node_resource")
+    if ray_node_resource:
+        options["resources"] = {str(ray_node_resource): 1e-3}
+    return options
+
+
 @hydra.main(
     config_path="../../trainer/config",
     config_name="natural_continuation_boundary_return_dapo_trainer",
@@ -107,7 +116,7 @@ def main(config):
     config = migrate_legacy_reward_impl(config)
     OmegaConf.resolve(config)
     validate_boundary_return_preflight(config)
-    runner_class = ray.remote(num_cpus=1)(BoundaryReturnTaskRunner)
+    runner_class = ray.remote(**task_runner_options(config))(BoundaryReturnTaskRunner)
     run_ppo(config, task_runner_class=runner_class)
 
 

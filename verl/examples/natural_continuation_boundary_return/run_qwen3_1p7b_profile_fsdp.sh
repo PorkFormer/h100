@@ -9,8 +9,18 @@ stage="${NCBR_STAGE:?set NCBR_STAGE to calibration, gate0, profile, acceptance, 
 stage_manifest="${NCBR_STAGE_MANIFEST:?set NCBR_STAGE_MANIFEST to the approved manifest path}"
 node="${NCBR_NODE:?set NCBR_NODE to A or B}"
 diagnostics_mode="${NCBR_DIAGNOSTICS_MODE:?set NCBR_DIAGNOSTICS_MODE to on or off}"
+ray_address="${RAY_ADDRESS:?set RAY_ADDRESS to the approved shared Ray GCS address}"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${repo_root}"
+
+case "${node}" in
+  A) ray_node_resource=ncbr_node_A ;;
+  B) ray_node_resource=ncbr_node_B ;;
+  *)
+    echo "unsupported NCBR_NODE=${node}" >&2
+    exit 2
+    ;;
+esac
 
 python "${repo_root}/tools/ncbr_profile/validate_stage_manifest.py" \
   --manifest "${stage_manifest}" \
@@ -283,6 +293,7 @@ command=(
   "trainer.experiment_name=${experiment_stem}_${stage}_${candidate}_diag_${diagnostics_mode}_seed42_v1"
   trainer.n_gpus_per_node=8
   trainer.nnodes=1
+  "+trainer.ray_node_resource=${ray_node_resource}"
   "trainer.val_before_train=${val_before_train}"
   "trainer.test_freq=${test_freq}"
   "trainer.save_freq=${save_freq}"
@@ -301,6 +312,7 @@ command=(
   trainer.profile_coordination_timeout_seconds=900
   "trainer.default_local_dir=${run_dir}/checkpoints"
   trainer.resume_mode=disable
+  "+ray_kwargs.ray_init.address=${ray_address}"
 )
 
 if [[ "${NCBR_PRINT_COMMAND_ONLY:-0}" == 1 ]]; then
