@@ -17,7 +17,7 @@ EXPECTED = {
 }
 
 
-def _node_probe(asset_root: str, ray_root: str) -> dict[str, object]:
+def _node_probe(asset_root: str, ray_root: str, model_dir_name: str) -> dict[str, object]:
     gpu = subprocess.run(
         [
             "nvidia-smi",
@@ -37,7 +37,7 @@ def _node_probe(asset_root: str, ray_root: str) -> dict[str, object]:
         capture_output=True,
     )
     root = Path(asset_root)
-    model = root / "model" / "Qwen3-1.7B-Base"
+    model = root / "model" / model_dir_name
     data = root / "data"
     port_errors = []
     for path in (Path(ray_root) / "session_latest" / "logs").glob("*"):
@@ -79,6 +79,7 @@ def main() -> None:
     parser.add_argument("--node-a-ray-root", default="/tmp/q17r590h2")
     parser.add_argument("--node-b-ray-root", default="/tmp/q17r590w2")
     parser.add_argument("--max-idle-memory-mib", type=int, default=1024)
+    parser.add_argument("--model-dir-name", default="Qwen3-1.7B-Base")
     args = parser.parse_args()
     ray.init(address=args.address, namespace="qwen17-ncbr-shared-preflight", log_to_driver=False)
     try:
@@ -88,7 +89,9 @@ def main() -> None:
         remote_probe = ray.remote(num_cpus=1)(_node_probe)
         refs = {
             node: remote_probe.options(resources={expected["resource"]: 1e-3}).remote(
-                args.asset_root, args.node_a_ray_root if node == "A" else args.node_b_ray_root
+                args.asset_root,
+                args.node_a_ray_root if node == "A" else args.node_b_ray_root,
+                args.model_dir_name,
             )
             for node, expected in EXPECTED.items()
         }

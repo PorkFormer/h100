@@ -43,7 +43,7 @@ def validate_stage_artifacts(stage: str, candidate: str, diagnostics: str, artif
         overhead = json.loads(Path(artifacts["diagnostics_overhead_gate"]["path"]).read_text(encoding="utf-8"))
         if overhead.get("status") != "PASS":
             raise SystemExit("acceptance requires a PASS diagnostics overhead gate")
-    if stage in {"fixed_replay", "acceptance", "formal_s300"} and diagnostics != "on":
+    if stage in {"fixed_replay", "acceptance"} and diagnostics != "on":
         raise SystemExit(f"{stage} requires diagnostics=on")
 
 
@@ -52,7 +52,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--arm", choices=("baseline", "v1"), required=True)
-    parser.add_argument("--candidate", choices=("P0", "P1", "P2"), required=True)
+    parser.add_argument("--candidate", choices=("P0", "P1", "P2", "P_SAFE"), required=True)
     parser.add_argument(
         "--stage",
         choices=(
@@ -62,6 +62,7 @@ def main() -> None:
             "mechanism_panel",
             "fixed_replay",
             "acceptance",
+            "smoke",
             "formal_s300",
         ),
         required=True,
@@ -97,10 +98,19 @@ def main() -> None:
     if remote_shas != {actual_sha}:
         raise SystemExit(f"remote code ref moved or is not pinned to checkout SHA: {sorted(remote_shas)}")
     model = manifest["model"]
-    if model.get("repo_id") != "Qwen/Qwen3-1.7B-Base" or model.get("model_type") != "qwen3":
+    approved_models = {
+        "Qwen/Qwen3-1.7B-Base": "ea980cb0a6c2ae4b936e82123acc929f1cec04c1",
+        "Qwen/Qwen3-8B-Base": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4",
+    }
+    if model.get("repo_id") not in approved_models or model.get("model_type") != "qwen3":
         raise SystemExit("model identity mismatch")
-    if model.get("revision") != "ea980cb0a6c2ae4b936e82123acc929f1cec04c1":
+    if model.get("revision") != approved_models[model["repo_id"]]:
         raise SystemExit("unapproved model revision")
+    is_8b = model["repo_id"] == "Qwen/Qwen3-8B-Base"
+    if is_8b and args.candidate not in {"P0", "P1", "P_SAFE"}:
+        raise SystemExit("unapproved Qwen3-8B profiling candidate")
+    if not is_8b and args.candidate == "P_SAFE":
+        raise SystemExit("unapproved Qwen3-1.7B profiling candidate")
     model_root = Path(model["local_path"])
     if model_files(model_root) != model.get("files"):
         raise SystemExit("model file set or hash differs from the complete manifest")
@@ -143,11 +153,26 @@ def main() -> None:
         "acceptance": {"profile_selection", "diagnostics_overhead_gate"},
         "formal_s300": {"s300_gate_receipt"},
     }
+    if is_8b:
+        required_by_stage = {
+            "profile": {"gate0_receipt"},
+            "smoke": {"profile_selection"},
+            "formal_s300": {
+                "profile_selection",
+                "smoke_gate_receipt",
+                "resolved_config_diff_receipt",
+                "readiness_receipt",
+            },
+        }
     missing_artifacts = required_by_stage.get(args.stage, set()) - artifacts.keys()
     if missing_artifacts:
         raise SystemExit(f"stage is missing required frozen artifacts: {sorted(missing_artifacts)}")
     validate_stage_artifacts(args.stage, args.candidate, args.diagnostics, artifacts)
-    if args.stage == "formal_s300":
+    if args.stage == "formal_s300" and not is_8b and args.diagnostics != "on":
+        raise SystemExit("formal_s300 requires diagnostics=on for Qwen3-1.7B")
+    if args.stage == "formal_s300" and is_8b and args.diagnostics != "off":
+        raise SystemExit("formal_s300 requires diagnostics=off for the frozen Qwen3-8B recipe")
+    if args.stage == "formal_s300" and not is_8b:
         gate = json.loads(Path(artifacts["s300_gate_receipt"]["path"]).read_text(encoding="utf-8"))
         if gate.get("status") != "PASS" or not gate.get("s300_authorized", False):
             raise SystemExit("formal S300 gate receipt is not PASS/authorized")
@@ -155,6 +180,16 @@ def main() -> None:
             raise SystemExit("formal S300 gate receipt code SHA mismatch")
         if gate.get("selected_candidate") != args.candidate:
             raise SystemExit("formal S300 candidate does not match the gate selection")
+    if args.stage == "formal_s300" and is_8b:
+        for artifact_name in (
+            "profile_selection",
+            "smoke_gate_receipt",
+            "resolved_config_diff_receipt",
+            "readiness_receipt",
+        ):
+            receipt = json.loads(Path(artifacts[artifact_name]["path"]).read_text(encoding="utf-8"))
+            if receipt.get("status") != "PASS":
+                raise SystemExit(f"formal S300 requires PASS {artifact_name}")
     print(json.dumps({"status": "PASS", "code_sha": actual_sha, "identity": actual_identity}))
 
 

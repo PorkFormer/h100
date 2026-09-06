@@ -47,7 +47,7 @@ def main() -> None:
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--remote-ref", required=True)
     parser.add_argument("--arm", choices=("baseline", "v1"), required=True)
-    parser.add_argument("--candidate", choices=("P0", "P1", "P2"), required=True)
+    parser.add_argument("--candidate", choices=("P0", "P1", "P2", "P_SAFE"), required=True)
     parser.add_argument(
         "--stage",
         choices=(
@@ -57,6 +57,7 @@ def main() -> None:
             "mechanism_panel",
             "fixed_replay",
             "acceptance",
+            "smoke",
             "formal_s300",
         ),
         required=True,
@@ -64,6 +65,7 @@ def main() -> None:
     parser.add_argument("--node", choices=("A", "B"), required=True)
     parser.add_argument("--diagnostics", choices=("on", "off"), required=True)
     parser.add_argument("--model-path", type=Path, default=Path("/workspace/models/Qwen3-1.7B-Base"))
+    parser.add_argument("--model-repo-id", default="Qwen/Qwen3-1.7B-Base")
     parser.add_argument("--model-revision", required=True)
     parser.add_argument("--train-data", type=Path, default=Path("/workspace/rl/data/dapo_math_17k_train.parquet"))
     parser.add_argument("--aime2024", type=Path, default=Path("/workspace/rl/data/aime-2024-verl.parquet"))
@@ -106,8 +108,18 @@ def main() -> None:
         if not path.is_file():
             raise SystemExit(f"frozen artifact is not a file: {path}")
         frozen_artifacts[name] = {"path": str(path), "sha256": sha256(path)}
+    approved_models = {
+        "Qwen/Qwen3-1.7B-Base": "ea980cb0a6c2ae4b936e82123acc929f1cec04c1",
+        "Qwen/Qwen3-8B-Base": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4",
+    }
+    if approved_models.get(args.model_repo_id) != args.model_revision:
+        raise SystemExit("model repository/revision pair is not approved")
+    if args.model_repo_id.endswith("8B-Base") and args.candidate == "P2":
+        raise SystemExit("Qwen3-8B uses P0, P1, or P_SAFE, not P2")
+    if args.model_repo_id.endswith("1.7B-Base") and args.candidate == "P_SAFE":
+        raise SystemExit("Qwen3-1.7B uses P0, P1, or P2, not P_SAFE")
     manifest = {
-        "schema_version": "qwen3-1p7b-ncbr-stage-manifest-v1",
+        "schema_version": "qwen3-ncbr-stage-manifest-v2",
         "code_sha": actual_sha,
         "code_remote": {"name": args.remote, "ref": args.remote_ref, "sha": actual_sha},
         "arm": args.arm,
@@ -116,7 +128,7 @@ def main() -> None:
         "node": args.node,
         "diagnostics": args.diagnostics,
         "model": {
-            "repo_id": "Qwen/Qwen3-1.7B-Base",
+            "repo_id": args.model_repo_id,
             "revision": args.model_revision,
             "local_path": str(args.model_path.resolve()),
             "model_type": "qwen3",

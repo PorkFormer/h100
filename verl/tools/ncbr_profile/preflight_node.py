@@ -78,6 +78,7 @@ def main() -> None:
         "object_store_bytes": object_store_gib * GIB,
         "online_cpus": online_cpus,
         "ray_cpus": ray_cpus,
+        "open_file_limit": __import__("resource").getrlimit(__import__("resource").RLIMIT_NOFILE)[0],
         "gpu_query_exit_code": query.returncode,
         "gpus": gpu_rows,
         "compute_process_query_exit_code": compute.returncode,
@@ -89,6 +90,8 @@ def main() -> None:
         raise SystemExit("object store gate failed: computed capacity is below 32 GiB")
     if ray_cpus <= 0:
         raise SystemExit("CPU capacity gate failed")
+    if result["open_file_limit"] != 524288:
+        raise SystemExit("open-file limit gate failed: expected exactly 524288")
     if query.returncode != 0 or len(gpu_rows) != 8:
         raise SystemExit("GPU gate failed: exactly 8 visible GPUs are required")
     if compute.returncode != 0:
