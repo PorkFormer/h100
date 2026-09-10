@@ -48,6 +48,8 @@ from verl.experimental.natural_continuation_boundary_return.reward_adapter impor
     extract_required_reward_scalars,
 )
 from verl.experimental.natural_continuation_boundary_return.runtime import run_boundary_continuations
+from verl.experimental.natural_continuation_boundary_return.hook import NCBRHook
+from verl.experimental.natural_continuation_boundary_return.group_statistics import group_unlocked_mask
 from verl.experimental.probe_credit.dapo_trainer import (
     RayDAPOProbeCreditTrainer,
     _config_get,
@@ -710,48 +712,34 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
         max_model_len = int(_config_get(rollout, "max_model_len"))
         try:
             with _preserve_driver_rng_state():
-                with marked_timer("boundary_continuation", timing_raw, color="magenta"):
-                    capture = run_boundary_continuations(
-                        config=boundary,
-                        rollout_batch=candidate,
-                        client=self.llm_server_manager.get_client(),
-                        eos_token_id=self.tokenizer.eos_token_id,
-                        short_response_length=int(_config_get(rollout, "response_length")),
-                        max_model_len=max_model_len,
-                        policy_version=policy_version,
-                        sampling_params=build_rollout_sampling_params(rollout),
-                    )
-                if capture is None:
-                    raise AssertionError("active boundary_return returned no continuation capture")
-                if capture.generations:
-                    # run_boundary_continuations owns the single completion audit
-                    # event; emitting it again here makes one request phase look
-                    # like two continuation phases to the Gate 0 order validator.
-                    with marked_timer("boundary_long_reward", timing_raw, color="magenta"):
-                        long_reward = self._score_long_generations_in_chunks(
-                            candidate,
-                            capture.generations,
-                            boundary,
-                        )
-                    _emit_audit_event(
-                        "boundary_return event=long_reward_complete policy_version=%d row_count=%d",
-                        policy_version,
-                        len(capture.generations),
-                    )
-                else:
-                    long_reward = BoundaryRewardOutput(
-                        reward_tensor=torch.empty((0, 0), dtype=torch.float32),
-                        extra_info={
-                            boundary.correctness_key: np.asarray([], dtype=np.float64),
-                            boundary.task_score_key: np.asarray([], dtype=np.float64),
-                        },
-                    )
-                result = apply_boundary_return(
-                    candidate,
-                    capture=capture,
-                    long_reward_output=long_reward,
-                    config=boundary,
+                outcome = NCBRHook(
+                    continuation_runner=run_boundary_continuations, reward_adapter=apply_boundary_return,
+                ).apply(
+                    candidate, candidate.batch["token_level_scores"],
+                    raw_verifier_extras={key: candidate.non_tensor_batch[key] for key in
+                                         (boundary.correctness_key, boundary.task_score_key, "error", "timeout")
+                                         if key in candidate.non_tensor_batch},
+                    config=boundary, policy_version=policy_version,
+                    sampling_params=build_rollout_sampling_params(rollout),
+                    continuation_client=self.llm_server_manager.get_client(),
+                    score_long=self._score_long_generations_in_chunks,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    short_response_length=int(_config_get(rollout, "response_length")),
+                    max_model_len=max_model_len, timing_raw=timing_raw,
+                    long_reward_complete=lambda version, count: _emit_audit_event(
+                        "boundary_return event=long_reward_complete policy_version=%d row_count=%d", version, count,
+                    ),
                 )
+                result = outcome.aux["result"]
+                if boundary.mode == "replace":
+                    candidate.batch["token_level_scores"] = outcome.effective_scores
+                    candidate.batch["token_level_rewards"] = outcome.effective_scores.clone()
+                    candidate.non_tensor_batch.update(outcome.aux["reward_extras"])
+                    candidate.batch.update(outcome.aux["row_labels"])
+                    candidate.batch["boundary_group_unlocked"] = torch.as_tensor(
+                        group_unlocked_mask(result.uids, result.short_acc, result.boundary_acc),
+                        dtype=torch.bool, device=outcome.effective_scores.device,
+                    )
                 if shadow_snapshot is not None:
                     _assert_shadow_candidate_noop(shadow_snapshot, candidate)
                     result.metrics["boundary_return/shadow_candidate_noop_gate_pass_count"] = 1.0

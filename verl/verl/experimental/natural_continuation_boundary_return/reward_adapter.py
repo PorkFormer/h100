@@ -221,6 +221,7 @@ def apply_boundary_return(
     capture: BoundaryContinuationCapture,
     long_reward_output: BoundaryRewardOutput,
     config: Any,
+    include_group_statistics: bool = True,
 ) -> BoundaryReturnBatchResult:
     """Compute shadow diagnostics or exact task-return replacement at the prefix terminal token."""
     if config.mode not in {"shadow", "replace"}:
@@ -422,23 +423,6 @@ def apply_boundary_return(
         eligible = valid_long
         applied = eligible.copy()
         changed = eligible & (np.abs(task_delta) > BOUNDARY_NUMERIC_TOLERANCE)
-        grouped_short: dict[str, list[float]] = {}
-        grouped_boundary: dict[str, list[float]] = {}
-        for uid, short_value, boundary_value in zip(
-            np.asarray(uids, dtype=object).tolist(),
-            short.correctness.tolist(),
-            boundary_acc.tolist(),
-            strict=True,
-        ):
-            grouped_short.setdefault(str(uid), []).append(float(short_value))
-            grouped_boundary.setdefault(str(uid), []).append(float(boundary_value))
-        unlocked_uids = {
-            uid
-            for uid, values in grouped_short.items()
-            if np.std(np.asarray(values, dtype=np.float64)) <= BOUNDARY_NUMERIC_TOLERANCE
-            and np.std(np.asarray(grouped_boundary[uid], dtype=np.float64)) > BOUNDARY_NUMERIC_TOLERANCE
-        }
-        group_unlocked = np.asarray([str(uid) in unlocked_uids for uid in uids], dtype=bool)
         label_values = {
             "boundary_hit_cap": hit_cap,
             "boundary_eligible": eligible,
@@ -447,8 +431,10 @@ def apply_boundary_return(
             "boundary_recovered": recovered,
             "boundary_regressed": regressed,
             "boundary_task_delta": task_delta,
-            "boundary_group_unlocked": group_unlocked,
         }
+        if include_group_statistics:
+            from .group_statistics import group_unlocked_mask
+            label_values["boundary_group_unlocked"] = group_unlocked_mask(uids, short.correctness, boundary_acc)
         device = candidate.batch["responses"].device
         for key, values in label_values.items():
             dtype = torch.float32 if key == "boundary_task_delta" else torch.bool
