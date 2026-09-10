@@ -1,3 +1,17 @@
+# Copyright 2026 Bytedance Ltd. and/or its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Experimental synchronous DAPO trainer with on-policy Probe credit redistribution.
 
 Dynamic Sampling is migrated from verl-recipe ``dapo/dapo_ray_trainer.py`` at
@@ -8,6 +22,7 @@ and actor APIs; the positive-std selection and accumulation semantics are unchan
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import json
@@ -23,16 +38,16 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from verl import DataProto
-from verl.experimental.probe_credit.dynamic_sampling import (
-    filter_dapo_generation_batch,
-    select_complete_prompt_groups,
-)
 from verl.experimental.nondeterminism_diagnostics import (
     DiagnosticsConfig,
     NondeterminismDiagnostics,
 )
 from verl.experimental.on_policy_budgeted_capability_floor.reward_adapter import (
     NormalizedRewardOutput,
+)
+from verl.experimental.probe_credit.dynamic_sampling import (
+    filter_dapo_generation_batch,
+    select_complete_prompt_groups,
 )
 from verl.experimental.probe_credit.probe_credit import (
     apply_probe_credit_redistribution,
@@ -149,9 +164,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         )
         rollout = _config_get(_config_get(self.config, "actor_rollout_ref"), "rollout")
         tp_size = _config_get(rollout, "tensor_model_parallel_size")
-        tp_group_identity = (
-            f"tp={int(tp_size)};replicas={len(server_addresses)}" if tp_size is not None else None
-        )
+        tp_group_identity = f"tp={int(tp_size)};replicas={len(server_addresses)}" if tp_size is not None else None
 
         sampler_hash = None
         train_dataloader = getattr(self, "train_dataloader", None)
@@ -248,8 +261,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     hasher.update(chunk)
             digest = hasher.hexdigest()
             tensor_fields = {
-                str(key): {"dtype": str(value.dtype), "shape": list(value.shape)}
-                for key, value in batch.batch.items()
+                str(key): {"dtype": str(value.dtype), "shape": list(value.shape)} for key, value in batch.batch.items()
             }
             manifest = {
                 "schema_version": "gate-equivalence-batch-v1",
@@ -470,9 +482,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             score = score.get("score", score.get("reward"))
         return float(score) > 0.0
 
-    def _compute_probe_credit_advantage(
-        self, batch: DataProto, metrics: dict[str, float]
-    ) -> DataProto:
+    def _compute_probe_credit_advantage(self, batch: DataProto, metrics: dict[str, float]) -> DataProto:
         probe = self._probe_config()
         if not probe.enable:
             return batch
@@ -500,9 +510,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
             norm_by_std=probe.norm_probe_by_std,
             epsilon=probe.epsilon,
         )
-        correction, correction_metrics = build_probe_token_correction(
-            probe_advantages, batch.batch["response_mask"]
-        )
+        correction, correction_metrics = build_probe_token_correction(probe_advantages, batch.batch["response_mask"])
         if correction_metrics["probe_credit/zero_mass_residual_max"] > 1.0e-5:
             raise ValueError("Probe correction violates raw masked advantage-mass conservation")
         apply_metrics = apply_probe_credit_redistribution(batch, correction, coef=probe.coef, enable=True)
@@ -520,21 +528,24 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         return batch
 
     def _compute_old_and_reference(self, batch: DataProto, metrics: dict, timing_raw: dict) -> DataProto:
-        with marked_timer("old_log_prob", timing_raw, color="blue"):
-            old_log_prob, old_log_prob_mfu = self._compute_old_log_prob(batch)
-            entropys = old_log_prob.batch.pop("entropys")
-            actor_config = self.config.actor_rollout_ref.actor
-            entropy_agg = agg_loss(
-                loss_mat=entropys,
-                loss_mask=batch.batch["response_mask"],
-                loss_agg_mode=actor_config.loss_agg_mode,
-                loss_scale_factor=actor_config.loss_scale_factor,
-            )
-            metrics.update({"actor/entropy": entropy_agg.detach().item(), "perf/mfu/actor_infer": old_log_prob_mfu})
-            batch = batch.union(old_log_prob)
+        actor_metadata = self._profile_actor_metadata(batch)
+        with self._profile_candidate_stage("old_log_prob", actor_metadata):
+            with marked_timer("old_log_prob", timing_raw, color="blue"):
+                old_log_prob, old_log_prob_mfu = self._compute_old_log_prob(batch)
+                entropys = old_log_prob.batch.pop("entropys")
+                actor_config = self.config.actor_rollout_ref.actor
+                entropy_agg = agg_loss(
+                    loss_mat=entropys,
+                    loss_mask=batch.batch["response_mask"],
+                    loss_agg_mode=actor_config.loss_agg_mode,
+                    loss_scale_factor=actor_config.loss_scale_factor,
+                )
+                metrics.update({"actor/entropy": entropy_agg.detach().item(), "perf/mfu/actor_infer": old_log_prob_mfu})
+                batch = batch.union(old_log_prob)
         if self.use_reference_policy:
-            with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
-                batch = batch.union(self._compute_ref_log_prob(batch))
+            with self._profile_candidate_stage("reference_log_prob", actor_metadata):
+                with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
+                    batch = batch.union(self._compute_ref_log_prob(batch))
         return batch
 
     def _compute_advantage_and_actor_update(
@@ -542,19 +553,22 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
     ) -> tuple[DataProto, DataProto]:
         """Keep standard GRPO, Probe redistribution, and actor update in explicit order."""
         rollout_n = self.config.actor_rollout_ref.rollout.n
-        with marked_timer("adv", timing_raw, color="brown"):
-            batch = compute_advantage(
-                batch,
-                adv_estimator=self.config.algorithm.adv_estimator,
-                gamma=self.config.algorithm.gamma,
-                lam=self.config.algorithm.lam,
-                num_repeat=rollout_n,
-                norm_adv_by_std_in_grpo=self.config.algorithm.get("norm_adv_by_std_in_grpo", True),
-                config=self.config.algorithm,
-            )
-            batch = self._compute_probe_credit_advantage(batch, metrics)
-        with marked_timer("update_actor", timing_raw, color="red"):
-            actor_output = self._update_actor(batch)
+        actor_metadata = self._profile_actor_metadata(batch)
+        with self._profile_candidate_stage("advantage", actor_metadata):
+            with marked_timer("adv", timing_raw, color="brown"):
+                batch = compute_advantage(
+                    batch,
+                    adv_estimator=self.config.algorithm.adv_estimator,
+                    gamma=self.config.algorithm.gamma,
+                    lam=self.config.algorithm.lam,
+                    num_repeat=rollout_n,
+                    norm_adv_by_std_in_grpo=self.config.algorithm.get("norm_adv_by_std_in_grpo", True),
+                    config=self.config.algorithm,
+                )
+                batch = self._compute_probe_credit_advantage(batch, metrics)
+        with self._profile_candidate_stage("actor_update", actor_metadata):
+            with marked_timer("update_actor", timing_raw, color="red"):
+                actor_output = self._update_actor(batch)
         return batch, actor_output
 
     def _score_batch_with_existing_reward_pipeline(
@@ -562,11 +576,65 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         batch: DataProto,
     ) -> NormalizedRewardOutput:
         """Invoke and normalize the exact reward path used by synchronous DAPO."""
-        force_prefix_score = bool(batch.meta_info.get("obcf_prefix_scoring", False))
+        force_prefix_score = bool(
+            batch.meta_info.get("obcf_prefix_scoring", False) or batch.meta_info.get("boundary_reward_only", False)
+        )
         if "rm_scores" not in batch.batch and (self.use_rm or force_prefix_score):
             batch.union(self._compute_reward_colocate(batch))
         reward_tensor, extra_info = extract_reward(batch)
         return NormalizedRewardOutput(reward_tensor=reward_tensor, extra_info=extra_info)
+
+    def _process_candidate_after_reward_before_filter(
+        self,
+        candidate: DataProto,
+        metrics: dict[str, float],
+        timing_raw: dict[str, float],
+        generation_batch_index: int,
+    ) -> DataProto:
+        """Backward-compatible no-op hook for candidate-local pre-filter processing."""
+        return candidate
+
+    def _write_dynamic_sampling_gate_receipt(self, record: dict[str, Any]) -> None:
+        """Optional specialized-trainer hook; the generic Probe trainer is inert."""
+
+    def _profile_candidate_stage(self, name: str, metadata: dict[str, Any]):
+        """Optional specialized-trainer interval hook; generic Probe training is inert."""
+        return contextlib.nullcontext(metadata)
+
+    def _profile_actor_metadata(self, batch: DataProto) -> dict[str, Any]:
+        """Avoid synchronizing a generic Probe run solely for disabled profiling."""
+        return {}
+
+    def _after_normal_rollout(self, candidate: DataProto) -> None:
+        """Optional specialized-trainer hook after response masks and identities exist."""
+
+    def _flush_step_profile(self, timing_raw: dict[str, float], metrics: dict[str, float]) -> None:
+        """Optional specialized-trainer hook after the complete training-step timer closes."""
+
+    def _profile_should_stop_after_step(self) -> bool:
+        """Optional paired-profile early-stop hook; generic Probe training never stops here."""
+        return False
+
+    def _validate_dynamic_sampling_gate_batch(self, batch: DataProto, num_gen_batches: int) -> None:
+        """Validate the retained batch without invoking old/ref or actor work."""
+        rollout_n = int(self.config.actor_rollout_ref.rollout.n)
+        target_groups = int(self.config.data.train_batch_size)
+        grouped: dict[str, int] = {}
+        for uid in batch.non_tensor_batch["uid"]:
+            grouped[str(uid)] = grouped.get(str(uid), 0) + 1
+        if len(grouped) != target_groups or any(count != rollout_n for count in grouped.values()):
+            raise ValueError(
+                "dynamic_sampling_gate_system_failure: retained batch is not exactly "
+                f"{target_groups} UID groups x {rollout_n} trajectories"
+            )
+        max_batches = int(self.config.algorithm.filter_groups.max_num_gen_batches)
+        if num_gen_batches > max_batches:
+            raise ValueError("dynamic_sampling_gate_system_failure: candidate batch limit was exceeded")
+
+    def _effective_filter_metric(self) -> str | None:
+        """Return the local filter metric without mutating the resolved Hydra config."""
+        filter_groups = _config_get(self.config.algorithm, "filter_groups")
+        return _config_get(filter_groups, "metric") if bool(_config_get(filter_groups, "enable", False)) else None
 
     def fit(self):
         """Run official DAPO accumulation, Probe final retained groups, then update."""
@@ -604,6 +672,8 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         total_filtered_prompt_count = 0
         total_generated_response_tokens = 0
         reward_extra_info_keys: set[str] = set()
+        dynamic_sampling_gate_cycles = int(self.config.trainer.get("dynamic_sampling_gate_cycles", 0))
+        completed_dynamic_sampling_gate_cycles = 0
 
         for epoch in range(current_epoch, self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -628,10 +698,16 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 )
 
                 with marked_timer("step", timing_raw):
-                    with marked_timer("gen", timing_raw, color="red"):
-                        gen_output = self.async_rollout_manager.generate_sequences(gen_input)
-                        _accumulate_timing(timing_raw, gen_output.meta_info.get("timing", {}))
-                        gen_output.meta_info.pop("timing", None)
+                    normal_metadata = {
+                        "candidate_batch_index": num_gen_batches,
+                        "prompt_groups": generated_prompt_count,
+                        "trajectories": len(gen_input),
+                    }
+                    with self._profile_candidate_stage("normal_rollout", normal_metadata):
+                        with marked_timer("gen", timing_raw, color="red"):
+                            gen_output = self.async_rollout_manager.generate_sequences(gen_input)
+                            _accumulate_timing(timing_raw, gen_output.meta_info.get("timing", {}))
+                            gen_output.meta_info.pop("timing", None)
                     candidate = candidate.repeat(repeat_times=rollout_n, interleave=True).union(gen_output)
                     self._capture_nondeterminism_boundary(
                         1,
@@ -649,23 +725,33 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         ordinals[uid] = ordinal + 1
                     candidate.non_tensor_batch["trajectory_id"] = np.asarray(trajectory_ids, dtype=object)
                     candidate.batch["response_mask"] = compute_response_mask(candidate)
-                    total_generated_response_tokens += int(candidate.batch["response_mask"].sum().item())
+                    normal_tokens = int(candidate.batch["response_mask"].sum().item())
+                    total_generated_response_tokens += normal_tokens
+                    self._after_normal_rollout(candidate)
 
-                    with marked_timer("reward", timing_raw, color="yellow"):
-                        reward_output = self._score_batch_with_existing_reward_pipeline(candidate)
-                        candidate.batch["token_level_scores"] = reward_output.reward_tensor
-                        if reward_output.extra_info:
-                            reward_extra_info_keys.update(reward_output.extra_info)
-                            candidate.non_tensor_batch.update(
-                                {key: np.asarray(value) for key, value in reward_output.extra_info.items()}
-                            )
-                        candidate.batch["token_level_rewards"] = candidate.batch["token_level_scores"]
+                    short_reward_metadata = {
+                        "candidate_batch_index": num_gen_batches,
+                        "rows": len(candidate),
+                        "full_response_tokens": normal_tokens,
+                    }
+                    with self._profile_candidate_stage("short_reward", short_reward_metadata):
+                        with marked_timer("reward", timing_raw, color="yellow"):
+                            reward_output = self._score_batch_with_existing_reward_pipeline(candidate)
+                            candidate.batch["token_level_scores"] = reward_output.reward_tensor
+                            if reward_output.extra_info:
+                                reward_extra_info_keys.update(reward_output.extra_info)
+                                candidate.non_tensor_batch.update(
+                                    {key: np.asarray(value) for key, value in reward_output.extra_info.items()}
+                                )
+                            candidate.batch["token_level_rewards"] = candidate.batch["token_level_scores"]
 
-                    metric_name = (
-                        self.config.algorithm.filter_groups.metric
-                        if self.config.algorithm.filter_groups.enable
-                        else None
+                    candidate = self._process_candidate_after_reward_before_filter(
+                        candidate,
+                        metrics,
+                        timing_raw,
+                        num_gen_batches,
                     )
+                    metric_name = self._effective_filter_metric()
                     self._capture_nondeterminism_boundary(
                         2,
                         candidate,
@@ -689,7 +775,17 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                             candidate.non_tensor_batch[metric_name] = (
                                 candidate.batch["token_level_scores"].sum(-1).cpu().numpy()
                             )
-                        filtered = filter_dapo_generation_batch(candidate, metric_name)
+                        filter_metadata = {
+                            "candidate_batch_index": num_gen_batches,
+                            "candidate_groups": generated_prompt_count,
+                            "candidate_rows": len(candidate),
+                        }
+                        with self._profile_candidate_stage("dynamic_sampling_filter", filter_metadata):
+                            filtered = filter_dapo_generation_batch(candidate, metric_name)
+                            filter_metadata["retained_groups"] = len(
+                                dict.fromkeys(filtered.non_tensor_batch["uid"].tolist())
+                            )
+                            filter_metadata["retained_rows"] = len(filtered)
                         self._capture_nondeterminism_boundary(
                             3,
                             filtered,
@@ -706,6 +802,11 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         if retained_prompts < prompt_bsz:
                             max_batches = self.config.algorithm.filter_groups.max_num_gen_batches
                             if max_batches > 0 and num_gen_batches >= max_batches:
+                                if dynamic_sampling_gate_cycles > 0:
+                                    raise ValueError(
+                                        "dynamic_sampling_gate_failure: all candidate batches completed normally but "
+                                        f"retained UID groups stayed below {prompt_bsz} after {num_gen_batches} batches"
+                                    )
                                 raise ValueError(
                                     f"num_gen_batches={num_gen_batches} >= max_num_gen_batches={max_batches}. "
                                     "Generated too many; data may be too difficult."
@@ -729,6 +830,52 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         )
 
                     batch = self._prepare_final_retained_batch(batch, metrics, timing_raw)
+                    if dynamic_sampling_gate_cycles > 0:
+                        self._validate_dynamic_sampling_gate_batch(batch, num_gen_batches)
+                        completed_dynamic_sampling_gate_cycles += 1
+                        gate_metrics = {
+                            **metrics,
+                            "dynamic_sampling_gate/cycle": float(completed_dynamic_sampling_gate_cycles),
+                            "dynamic_sampling_gate/candidate_batches": float(num_gen_batches),
+                            "dynamic_sampling_gate/retained_uid_groups": float(
+                                len(dict.fromkeys(batch.non_tensor_batch["uid"].tolist()))
+                            ),
+                            "dynamic_sampling_gate/retained_trajectories": float(len(batch)),
+                            "dynamic_sampling_gate/status_pass": 1.0,
+                        }
+                        self._write_dynamic_sampling_gate_receipt(
+                            {
+                                "schema_version": "dynamic-sampling-gate-v1",
+                                "cycle": completed_dynamic_sampling_gate_cycles,
+                                "target_cycles": dynamic_sampling_gate_cycles,
+                                "candidate_batches": num_gen_batches,
+                                "retained_uid_groups": int(len(dict.fromkeys(batch.non_tensor_batch["uid"].tolist()))),
+                                "retained_trajectories": len(batch),
+                                "status": "PASS",
+                                "stopped_before": ["old_log_prob", "ref_log_prob", "advantage", "actor_update"],
+                            }
+                        )
+                        logger.log(data=gate_metrics, step=completed_dynamic_sampling_gate_cycles)
+                        retained_batch = None
+                        retained_prompts = 0
+                        num_gen_batches = 0
+                        metrics = {}
+                        timing_raw = {}
+                        total_generated_prompt_count = 0
+                        total_generated_trajectory_count = 0
+                        total_kept_prompt_count = 0
+                        total_filtered_prompt_count = 0
+                        total_generated_response_tokens = 0
+                        reward_extra_info_keys = set()
+                        if completed_dynamic_sampling_gate_cycles >= dynamic_sampling_gate_cycles:
+                            self._shutdown_dump_executor()
+                            progress_bar.close()
+                            return
+                        # Gate 0 performs no optimizer update. Re-publish the
+                        # unchanged policy to wake rollout replicas for the
+                        # next independent accumulation cycle.
+                        self._publish_rollout_policy_version(self._rollout_policy_version)
+                        continue
                     if self.config.trainer.balance_batch:
                         self._balance_batch(batch, metrics=metrics)
                     batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -778,18 +925,13 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                     with marked_timer("testing", timing_raw, color="green"):
                         val_metrics = self._validate()
                     metrics.update(val_metrics)
-
                 metrics["train/num_gen_batches"] = num_gen_batches
                 metrics["train/generated_prompt_groups"] = total_generated_prompt_count
                 metrics["train/generated_trajectories"] = total_generated_trajectory_count
-                metrics["train/retained_prompt_groups"] = len(
-                    dict.fromkeys(batch.non_tensor_batch["uid"].tolist())
-                )
+                metrics["train/retained_prompt_groups"] = len(dict.fromkeys(batch.non_tensor_batch["uid"].tolist()))
                 metrics["train/filtered_prompt_groups"] = total_filtered_prompt_count
                 metrics["train/dynamic_sampling_accept_rate"] = (
-                    total_kept_prompt_count / total_generated_prompt_count
-                    if total_generated_prompt_count
-                    else 0.0
+                    total_kept_prompt_count / total_generated_prompt_count if total_generated_prompt_count else 0.0
                 )
                 metrics["train/generated_response_tokens"] = total_generated_response_tokens
                 metrics["training/global_step"] = self.global_steps
@@ -801,9 +943,17 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                         batch=batch, timing_raw=timing_raw, n_gpus=self.resource_pool_manager.get_n_gpus()
                     )
                 )
+                self._flush_step_profile(timing_raw, metrics)
                 logger.log(data=metrics, step=self.global_steps)
                 progress_bar.update(1)
                 self.max_steps_duration = max(self.max_steps_duration, timing_raw["step"])
+                if self._profile_should_stop_after_step():
+                    actor_rollout_wg = getattr(self, "actor_rollout_wg", None)
+                    if hasattr(actor_rollout_wg, "async_calls_finalize_fn_exec"):
+                        actor_rollout_wg.async_calls_finalize_fn_exec(blocking=True)
+                    self._shutdown_dump_executor()
+                    progress_bar.close()
+                    return
                 retained_batch = None
                 retained_prompts = 0
                 num_gen_batches = 0

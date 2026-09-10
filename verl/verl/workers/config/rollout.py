@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional
@@ -60,6 +61,68 @@ class SamplingConfig(BaseConfig):
     top_p: float = 1.0
     do_sample: bool = True
     n: int = 1
+
+
+@dataclass
+class BoundaryReturnConfig(BaseConfig):
+    """Natural long-continuation scoring at the short response boundary."""
+
+    mode: str = "off"
+    long_response_length: int = 8192
+    correctness_key: str = "acc"
+    correctness_threshold: float = 0.5
+    task_score_key: str = "score"
+    max_concurrent_requests: int = 128
+    request_batch_size: int = 512
+    request_timeout_seconds: float = 600.0
+    long_reward_chunk_size: int = 256
+    verify_shadow_candidate_noop: bool = False
+    seed: int = 0
+    strict: bool = True
+
+    def validate(self) -> None:
+        prefix = "boundary_return"
+        if self.mode not in {"off", "shadow", "replace"}:
+            raise ValueError(f"{prefix}.mode must be off, shadow, or replace, got {self.mode!r}")
+        if (
+            not isinstance(self.long_response_length, int)
+            or isinstance(self.long_response_length, bool)
+            or self.long_response_length <= 0
+        ):
+            raise ValueError(f"{prefix}.long_response_length must be a positive integer")
+        if not isinstance(self.correctness_key, str) or not self.correctness_key:
+            raise ValueError(f"{prefix}.correctness_key must be nonempty")
+        if not isinstance(self.task_score_key, str) or not self.task_score_key:
+            raise ValueError(f"{prefix}.task_score_key must be nonempty")
+        if self.task_score_key == self.correctness_key:
+            raise ValueError(f"{prefix}.task_score_key must differ from correctness_key")
+        if not math.isfinite(self.correctness_threshold):
+            raise ValueError(f"{prefix}.correctness_threshold must be finite")
+        for name in ("max_concurrent_requests", "request_batch_size"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{prefix}.{name} must be a positive integer")
+        if self.request_batch_size < self.max_concurrent_requests:
+            raise ValueError(f"{prefix}.request_batch_size must be >= max_concurrent_requests")
+        if (
+            not isinstance(self.request_timeout_seconds, int | float)
+            or isinstance(self.request_timeout_seconds, bool)
+            or not math.isfinite(self.request_timeout_seconds)
+            or self.request_timeout_seconds <= 0
+        ):
+            raise ValueError(f"{prefix}.request_timeout_seconds must be finite and positive")
+        if (
+            not isinstance(self.long_reward_chunk_size, int)
+            or isinstance(self.long_reward_chunk_size, bool)
+            or self.long_reward_chunk_size <= 0
+        ):
+            raise ValueError(f"{prefix}.long_reward_chunk_size must be a positive integer")
+        if not isinstance(self.verify_shadow_candidate_noop, bool):
+            raise ValueError(f"{prefix}.verify_shadow_candidate_noop must be boolean")
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError(f"{prefix}.seed must be an integer")
+        if self.strict is not True:
+            raise ValueError(f"{prefix}.strict must be true in the first implementation")
 
 
 @dataclass
@@ -207,6 +270,8 @@ class RolloutConfig(BaseConfig):
     # train_sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
 
     val_kwargs: SamplingConfig = field(default_factory=SamplingConfig)
+
+    boundary_return: BoundaryReturnConfig = field(default_factory=BoundaryReturnConfig)
 
     max_model_len: Optional[int] = None
     max_num_seqs: int = 1024

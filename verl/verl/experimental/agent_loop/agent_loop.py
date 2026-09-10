@@ -76,6 +76,24 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 DEFAULT_ROUTING_CACHE_SIZE = 10000
 
 
+def build_rollout_sampling_params(config: Any, *, validate: bool = False) -> dict[str, Any]:
+    """Build the sampling parameters shared by normal and auxiliary rollout calls."""
+    params = {
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "top_k": config.top_k,
+        "repetition_penalty": 1.0,
+        "logprobs": config.calculate_log_probs,
+    }
+    if validate:
+        params.update(
+            temperature=config.val_kwargs.temperature,
+            top_p=config.val_kwargs.top_p,
+            top_k=config.val_kwargs.top_k,
+        )
+    return params
+
+
 class AgentLoopMetrics(BaseModel):
     """Agent loop performance metrics."""
 

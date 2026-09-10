@@ -49,8 +49,10 @@ from verl.workers.rollout.vllm_rollout.utils import (
     VLLM_LORA_PATH,
     SuppressSignalInThread,
     build_cli_args_from_config,
+    extract_request_engine_timing,
     extract_prompt_logprobs,
     get_vllm_max_lora_rank,
+    request_engine_timing_diagnostics,
 )
 
 _VLLM_VERSION = version.parse(vllm.__version__)
@@ -556,6 +558,21 @@ class vLLMHttpServer:
             )
 
         extra_fields = {"global_steps": self.global_steps}
+        request_metrics = getattr(final_res, "metrics", None)
+        engine_timing = extract_request_engine_timing(request_metrics)
+        if engine_timing is not None:
+            extra_fields["engine_timing"] = engine_timing
+        boundary_config = self.config.get("boundary_return", None)
+        if (
+            engine_timing is None
+            and boundary_config is not None
+            and boundary_config.get("mode", "off") != "off"
+        ):
+            logger.warning(
+                "boundary_return event=engine_timing_unavailable request_id=%s diagnostics=%s",
+                request_id,
+                json.dumps(request_engine_timing_diagnostics(request_metrics), sort_keys=True),
+            )
         extract_prompt_logprobs(
             output=final_res,
             num_prompt_logprobs=sampling_params.prompt_logprobs,
@@ -572,6 +589,10 @@ class vLLMHttpServer:
 
         # Determine stop reason from finish_reason
         finish_reason = final_res.outputs[0].finish_reason
+        if (
+            boundary_config is not None and boundary_config.get("mode", "off") != "off"
+        ):
+            extra_fields["finish_reason"] = finish_reason
         if finish_reason == "abort":
             stop_reason = "aborted"
         elif finish_reason in ("stop", "length"):
@@ -648,21 +669,39 @@ class vLLMHttpServer:
         if final_res is None or not final_res.outputs:
             return []
 
+        request_metrics = getattr(final_res, "metrics", None)
+        engine_timing = extract_request_engine_timing(request_metrics)
+        boundary_config = self.config.get("boundary_return", None)
+        if (
+            engine_timing is None
+            and boundary_config is not None
+            and boundary_config.get("mode", "off") != "off"
+        ):
+            logger.warning(
+                "boundary_return event=engine_timing_unavailable request_id=%s diagnostics=%s",
+                request_id,
+                json.dumps(request_engine_timing_diagnostics(request_metrics), sort_keys=True),
+            )
+
         outputs: list[TokenOutput] = []
         for branch_id, completion in enumerate(final_res.outputs):
             finish_reason = completion.finish_reason
             stop_reason = "completed" if finish_reason in ("stop", "length") else finish_reason
+            extra_fields = {
+                "branch_id": branch_id,
+                "text": completion.text,
+                "global_steps": self.global_steps,
+                "finish_reason": finish_reason,
+            }
+            if engine_timing is not None:
+                extra_fields["engine_timing"] = engine_timing
             outputs.append(
                 TokenOutput(
                     token_ids=list(completion.token_ids),
                     log_probs=None,
                     routed_experts=None,
                     stop_reason=stop_reason,
-                    extra_fields={
-                        "branch_id": branch_id,
-                        "text": completion.text,
-                        "global_steps": self.global_steps,
-                    },
+                    extra_fields=extra_fields,
                 )
             )
         return outputs

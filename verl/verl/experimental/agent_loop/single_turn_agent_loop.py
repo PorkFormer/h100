@@ -68,6 +68,15 @@ class SingleTurnAgentLoop(AgentLoopBase):
             )
         if metrics.get("num_preempted") is None:
             metrics["num_preempted"] = output.num_preempted if output.num_preempted is not None else -1
+        boundary_config = self.rollout_config.get("boundary_return", None)
+        preserve_finish_reason = bool(
+            boundary_config is not None and boundary_config.get("mode", "off") != "off"
+        )
+        if preserve_finish_reason:
+            # Preserve the backend termination signal only for the enabled diagnostic.
+            # vLLM supplies its raw finish_reason in extra_fields; other backends
+            # expose their best available signal as TokenOutput.stop_reason.
+            output.extra_fields.setdefault("finish_reason", output.stop_reason)
         response_mask = [1] * len(output.token_ids)
 
         output: AgentLoopOutput = AgentLoopOutput(

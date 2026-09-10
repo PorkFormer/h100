@@ -478,3 +478,8 @@ disaggregation:
 
   # InfiniBand device (required for mooncake over RDMA).
   ib_device: null
+
+# Natural continuation boundary return (legacy mode default preserved).
+boundary_return:
+  _target_: verl.workers.config.rollout.BoundaryReturnConfig
+  mode: "off"
