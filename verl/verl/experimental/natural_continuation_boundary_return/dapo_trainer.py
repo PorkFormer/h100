@@ -42,7 +42,6 @@ from verl.experimental.natural_continuation_boundary_return.profiling import (
 )
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import (
     BOUNDARY_NUMERIC_TOLERANCE,
-    BoundaryRewardOutput,
     apply_boundary_return,
     build_long_reward_batch,
     extract_required_reward_scalars,
@@ -54,11 +53,11 @@ from verl.experimental.probe_credit.dapo_trainer import (
     RayDAPOProbeCreditTrainer,
     _config_get,
 )
-from verl.trainer.ppo.core_algos import AdvantageEstimator
 from verl.trainer.ppo.forced_answer_probe import detect_hit_response_cap
-from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.debug import marked_timer
 from verl.workers.config.rollout import BoundaryReturnConfig
+from .config import resolve_boundary_config
+from .validation import validate_boundary_return_preflight
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -94,117 +93,6 @@ def _preserve_driver_rng_state() -> Iterator[None]:
         random.setstate(python_state)
         np.random.set_state(numpy_state)
         torch.random.set_rng_state(torch_state)
-
-
-def validate_boundary_return_preflight(config: Any, *, use_critic: bool | None = None) -> None:
-    """Pure, fail-closed validation safe to run before any data or worker setup."""
-    rollout = _config_get(_config_get(config, "actor_rollout_ref"), "rollout")
-    raw_boundary = _config_get(rollout, "boundary_return", {})
-    boundary = (
-        raw_boundary
-        if isinstance(raw_boundary, BoundaryReturnConfig)
-        else omega_conf_to_dataclass(raw_boundary, BoundaryReturnConfig)
-    )
-    boundary.validate()
-    gate_cycles = int(_config_get(_config_get(config, "trainer"), "dynamic_sampling_gate_cycles", 0))
-    if gate_cycles not in (0, 3):
-        raise ValueError("Dynamic Sampling Gate 0 requires exactly 3 cycles or must be disabled with 0")
-    if boundary.mode == "off":
-        return
-
-    algorithm = _config_get(config, "algorithm")
-    if _config_get(algorithm, "adv_estimator") not in (
-        "grpo",
-        AdvantageEstimator.GRPO,
-        AdvantageEstimator.GRPO_VECTORIZED,
-    ):
-        raise ValueError("boundary_return supports synchronous GRPO only")
-    if _config_get(rollout, "name") != "vllm":
-        raise ValueError("boundary_return supports the vLLM rollout backend only")
-    if _config_get(rollout, "mode") != "async":
-        raise ValueError("boundary_return requires rollout.mode=async")
-    if use_critic is None:
-        use_critic = bool(_config_get(_config_get(config, "critic"), "enable", False))
-    if use_critic:
-        raise ValueError("boundary_return requires GRPO with no critic")
-    if bool(_config_get(rollout, "ignore_eos", False)):
-        raise ValueError("boundary_return requires ignore_eos=false")
-    if bool(_config_get(_config_get(rollout, "multi_turn"), "enable", False)):
-        raise ValueError("boundary_return supports single-turn rollout only")
-    if bool(_config_get(algorithm, "use_kl_in_reward", False)):
-        raise ValueError("boundary_return requires algorithm.use_kl_in_reward=false")
-
-    agent = _config_get(rollout, "agent")
-    if _config_get(agent, "default_agent_loop") != "single_turn_agent":
-        raise ValueError("boundary_return requires agent.default_agent_loop=single_turn_agent")
-    if (
-        _config_get(agent, "agent_loop_config_path") is not None
-        or _config_get(agent, "agent_loop_manager_class") is not None
-    ):
-        raise ValueError("boundary_return does not support a custom agent loop")
-    custom_server = _config_get(agent, "custom_async_server")
-    if _config_get(custom_server, "path") is not None or _config_get(custom_server, "name") is not None:
-        raise ValueError("boundary_return does not support a custom async server")
-
-    reward = _config_get(config, "reward")
-    reward_manager = _config_get(reward, "reward_manager")
-    if _config_get(reward_manager, "source") != "register":
-        raise ValueError("boundary_return requires the registered DAPO reward manager")
-    if _config_get(reward_manager, "name") != "dapo":
-        raise ValueError("boundary_return requires the DAPO reward manager")
-    if boundary.correctness_key != "acc":
-        raise ValueError("boundary_return v1 requires correctness_key=acc")
-    if boundary.task_score_key != "score":
-        raise ValueError("boundary_return v1 requires task_score_key=score")
-    if _config_get(_config_get(reward, "custom_reward_function"), "path") is not None:
-        raise ValueError("boundary_return v1 does not support a custom reward function path")
-    if bool(_config_get(_config_get(reward, "reward_model"), "enable", False)):
-        raise ValueError("boundary_return v1 does not support the reward model path")
-    if _config_get(_config_get(reward, "sandbox_fusion"), "url") is not None:
-        raise ValueError("boundary_return v1 does not support the sandbox reward path")
-    if bool(_config_get(_config_get(config, "distillation"), "enabled", False)):
-        raise ValueError("boundary_return v1 does not support distillation or a teacher policy")
-    rollout_correction = _config_get(algorithm, "rollout_correction")
-    if rollout_correction is not None and any(
-        (
-            _config_get(rollout_correction, "rollout_is") is not None,
-            _config_get(rollout_correction, "rollout_rs") is not None,
-            bool(_config_get(rollout_correction, "bypass_mode", False)),
-        )
-    ):
-        raise ValueError("boundary_return v1 does not support rollout correction")
-    if _config_get(_config_get(config, "global_profiler"), "steps"):
-        raise ValueError("boundary_return v1 does not support configured profiling steps")
-
-    short_length = int(_config_get(rollout, "response_length"))
-    if boundary.long_response_length <= short_length:
-        raise ValueError("boundary_return requires L > H (long_response_length > response_length)")
-    max_model_len = _config_get(rollout, "max_model_len")
-    prompt_length = int(_config_get(rollout, "prompt_length"))
-    if max_model_len is None or prompt_length + boundary.long_response_length > int(max_model_len):
-        raise ValueError("boundary_return context requires max_model_len >= prompt_length + long_response_length")
-
-    filter_groups = _config_get(algorithm, "filter_groups")
-    if boundary.mode == "replace":
-        if not bool(_config_get(filter_groups, "enable", False)):
-            raise ValueError("boundary_return replace requires filter_groups.enable=true")
-        if _config_get(filter_groups, "metric") != boundary.correctness_key:
-            raise ValueError("boundary_return replace requires Hydra filter_groups.metric == correctness_key")
-
-    forced_answer = _config_get(rollout, "forced_answer_probe")
-    forced_credit = _config_get(forced_answer, "training_credit")
-    if bool(_config_get(forced_answer, "enable", False)) or bool(_config_get(forced_credit, "enable", False)):
-        raise ValueError("boundary_return cannot be combined with forced-answer or FA-TR")
-    if bool(_config_get(_config_get(algorithm, "censor_aware_advantage"), "enable", False)):
-        raise ValueError("boundary_return cannot be combined with FA-CAC/FA-RAR")
-    if bool(_config_get(_config_get(algorithm, "probe_credit"), "enable", False)):
-        raise ValueError("boundary_return cannot be combined with Probe Credit")
-    if _config_get(_config_get(algorithm, "readiness_dominance"), "mode", "off") != "off":
-        raise ValueError("boundary_return cannot be combined with Readiness")
-    if _config_get(_config_get(algorithm, "success_support_floor"), "mode", "off") != "off":
-        raise ValueError("boundary_return cannot be combined with BSSF")
-    if _config_get(_config_get(algorithm, "on_policy_budgeted_capability_floor"), "mode", "off") != "off":
-        raise ValueError("boundary_return cannot be combined with OBCF")
 
 
 def _contains_multimodal_payload(candidate: DataProto) -> bool:
@@ -406,10 +294,7 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
     def _boundary_config(self) -> BoundaryReturnConfig:
         cached = getattr(self, "_typed_boundary_return_config", None)
         if cached is None:
-            raw = _config_get(self.config.actor_rollout_ref.rollout, "boundary_return", {})
-            cached = (
-                raw if isinstance(raw, BoundaryReturnConfig) else omega_conf_to_dataclass(raw, BoundaryReturnConfig)
-            )
+            cached = resolve_boundary_config(self.config)
             self._typed_boundary_return_config = cached
         return cached
 
@@ -618,69 +503,15 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
             os.fsync(stream.fileno())
         self._mechanism_rows_initialized = True
 
-    def _score_long_generations_in_chunks(
-        self,
-        candidate: DataProto,
-        generations: tuple[Any, ...],
-        boundary: BoundaryReturnConfig,
-    ) -> BoundaryRewardOutput:
-        correctness_parts: list[np.ndarray] = []
-        task_score_parts: list[np.ndarray] = []
-        reward_loop_manager = getattr(self, "reward_loop_manager", None)
-        reward_loop_workers = getattr(reward_loop_manager, "reward_loop_workers", ())
-        reward_worker_count = len(reward_loop_workers) or 1
-        global_step = int(getattr(self, "global_steps", 0))
-        recorder = IntervalRecorder(f"boundary-long-reward-step-{global_step}")
-        with recorder.record(
-            "boundary_long_reward",
-            metadata={"rows": len(generations), "chunk_size": boundary.long_reward_chunk_size},
-        ):
-            for chunk_index, start in enumerate(range(0, len(generations), boundary.long_reward_chunk_size)):
-                chunk = generations[start : start + boundary.long_reward_chunk_size]
-                full_tokens = sum(
-                    len(getattr(item, "prefix_token_ids", ())) + len(getattr(item, "tail_token_ids", ()))
-                    for item in chunk
-                )
-                with recorder.record(
-                    "boundary_long_reward_chunk",
-                    metadata={"chunk_index": chunk_index, "rows": len(chunk), "full_response_tokens": full_tokens},
-                ):
-                    with recorder.record(
-                        "long_reward_batch_build",
-                        metadata={"chunk_index": chunk_index, "rows": len(chunk), "full_response_tokens": full_tokens},
-                    ):
-                        long_batch = build_long_reward_batch(
-                            candidate,
-                            chunk,
-                            pad_token_id=self.tokenizer.pad_token_id,
-                        )
-                        long_batch.meta_info["boundary_reward_only"] = True
-                        original_count = len(long_batch)
-                        padding_count = (-original_count) % reward_worker_count
-                        long_batch.padding(padding_count, padding_candidate="last")
-                    with recorder.record(
-                        "long_reward_model_forward",
-                        metadata={"chunk_index": chunk_index, "rows": original_count, "padded_rows": len(long_batch)},
-                    ):
-                        normalized = self._score_batch_with_existing_reward_pipeline(long_batch)
-                    scalars = extract_required_reward_scalars(
-                        BoundaryRewardOutput(
-                            reward_tensor=normalized.reward_tensor,
-                            extra_info=normalized.extra_info,
-                        ),
-                        expected_count=len(long_batch),
-                        correctness_key=boundary.correctness_key,
-                        task_score_key=boundary.task_score_key,
-                    )
-                    correctness_parts.append(scalars.correctness[:original_count])
-                    task_score_parts.append(scalars.task_score[:original_count])
-        return BoundaryRewardOutput(
-            reward_tensor=torch.empty((len(generations), 0), dtype=torch.float32),
-            extra_info={
-                boundary.correctness_key: np.concatenate(correctness_parts),
-                boundary.task_score_key: np.concatenate(task_score_parts),
-            },
-            profiling_intervals=tuple(recorder.intervals),
+    def _score_long_generations_in_chunks(self, candidate, generations, boundary):
+        from .scoring import score_long_generations
+        manager = getattr(self, "reward_loop_manager", None)
+        workers = getattr(manager, "reward_loop_workers", ())
+        return score_long_generations(
+            candidate, generations, boundary,
+            score_batch=self._score_batch_with_existing_reward_pipeline,
+            pad_token_id=self.tokenizer.pad_token_id, reward_worker_count=len(workers) or 1,
+            global_step=int(getattr(self, "global_steps", 0)), build_batch=build_long_reward_batch,
         )
 
     def _process_candidate_after_reward_before_filter(

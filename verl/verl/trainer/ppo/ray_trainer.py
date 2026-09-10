@@ -1371,6 +1371,17 @@ class RayPPOTrainer:
         to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
+        from verl.experimental.natural_continuation_boundary_return.config import resolve_boundary_config
+        from verl.experimental.natural_continuation_boundary_return.validation import validate_boundary_return_preflight
+        from verl.experimental.natural_continuation_boundary_return.standard import (
+            align_standard_identity,
+            apply_standard_boundary,
+            rollout_phase,
+        )
+        boundary = resolve_boundary_config(self.config)
+        validate_boundary_return_preflight(self.config, use_critic=self.use_critic, require_dynamic_filter=False)
+        ncbr_active = boundary.mode != "off"
+
         if self._dump_executor._shutdown:
             self._init_dump_executor()
 
@@ -1390,6 +1401,8 @@ class RayPPOTrainer:
         # load checkpoint and update weights before doing anything
         self._load_checkpoint()
         self.checkpoint_manager.update_weights(self.global_steps)
+        if ncbr_active:
+            self._ncbr_policy_version = self.global_steps
 
         current_epoch = self.global_steps // len(self.train_dataloader)
 
@@ -1468,66 +1481,77 @@ class RayPPOTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
                 with marked_timer("step", timing_raw):
-                    # generate a batch
-                    with marked_timer("gen", timing_raw, color="red"):
-                        if curr_step_profile:
-                            self.llm_server_manager.start_profile()
-                        combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
-                        self.checkpoint_manager.sleep_replicas()
-                        if curr_step_profile:
-                            self.llm_server_manager.stop_profile()
+                    with rollout_phase(self, boundary):
+                        # generate a batch
+                        with marked_timer("gen", timing_raw, color="red"):
+                            if curr_step_profile:
+                                self.llm_server_manager.start_profile()
+                            combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
+                            if not ncbr_active:
+                                self.checkpoint_manager.sleep_replicas()
+                            if curr_step_profile:
+                                self.llm_server_manager.stop_profile()
 
-                        timing_raw.update(combined_gen_output.meta_info["timing"])
-                        combined_gen_output.meta_info.pop("timing", None)
+                            timing_raw.update(combined_gen_output.meta_info["timing"])
+                            combined_gen_output.meta_info.pop("timing", None)
 
-                    gen_batch_output = combined_gen_output.slice(0, num_sampled_prompts)
-                    if "__do_sample__" in gen_batch_output.non_tensor_batch:
-                        gen_batch_output.pop(non_tensor_batch_keys=["__do_sample__"])
+                        gen_batch_output = combined_gen_output.slice(0, num_sampled_prompts)
+                        if "__do_sample__" in gen_batch_output.non_tensor_batch:
+                            gen_batch_output.pop(non_tensor_batch_keys=["__do_sample__"])
 
-                    if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
-                        gen_baseline_output = combined_gen_output.slice(num_sampled_prompts, None)
-                        if "__do_sample__" in gen_baseline_output.non_tensor_batch:
-                            gen_baseline_output.pop(non_tensor_batch_keys=["__do_sample__"])
+                        if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
+                            gen_baseline_output = combined_gen_output.slice(num_sampled_prompts, None)
+                            if "__do_sample__" in gen_baseline_output.non_tensor_batch:
+                                gen_baseline_output.pop(non_tensor_batch_keys=["__do_sample__"])
 
-                        if self.use_rm and "rm_scores" not in gen_baseline_output.batch.keys():
-                            baseline_reward = self._compute_reward_colocate(gen_baseline_output)
-                            gen_baseline_output = gen_baseline_output.union(baseline_reward)
+                            if self.use_rm and "rm_scores" not in gen_baseline_output.batch.keys():
+                                baseline_reward = self._compute_reward_colocate(gen_baseline_output)
+                                gen_baseline_output = gen_baseline_output.union(baseline_reward)
 
-                        reward_baseline_tensor = gen_baseline_output.batch["rm_scores"].sum(dim=-1)
-                        batch.batch["reward_baselines"] = reward_baseline_tensor
+                            reward_baseline_tensor = gen_baseline_output.batch["rm_scores"].sum(dim=-1)
+                            batch.batch["reward_baselines"] = reward_baseline_tensor
 
-                        del gen_baseline_output
-                    del combined_gen_batch, combined_gen_output
-                    # repeat to align with repeated responses in rollout
-                    batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
-                    batch = batch.union(gen_batch_output)
+                            del gen_baseline_output
+                        del combined_gen_batch, combined_gen_output
+                        # repeat to align with repeated responses in rollout
+                        batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                        batch = batch.union(gen_batch_output)
 
-                    if "response_mask" not in batch.batch.keys():
-                        batch.batch["response_mask"] = compute_response_mask(batch)
-                    # Balance the number of valid tokens across DP ranks.
-                    # NOTE: This usually changes the order of data in the `batch`,
-                    # which won't affect the advantage calculation (since it's based on uid),
-                    # but might affect the loss calculation (due to the change of mini-batching).
-                    if self.config.trainer.balance_batch:
-                        self._balance_batch(batch, metrics=metrics)
+                        if "response_mask" not in batch.batch.keys():
+                            batch.batch["response_mask"] = compute_response_mask(batch)
+                        if ncbr_active:
+                            align_standard_identity(batch)
+                        # Balance the number of valid tokens across DP ranks.
+                        # NOTE: This usually changes the order of data in the `batch`,
+                        # which won't affect the advantage calculation (since it's based on uid),
+                        # but might affect the loss calculation (due to the change of mini-batching).
+                        if self.config.trainer.balance_batch:
+                            self._balance_batch(batch, metrics=metrics)
 
-                    # compute global_valid tokens
-                    batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
-                    # get images_seqlens
-                    images_seqlens_all = []
-                    for multi_modal_input in batch.non_tensor_batch["multi_modal_inputs"]:
-                        if "image_grid_thw" not in multi_modal_input.keys():
-                            continue
-                        images_seqlens_all.extend(multi_modal_input["images_seqlens"].tolist())
-                    batch.meta_info["images_seqlens"] = images_seqlens_all
-                    with marked_timer("reward", timing_raw, color="yellow"):
-                        # compute reward model score
-                        if self.use_rm and "rm_scores" not in batch.batch.keys():
-                            batch_reward = self._compute_reward_colocate(batch)
-                            batch = batch.union(batch_reward)
+                        # compute global_valid tokens
+                        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+                        # get images_seqlens
+                        images_seqlens_all = []
+                        for multi_modal_input in batch.non_tensor_batch["multi_modal_inputs"]:
+                            if "image_grid_thw" not in multi_modal_input.keys():
+                                continue
+                            images_seqlens_all.extend(multi_modal_input["images_seqlens"].tolist())
+                        batch.meta_info["images_seqlens"] = images_seqlens_all
+                        with marked_timer("reward", timing_raw, color="yellow"):
+                            # compute reward model score
+                            if self.use_rm and "rm_scores" not in batch.batch.keys():
+                                batch_reward = self._compute_reward_colocate(batch)
+                                batch = batch.union(batch_reward)
 
-                        # extract reward_tensor and reward_extra_infos_dict for training
-                        reward_tensor, reward_extra_infos_dict = extract_reward(batch)
+                            # extract reward_tensor and reward_extra_infos_dict for training
+                            reward_tensor, reward_extra_infos_dict = extract_reward(batch)
+
+                        if ncbr_active:
+                            outcome = apply_standard_boundary(
+                                self, batch, reward_tensor, reward_extra_infos_dict, boundary, timing_raw,
+                            )
+                            reward_tensor = outcome.effective_scores
+                            metrics.update(outcome.metrics)
 
                     # Operating Mode Selection:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
@@ -1648,6 +1672,8 @@ class RayPPOTrainer:
                     if self.config.trainer.critic_warmup > self.global_steps:
                         # Still in critic warmup, only update weights to wake up rollout replicas.
                         self.checkpoint_manager.update_weights(self.global_steps)
+                        if ncbr_active:
+                            self._ncbr_policy_version = self.global_steps
                     else:
                         # update actor
                         with marked_timer("update_actor", timing_raw, color="red"):
@@ -1678,6 +1704,8 @@ class RayPPOTrainer:
                         # update weights from trainer to rollout
                         with marked_timer("update_weights", timing_raw, color="red"):
                             self.checkpoint_manager.update_weights(self.global_steps)
+                            if ncbr_active:
+                                self._ncbr_policy_version = self.global_steps
 
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)

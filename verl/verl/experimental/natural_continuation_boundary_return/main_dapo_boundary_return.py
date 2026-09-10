@@ -40,6 +40,8 @@ class BoundaryReturnTaskRunner(TaskRunner):
     def run(self, config):
         pprint(OmegaConf.to_container(config, resolve=True))
         print(f"BoundaryReturnTaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
+        from verl.experimental.natural_continuation_boundary_return.config import map_ncbr_config
+        map_ncbr_config(config)
         OmegaConf.resolve(config)
         validate_boundary_return_preflight(config)
 
@@ -98,7 +100,7 @@ class BoundaryReturnTaskRunner(TaskRunner):
 
 
 def task_runner_options(config) -> dict[str, object]:
-    """Pin the controller itself to the same attested node as its GPU pool."""
+    """Use the standard controller CPU reservation."""
     options: dict[str, object] = {"num_cpus": 1}
     return options
 

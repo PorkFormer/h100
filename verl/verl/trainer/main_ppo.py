@@ -45,6 +45,11 @@ def main(config):
     # Automatically set `config.trainer.device = npu` when running on Ascend NPU.
     auto_set_device(config)
     config = migrate_legacy_reward_impl(config)
+    from verl.experimental.natural_continuation_boundary_return.config import map_ncbr_config
+    from verl.experimental.natural_continuation_boundary_return.validation import validate_boundary_return_preflight
+
+    map_ncbr_config(config)
+    validate_boundary_return_preflight(config, require_dynamic_filter=False)
     run_ppo(config)
 
 
@@ -239,7 +244,11 @@ class TaskRunner:
 
         print(f"TaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
         pprint(OmegaConf.to_container(config, resolve=True))
+        from verl.experimental.natural_continuation_boundary_return.config import map_ncbr_config
+        map_ncbr_config(config)
         OmegaConf.resolve(config)
+        from verl.experimental.natural_continuation_boundary_return.validation import validate_boundary_return_preflight
+        validate_boundary_return_preflight(config, require_dynamic_filter=False)
 
         actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(config)
         self.add_critic_worker(config)

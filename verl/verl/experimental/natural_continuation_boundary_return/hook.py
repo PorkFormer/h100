@@ -19,6 +19,23 @@ from verl.experimental.natural_continuation_boundary_return.runtime import run_b
 from verl.utils.debug import marked_timer
 
 
+def _contains_multimodal_payload(candidate: DataProto) -> bool:
+    def nonempty(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, np.ndarray):
+            return any(nonempty(item) for item in value.reshape(-1).tolist())
+        if isinstance(value, dict | list | tuple | set):
+            return bool(value)
+        if torch.is_tensor(value):
+            return value.numel() > 0
+        return True
+
+    return any(
+        key in candidate.non_tensor_batch and nonempty(candidate.non_tensor_batch[key])
+        for key in ("multi_modal_data", "multi_modal_inputs", "images", "videos", "audios")
+    )
+
 @contextlib.contextmanager
 def preserve_driver_rng_state():
     python_state, numpy_state = random.getstate(), np.random.get_state()
@@ -52,9 +69,16 @@ class NCBRHook:
         short_response_length: int, max_model_len: int, timing_raw: dict | None = None,
         long_reward_complete: Callable | None = None,
     ) -> NCBROutcome:
-        if config.mode == "off":
+        if getattr(config, "enable", None) is True:
+            config.validate()
+        if getattr(config, "enable", None) is False or config.mode == "off":
             return NCBROutcome(raw_scores, None, None, {}, None)
         config.validate()
+        agents = batch.non_tensor_batch.get("agent_name")
+        if agents is not None and any(str(agent) != "single_turn_agent" for agent in agents):
+            raise ValueError("boundary_return v1 requires every row to use single_turn_agent")
+        if _contains_multimodal_payload(batch):
+            raise ValueError("boundary_return v1 does not support multimodal input rows")
         timing_raw = {} if timing_raw is None else timing_raw
         with preserve_driver_rng_state():
             # Neither the adapter nor a verifier callback can mutate the caller's batch.
@@ -85,7 +109,9 @@ class NCBRHook:
             result = self._adapt(work, capture=capture, long_reward_output=long_reward, config=config,
                                  include_group_statistics=False)
             effective = work.batch["token_level_scores"]
-            if (effective.shape, effective.dtype, effective.device) != (raw_scores.shape, raw_scores.dtype, raw_scores.device):
+            if (effective.shape, effective.dtype, effective.device) != (
+                raw_scores.shape, raw_scores.dtype, raw_scores.device
+            ):
                 raise AssertionError("NCBR changed token-score shape, dtype or device")
             changed = (effective != raw_scores).any(dim=-1)
             return NCBROutcome(

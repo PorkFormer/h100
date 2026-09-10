@@ -24,6 +24,7 @@ from verl.workers.config.disaggregation import DisaggregationConfig
 from verl.workers.config.model import MtpConfig
 
 __all__ = [
+    "BoundaryReturnConfig",
     "SamplingConfig",
     "MultiTurnConfig",
     "CustomAsyncServerConfig",
@@ -67,6 +68,7 @@ class SamplingConfig(BaseConfig):
 class BoundaryReturnConfig(BaseConfig):
     """Natural long-continuation scoring at the short response boundary."""
 
+    enable: Optional[bool] = None
     mode: str = "off"
     long_response_length: int = 8192
     correctness_key: str = "acc"
@@ -82,6 +84,10 @@ class BoundaryReturnConfig(BaseConfig):
 
     def validate(self) -> None:
         prefix = "boundary_return"
+        if self.enable is not None and not isinstance(self.enable, bool):
+            raise ValueError("boundary_return.enable must be null or boolean")
+        if self.enable is True and self.mode not in {"shadow", "replace"}:
+            raise ValueError("ncbr.enable=true requires explicit shadow or replace mode")
         if self.mode not in {"off", "shadow", "replace"}:
             raise ValueError(f"{prefix}.mode must be off, shadow, or replace, got {self.mode!r}")
         if (
