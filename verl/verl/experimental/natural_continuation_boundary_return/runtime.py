@@ -392,6 +392,8 @@ async def run_boundary_continuations(
         tracked_requests: list[Any] = []
         backend_result_tasks: list[asyncio.Task] = []
         completed_tracked_ids: set[int] = set()
+        release_attempted: set[int] = set()
+        release_failed: list[BaseException] = []
 
         def request_params(request: BoundaryContinuationRequest) -> dict[str, Any]:
             params = dict(sampling_params)
@@ -500,7 +502,7 @@ async def run_boundary_continuations(
             return wave_results
 
         async def cleanup(primary_error: BaseException, tasks: Sequence[asyncio.Task]) -> None:
-            cleanup_errors: list[BaseException] = []
+            cleanup_errors: list[BaseException] = list(release_failed)
             active = [tracked for tracked in tracked_requests if id(tracked) not in completed_tracked_ids]
             _emit_audit_event(
                 "boundary_return cleanup event=abort_start backend_request_ids=%s",
@@ -551,7 +553,8 @@ async def run_boundary_continuations(
                     level=logging.WARNING,
                 )
                 release_results = await asyncio.gather(
-                    *(tracked.release() for tracked in tracked_requests), return_exceptions=True
+                    *(tracked.release() for tracked in tracked_requests if id(tracked) not in release_attempted),
+                    return_exceptions=True
                 )
                 release_errors = [result for result in release_results if isinstance(result, BaseException)]
                 cleanup_errors.extend(release_errors)
@@ -584,6 +587,7 @@ async def run_boundary_continuations(
                 and not abort_errors
                 and not drain_errors
                 and not release_errors
+                and not release_failed
             )
             primary_error.boundary_remote_cleanup_attested = cleanup_attested
             primary_error.boundary_continuation_timeout_count = int(isinstance(primary_error, TimeoutError))
@@ -597,6 +601,40 @@ async def run_boundary_continuations(
                 cleanup_attested,
                 level=logging.WARNING,
             )
+
+        if config.scheduler == "work_conserving":
+            from .scheduler import schedule
+
+            async def tracked_start(request):
+                handle = await start_one(request)
+                tracked_requests.append(handle[1])
+                return handle
+
+            async def validated_generate(request, tracked, started, wall_started):
+                group = await generate_one(request, tracked, started, wall_started)
+                aggregate_continuation_results([request], group, expected_policy_version=policy_version)
+                return group
+
+            async def release_one(request, tracked, started, wall_started):
+                release_attempted.add(id(tracked))
+                begin = time.perf_counter()
+                try:
+                    await tracked.release()
+                except BaseException as error:
+                    release_failed.append(error)
+                    raise
+                finally:
+                    add_interval(
+                        "continuation_cleanup_release", begin, time.perf_counter(), asynchronous=True,
+                        metadata={"request_id": request.request_id, "server_id": str(tracked.server_id)},
+                    )
+                add_interval(
+                    "continuation_slot", started, time.perf_counter(), asynchronous=True,
+                    metadata={"request_id": request.request_id, "server_id": str(tracked.server_id)},
+                )
+
+            return await schedule(wave, config.max_concurrent_requests, config.request_batch_size,
+                                  tracked_start, validated_generate, release_one, cleanup)
 
         start_results = await asyncio.gather(*(start_one(request) for request in wave), return_exceptions=True)
         primary_start_error = next((result for result in start_results if isinstance(result, BaseException)), None)
@@ -632,12 +670,16 @@ async def run_boundary_continuations(
             raise
 
     results: list[BoundaryContinuationBranchResult] = []
-    for start in range(0, len(requests), config.request_batch_size):
-        chunk = requests[start : start + config.request_batch_size]
-        for wave_start in range(0, len(chunk), config.max_concurrent_requests):
-            wave = chunk[wave_start : wave_start + config.max_concurrent_requests]
-            grouped = await run_wave(wave)
-            results.extend(result for group in grouped for result in group)
+    if config.scheduler == "work_conserving":
+        grouped = await run_wave(requests)
+        results.extend(result for group in grouped for result in group)
+    else:
+        for start in range(0, len(requests), config.request_batch_size):
+            chunk = requests[start : start + config.request_batch_size]
+            for wave_start in range(0, len(chunk), config.max_concurrent_requests):
+                wave = chunk[wave_start : wave_start + config.max_concurrent_requests]
+                grouped = await run_wave(wave)
+                results.extend(result for group in grouped for result in group)
     generations = aggregate_continuation_results(
         requests,
         results,

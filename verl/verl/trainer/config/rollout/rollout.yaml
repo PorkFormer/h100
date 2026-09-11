@@ -507,6 +507,9 @@ boundary_return:
   # Maximum request count submitted in one bounded chunk.
   request_batch_size: 512
 
+  # Explicit opt-in; slots include dispatch, generation and release acknowledgement.
+  scheduler: fixed_wave
+
   # Per-request timeout in seconds.
   request_timeout_seconds: 600.0
 

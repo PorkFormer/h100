@@ -76,6 +76,7 @@ class BoundaryReturnConfig(BaseConfig):
     task_score_key: str = "score"
     max_concurrent_requests: int = 128
     request_batch_size: int = 512
+    scheduler: str = "fixed_wave"
     request_timeout_seconds: float = 600.0
     long_reward_chunk_size: int = 256
     verify_shadow_candidate_noop: bool = False
@@ -104,6 +105,8 @@ class BoundaryReturnConfig(BaseConfig):
             raise ValueError(f"{prefix}.task_score_key must differ from correctness_key")
         if not math.isfinite(self.correctness_threshold):
             raise ValueError(f"{prefix}.correctness_threshold must be finite")
+        if self.scheduler not in {"fixed_wave", "work_conserving"}:
+            raise ValueError(f"{prefix}.scheduler must be fixed_wave or work_conserving")
         for name in ("max_concurrent_requests", "request_batch_size"):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
