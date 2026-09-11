@@ -9,7 +9,7 @@ The active shared checkout is unchanged. Default remains `fixed_wave`.
   cleanup failures and repeated cancellation. Tests were introduced before code;
   initial collection failure is preserved in `evidence/tests_before.log`.
 - Original 190 CPU tests and both unchanged frozen characterizations passed.
-  The latest complete test count is recorded in `evidence/cpu_final/pytest.log`.
+  Complete count: 215 passed, plus 3 independent performance-report gate tests.
 - Frozen 2048-row pool (78 continuations) and real natural-correction batch
   (17 continuations) pass exact old-4/new-4/new-8 replay for off/shadow/replace.
   Requests/calls, token/masks, raw/effective rewards, filter order, all actor tensors
@@ -18,7 +18,11 @@ The active shared checkout is unchanged. Default remains `fixed_wave`.
 - Fresh eight-device CUDA computation and eight-rank NCCL all-reduce pass.
   An earlier CUDA gate refused transient 4 MiB allocations on all devices; its
   evidence remains preserved and the gate was repeated only after all became idle.
-- GPU actor scheduler comparison: RUNNING/PENDING, not yet PASS.
+- GPU actor scheduler comparison: PASS. New concurrency 4 and 8 each match all
+  96 old-scheduler vanilla/GSPO loss-input and gradient-shard records exactly.
+  All three variants pass their own eight-rank repeated-gradient checks.
+  The real 0-to-1 event changes 4 advantage rows and all 8 gradient shards for
+  both vanilla and GSPO; shadow remains exactly equal to off.
 - Six paired scheduler and six paired capacity comparisons: RUNNING/PENDING.
 - Six four-update trainer cases: PENDING; no integration PASS claimed yet.
 

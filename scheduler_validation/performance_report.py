@@ -6,6 +6,9 @@ R=Path(__file__).resolve().parent;E=R/'evidence'
 def load(case):
     r=json.loads((E/case/'result.json').read_text())
     c=json.loads((E/case/'capture.json').read_text())
+    assert r['status']=='PASS'
+    assert len(c['requests'])==len(c['generations'])==78
+    assert len({g['request_id'] for g in c['generations']})==78
     events=json.loads((E/case/'events.json').read_text())
     tokens=[(g['request_id'],g['branch_id'],g['tail_token_ids'],g['stop_reason'],g['finish_reason']) for g in c['generations']]
     active=0;peak=0;idle=0.;last=None;dispatched=0
@@ -17,11 +20,13 @@ def load(case):
         if event['event']=='release_start':releases[event['request_id']]=t
         if event['event']=='release_ack':
             active-=1;release_times.append(t-releases[event['request_id']])
+        assert active>=0
         peak=max(peak,active);last=t;trace.append([t,active])
-    assert active==0 and peak<=r['concurrency']
+    assert active==0 and peak<=r['concurrency'] and dispatched==78
     completed={i['metadata']['request_id']:i['wall_end'] for i in c['intervals'] if i['name']=='continuation_request'}
     completed_wait={rid:max(0.,start-completed[rid]) for rid,start in releases.items()}
     process=json.loads((E/f'{case}_process.json').read_text())
+    assert process['code']==0 and not process['timed_out']
     r.update(completed_waiting_release_seconds=completed_wait,peak_active=peak,refillable_idle_seconds=idle,release_seconds=release_times,
              active_trace=trace,peak_sampled_mib=process['peak_sampled_mib'])
     (E/case/'metrics.json').write_text(json.dumps(r,indent=2))

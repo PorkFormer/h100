@@ -1,6 +1,10 @@
 """Compare full frozen vanilla/GSPO loss inputs and gradient shards across schedulers."""
 import json
 from pathlib import Path
+import os
+os.environ['CUDA_VISIBLE_DEVICES']=''
+os.environ.setdefault('OMP_NUM_THREADS','1')
+os.environ.setdefault('OPENBLAS_NUM_THREADS','1')
 import torch
 R=Path(__file__).resolve().parent;E=R/'evidence';summary={}
 for variant in ['work_conserving_4','work_conserving_8']:
