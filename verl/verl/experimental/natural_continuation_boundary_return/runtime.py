@@ -561,7 +561,7 @@ async def run_boundary_continuations(
                 _emit_audit_event(
                     "boundary_return cleanup event=release_ack count=%d errors=%d",
                     len(tracked_requests),
-                    len(release_errors),
+                    len(release_errors) + len(release_failed),
                     level=logging.WARNING,
                 )
             for task in tasks:

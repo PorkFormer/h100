@@ -208,3 +208,10 @@ def test_existing_remote_cleanup_contract_with_new_scheduler(monkeypatch, capsys
     monkeypatch.setattr(original, '_active_config',
                         lambda **kwargs: dataclasses.replace(config(**kwargs), scheduler='work_conserving'))
     getattr(original, name)(capsys)
+
+
+def test_release_failure_receipt_includes_the_failed_slot_owner(capsys):
+    test_runtime_faults_stop_dispatch_and_attest_remote_cleanup('release', 4)
+    audit = capsys.readouterr().out
+    assert 'event=release_ack count=4 errors=1' in audit
+    assert 'cleanup_attested=False' in audit
