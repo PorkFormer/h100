@@ -30,7 +30,7 @@ else:
 # Preserve exact executed code separately from later runner fixes.
 import hashlib
 snapshots={}
-for path in [R/'perf_case.py',R/'trainer_case.py',R/'actor_replay.py',R/'launch.py',
+for path in [R/'process_cleanup.py',R/'perf_case.py',R/'trainer_case.py',R/'actor_replay.py',R/'launch.py',
              R.parent/'verl/verl/experimental/natural_continuation_boundary_return/runtime.py',
              R.parent/'verl/verl/experimental/natural_continuation_boundary_return/scheduler.py']:
     text=path.read_bytes();snapshots[str(path)]=hashlib.sha256(text).hexdigest()
@@ -47,6 +47,12 @@ with (E/f'{a.case}.log').open('x') as log:
         time.sleep(2)
     try:code=proc.wait(timeout=30)
     except subprocess.TimeoutExpired:os.killpg(proc.pid,signal.SIGKILL);code=proc.wait()
+# Settle only descendants carrying this instance's exclusive runtime marker.
+# This is process teardown after the timed case, never remote-cleanup attestation.
+from process_cleanup import cleanup_owned
+cleanup=cleanup_owned(tmp)
+(E/f'{a.case}_owned_cleanup.json').write_text(json.dumps(cleanup,indent=2))
+if (cleanup['remaining'] or cleanup['errors']) and code==0:code=1
 receipt=dict(command=cmd,pid=proc.pid,code=code,timed_out=timed_out,seconds=time.monotonic()-start,
              peak_sampled_mib=peak,samples=samples,uuids=uuids)
 (E/f'{a.case}_process.json').write_text(json.dumps(receipt,indent=2))

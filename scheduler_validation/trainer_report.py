@@ -7,9 +7,12 @@ for concurrency in [4,8]:
  for entry,loss,mode in [('dapo','vanilla','shadow'),('dapo','vanilla','replace'),('standard','gspo','replace')]:
   case=f'train_{entry}_{loss}_{mode}_c{concurrency}';folder=E/case;process=E/f'{case}_process.json'
   if not process.exists():reports.append(dict(case=case,status='UNCOVERED'));continue
-  proc=json.loads(process.read_text());audit=folder/'worker_audit';steps=collections.defaultdict(list);published=[];served=[];requests=0;release_acks=0;prefix_rows=0;changed_rows=0;known={}
+  proc=json.loads(process.read_text());audit=folder/'worker_audit';steps=collections.defaultdict(list);published=[];served=[];requests=0;release_acks=0;prefix_rows=0;changed_rows=0;known={};devices=[];provenance=True
   for path in sorted(audit.glob('*.json')):
    value=json.loads(path.read_text())
+   if path.name.endswith('_actual_device.json'):devices.append(value['actual_uuid'])
+   if str(value.get('module','')).startswith('verl.'):
+    provenance=provenance and Path(value['source']).is_relative_to(R.parent/'verl')
    if value.get('event')=='actual_AdamW_step':steps[value['pid']].append(value)
    if value.get('event')=='publish_done':published.append(value['version'])
   for path in audit.glob('*rollout_output.pt'):
@@ -36,6 +39,8 @@ for concurrency in [4,8]:
   for i in range(logical):
    if all(v[i]['before']!=v[i]['after'] and v[i]['gradient_nonzero']>0 for v in steps.values()):changed_versions.append(i+1)
   observed=sorted(set(served));published=sorted(set(published))
-  success=proc['code']==0 and not proc['timed_out'] and len(counts)==8 and counts==[4]*8 and changed_versions==[1,2,3,4] and all(v in published for v in range(1,5)) and all(v in observed for v in range(1,4))
-  reports.append(dict(case=case,status='PASS' if success else 'FAIL_TIMEOUT' if proc['timed_out'] else 'FAIL',seconds=proc['seconds'],logical_updates=logical,nonzero_changed_versions=changed_versions,published=published,actually_served=observed,requests=requests,release_acks=release_acks,prefix_rows_verified=prefix_rows,effective_changed_rows=changed_rows,peak_sampled_mib=proc['peak_sampled_mib']))
+  expected_devices={x.removeprefix('GPU-') for x in json.loads((R/'manifest.json').read_text())['uuid_order']}
+  device_match={x.removeprefix('GPU-') for x in devices}==expected_devices
+  success=provenance and device_match and proc['code']==0 and not proc['timed_out'] and len(counts)==8 and counts==[4]*8 and changed_versions==[1,2,3,4] and all(v in published for v in range(1,5)) and all(v in observed for v in range(1,4))
+  reports.append(dict(case=case,actual_gpu_uuids=sorted(set(devices)),source_provenance_exact=provenance,status='PASS' if success else 'FAIL_TIMEOUT' if proc['timed_out'] else 'FAIL',seconds=proc['seconds'],logical_updates=logical,nonzero_changed_versions=changed_versions,published=published,actually_served=observed,requests=requests,release_acks=release_acks,prefix_rows_verified=prefix_rows,effective_changed_rows=changed_rows,peak_sampled_mib=proc['peak_sampled_mib']))
 (E/'trainer_report.json').write_text(json.dumps(reports,indent=2));print(json.dumps(reports,indent=2))

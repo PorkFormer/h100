@@ -14,6 +14,11 @@ if logs:
     receipt=E/f'{name}_process.json'
     if receipt.exists():
         proc=json.loads(receipt.read_text());result.update(code=proc['code'],timed_out=proc['timed_out'],seconds=proc['seconds'])
+    if name=='repeat_old_1':
+        base={g['request_id']:g for g in json.loads((E/'repeat_old_0/capture.json').read_text())['generations']}
+        files=list((E/name).glob('boundary-return-*.json'))
+        result['repeat_tokens_compared']=len(files)
+        result['repeat_token_differences']=sum(json.loads(p.read_text())[0]['token_ids']!=base[p.stem]['tail_token_ids'] for p in files)
     print(json.dumps(result))
 for name in ['performance_report.json','suite_progress.json','suite_complete.json']:
     path=E/name

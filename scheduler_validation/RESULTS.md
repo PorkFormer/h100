@@ -9,7 +9,7 @@ The active shared checkout is unchanged. Default remains `fixed_wave`.
   cleanup failures and repeated cancellation. Tests were introduced before code;
   initial collection failure is preserved in `evidence/tests_before.log`.
 - Original 190 CPU tests and both unchanged frozen characterizations passed.
-  Complete count: 215 passed, plus 3 independent performance-report gate tests.
+  Complete count: 215 passed, plus 4 independent runner gate/ownership tests.
 - Frozen 2048-row pool (78 continuations) and real natural-correction batch
   (17 continuations) pass exact old-4/new-4/new-8 replay for off/shadow/replace.
   Requests/calls, token/masks, raw/effective rewards, filter order, all actor tensors
