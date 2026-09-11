@@ -64,9 +64,10 @@ for case in sorted((ROOT/'evidence').glob('train_*_v6')):
         memory_metrics.append({k:np.asarray(v).tolist() for k,v in metrics.items() if 'max_memory_' in k})
     log=(case/'run.log').read_text();exhausted='Generated too many; data may be too difficult.' in log
     logical_steps=min(counts.values()) if len(counts)==8 else 0
-    if counts:assert len(set(counts.values()))==1 and len(counts)==8,counts
+    consistent_receipts=not counts or (len(set(counts.values()))==1 and len(counts)==8)
+    if proc['code']==0:assert consistent_receipts,counts
     if proc['code']==0 and 'train_standard' in case.name and '_fault_' not in case.name:
-        expected=1 if '_ref_' in case.name or '_live_oracle_smoke_' in case.name else 2
+        expected=1 if '_ref_' in case.name or '_live_oracle_smoke_' in case.name else 4
         assert logical_steps==expected,(case.name,logical_steps,expected)
     status='UNCOVERED_DAPO_EXHAUSTION' if exhausted else ('PASS' if proc['code']==0 else 'FAIL')
     for suite, key, marker in [('live_oracle_summary.json','horizon','_live_oracle_'),('fault_summary.json','fault','_fault_')]:
@@ -75,6 +76,6 @@ for case in sorted((ROOT/'evidence').glob('train_*_v6')):
             matches=[r for r in json.loads(receipt.read_text()) if marker+str(r[key])+'_v6' in case.name]
             if len(matches)==1:status=matches[0]['status']
     if proc.get('timed_out'):status='FAIL_TIMEOUT'
-    summary.append(dict(case=case.name,process_code=proc['code'],status=status,logical_optimizer_steps=logical_steps,optimizer_step_receipts=len(steps),weight_changed_receipts=sum(s['before']!=s['after'] for s in steps),published_versions=sorted(set(pub)),observed_normal_versions=sorted(set(versions)),actual_gpu_uuids=sorted({x['actual_uuid'] for x in devices}),candidate_batches=candidate_count,actor_batches=actor_batches,actor_rows_verified_against_short=verified_rows,actor_rows_verified_by_token_multiset=multiset_rows,actor_rows_without_candidate_receipt=actor_missing,real_corrected_rows=changed_rows,long_reward_chunk_metadata=padded_chunks,hook_calls=hook_calls,continuation_requests=continuations,acknowledged_release_intervals=release_intervals,loss_metrics=loss_metrics,actor_memory_metrics=memory_metrics,seconds=proc['seconds']))
+    summary.append(dict(case=case.name,process_code=proc['code'],status=status,optimizer_receipts_consistent=consistent_receipts,optimizer_receipts_per_pid=dict(counts),logical_optimizer_steps=logical_steps,optimizer_step_receipts=len(steps),weight_changed_receipts=sum(s['before']!=s['after'] for s in steps),published_versions=sorted(set(pub)),observed_normal_versions=sorted(set(versions)),actual_gpu_uuids=sorted({x['actual_uuid'] for x in devices}),candidate_batches=candidate_count,actor_batches=actor_batches,actor_rows_verified_against_short=verified_rows,actor_rows_verified_by_token_multiset=multiset_rows,actor_rows_without_candidate_receipt=actor_missing,real_corrected_rows=changed_rows,long_reward_chunk_metadata=padded_chunks,hook_calls=hook_calls,continuation_requests=continuations,acknowledged_release_intervals=release_intervals,loss_metrics=loss_metrics,actor_memory_metrics=memory_metrics,seconds=proc['seconds']))
 (ROOT/'evidence/case_analysis.json').write_text(json.dumps(summary,indent=2))
 print(json.dumps(summary,indent=2))

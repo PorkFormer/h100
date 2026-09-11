@@ -1,0 +1,41 @@
+{
+  "source": "37a812d",
+  "validation_base": "98eb7d3",
+  "model": "/workspace/models/Qwen3-1.7B-Base",
+  "gpus": 8,
+  "prompt_pool": 1024,
+  "selection": "retain original seed42 first128; extend without replacement from remaining eligible prompts using continuing same RNG; no outcome selection",
+  "direct_prompts": 512,
+  "direct_blocks": 4,
+  "prompts_per_block": 128,
+  "H": 2048,
+  "L": 8192,
+  "n": 4,
+  "seed": 42,
+  "actor_train_prompt_batch": {
+    "standard": 64,
+    "dapo": 2
+  },
+  "actor_minibatch_prompts": {
+    "standard": 64,
+    "dapo": 2
+  },
+  "optimizer_steps": 4,
+  "dapo_candidate_prompts": 128,
+  "dapo_max_rounds": 4,
+  "case_timeout_seconds": 1800,
+  "unchanged": "model tokenizer detector verifier reward shaping sampling parameters continuation seeds microbatch_per_gpu=1 lr=1e-6 and all eight UUIDs",
+  "scope": "scale retest; independently generated outputs not asserted deterministic; no outcome-driven supplementation",
+  "old_evidence": "/tmp/ncbr_8gpu_20260911/validation/evidence",
+  "actor_diagnostic_selection": "After frozen natural capture select first two corrected UID groups, fill with earliest other groups; preserve all four rows per group. Coverage diagnostic only, no population-rate claim.",
+  "pretrainer_revision": "Before any trainer launch, retain original DAPO required group count2 while enlarging candidate batch128; standard batch remains64. First capture block confirms sparse correct rewards. Initial plan retained separately; no data/reward/filter change.",
+  "natural_event_followup": {
+    "timing": "Added after observing first real correction; not part of the original population capture protocol",
+    "source": "evidence/natural_correction_first.json",
+    "new_generation": false,
+    "verifier": "Unchanged verifier independently rerun on saved service tokens",
+    "gpu_weights": "Original model, matching observed service version0",
+    "selection": "First two corrected UID groups, fill earliest other groups; retain all four rows",
+    "scope": "Conditional implementation diagnostic, not accuracy estimation"
+  }
+}

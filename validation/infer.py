@@ -2,9 +2,9 @@
 def main():
     import argparse, dataclasses, json, os, sys, time
     from pathlib import Path
-    p=argparse.ArgumentParser();p.add_argument('--replica',type=int,required=True);p.add_argument('--h',type=int,default=128);p.add_argument('--l',type=int,default=512);p.add_argument('--count',type=int,default=8);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--replica',type=int,required=True);p.add_argument('--h',type=int,default=128);p.add_argument('--l',type=int,default=512);p.add_argument('--count',type=int,default=8);p.add_argument('--offset',type=int,default=0);a=p.parse_args()
     ROOT=Path(__file__).resolve().parent;sys.path.insert(0,str(ROOT.parent/'verl'))
-    OUT=ROOT/'evidence'/f'infer_h{a.h}_replica{a.replica}';OUT.mkdir(exist_ok=False)
+    OUT=ROOT/'evidence'/f'infer_h{a.h}_b{a.offset:04d}_replica{a.replica}';OUT.mkdir(exist_ok=False)
     import torch, numpy as np
     from vllm import LLM, SamplingParams
     from vllm.sampling_params import RequestOutputKind
@@ -12,7 +12,7 @@ def main():
     from verl.experimental.natural_continuation_boundary_return.runtime import build_continuation_requests
     import verl
     (OUT/'provenance.json').write_text(json.dumps(dict(verl=verl.__file__,uuid=str(torch.cuda.get_device_properties(0).uuid),pid=os.getpid())))
-    rows=[json.loads(x) for x in (ROOT/'evidence'/'prompts.jsonl').read_text().splitlines()][:a.count][a.replica::8]
+    rows=[json.loads(x) for x in (ROOT/'evidence'/'prompts.jsonl').read_text().splitlines()][a.offset:a.offset+a.count][a.replica::8]
     start=time.monotonic()
     llm=LLM(model='/workspace/models/Qwen3-1.7B-Base',dtype='bfloat16',tensor_parallel_size=1,gpu_memory_utilization=.35,enforce_eager=True,max_model_len=9216,seed=42,enable_prefix_caching=False,max_num_seqs=4)
     params=SamplingParams(n=4,max_tokens=a.h,temperature=1,top_p=1,top_k=-1,ignore_eos=False,seed=42,output_kind=RequestOutputKind.FINAL_ONLY)

@@ -1,71 +1,54 @@
-# Qwen3-1.7B eight-GPU implementation validation
+# Enlarged Qwen3-1.7B eight-GPU NCBR retest
 
-Production source: `37a812d41ec7c1c5a070ee7741bed819f60aed55`; oracle: `d23da0e17830c296ae6e375793a7ccea98870bb3`; disabled baseline: `bfa08860fee9f4febaf7aa1041f0e7eb0ac09cd5`. Model: `/workspace/models/Qwen3-1.7B-Base`. Eight UUID-bound A100-SXM4-40GB GPUs, eight-rank FSDP and eight TP=1 rollout replicas. Full resolved configuration and exact commands are in each case directory. Model/tokenizer/config/data hashes and dependency versions: `manifest.json`, with live revalidation receipts. Frozen prompt manifest: `prompts.jsonl` / `prompts.parquet`.
+Overall verdict: NOT ALL PASS. The default actor repeated-gradient gate failed twice; the explicitly deterministic diagnostic is reported separately. Trainer failures or incomplete cases: train_dapo_vanilla_replace_v6: FAIL_TIMEOUT; train_dapo_vanilla_shadow_v6: FAIL_TIMEOUT.
 
-## Verdict and limits
+Production code remains `37a812d`, oracle `d23da0e`, disabled baseline `bfa0886`. Model `/workspace/models/Qwen3-1.7B-Base`; all eight UUIDs and shared model/data hashes were rechecked. Previous artifacts at `/tmp/ncbr_8gpu_20260911/validation/evidence` are unchanged. See `scale_plan.json`, `freeze_checks.json`, `data_identity.json`, `manifest.json` and per-case commands/configurations.
 
-The completed gates below verify this model/configuration only. DAPO exhaustion leaves update coverage incomplete. Frozen cap-hit transitions were 24 smoke and 9 full, all 0→0. No natural nonzero task-score correction was observed; missing correctness transitions remain uncovered in real verifier evidence and are covered only by existing deterministic tests. Independent rollout tokens can differ; exact equivalence claims apply to frozen inputs/outputs. No training-effectiveness, capacity or performance improvement claim is made.
+## Scale and interpretation
 
-## Environment, replay and actor gates
+The frozen pool contains1024 unique prompts, preserving the previous first128 exactly. Capture uses first512 prompts ×4 short rollouts, in four fixed128-prompt blocks, H2048/L8192. Sampling, verifier, reward shaping and detector are unchanged. All cap hits receive K1 continuation; two independent repeats are retained.
 
-- PASS: fresh per-device CUDA arithmetic, eight-rank NCCL sum 36 and UUID mapping; 190 CPU tests plus both byte-exact frozen characterizations (`cpu_release_retry/`).
-- PASS: H128/L512 real capture (8 prompts / 32 rows / 24 cap hits), H2048/L8192 capture (32 prompts / 128 rows / 9 cap hits). Raw token IDs, finish metadata and unchanged math_dapo verifier outputs retained.
-- PASS: frozen original runtime/adapter versus hook, off/shadow/replace request/mask/score/order equality (`replay_h128_v3/`, `replay_h2048_v3/`). Smoke independent repeats differ; full repeats happened to match in this sample.
-- PASS: actual eight-rank FSDP registered vanilla/GSPO losses and backward. H128 uses 32 rows; H2048 uses first 2 prompts / 8 rows. Repeated full loss inputs and gradient shards, and cross-mode results, compare exactly (`actor_h128/`, `actor_h2048/`, `actor_cross_mode.json`).
-- PASS: GPU GSPO masked-tail isolation; original GRPO recomputation with controlled score change changes gradient. The score change is synthetic, separately labeled (`tail_isolation.json`).
-- PASS: reference forward at KL coefficient zero; eight workers have exact input IDs/positions/masks and prefix logprobs of shape [8,2048], initial old/ref equality (`reference_alignment.json`).
+Trainer cases use four optimizer steps maximum. Standard train/minibatch64 prompts; DAPO retains original train/minibatch2 prompts but increases each candidate round to128 prompts, maximum four rounds. The initial proposal of64 required DAPO groups was revised before any trainer launch after the first capture block showed sparse correct rewards. Both plans are retained; no64-group DAPO result is claimed. Data/reward/filter mathematics were not changed.
 
-## Trainer and diagnostic cases
+Previous standard GSPO replace first rollout had one unique trajectory among four branches for each of its two prompts; the second had two unique trajectories per prompt. This is evidence of small-batch diversity limitations, not proof that size is the only cause. Current group diversity and natural verifier availability are reported separately.
 
-Optimizer steps count actual AdamW calls across all eight ranks. Changed shards count receipts with different before/after checksums. Version columns distinguish publication completion and actual normal rollout metadata. Two-step cases publish version 1 before step two and version 2 at completion. Serving the nonzero step-two update (version 2) is UNCOVERED in standard cases; only versions 0/1 were actually used by normal rollouts. DAPO replace separately covers actual serving after a nonzero update.
+## Frozen natural capture
 
-| Case | Status | Steps | Changed shard receipts | Published | Served normal | Seconds |
-|---|---|---:|---:|---|---|---:|
-| train_dapo_vanilla_off_v6 | UNCOVERED_DAPO_EXHAUSTION | 0 | 0 | [0] | [0] | 264.2 |
-| train_dapo_vanilla_replace_v6 | UNCOVERED_DAPO_EXHAUSTION | 1 | 8 | [0, 1] | [0, 1] | 612.1 |
-| train_dapo_vanilla_shadow_v6 | UNCOVERED_DAPO_EXHAUSTION | 0 | 0 | [0] | [0] | 278.0 |
-| train_standard_gspo_off_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 209.5 |
-| train_standard_gspo_replace_fault_duplicate_v6 | PASS | 0 | 0 | [0] | [0] | 161.4 |
-| train_standard_gspo_replace_fault_missing_v6 | PASS | 0 | 0 | [0] | [0] | 164.3 |
-| train_standard_gspo_replace_fault_release_v6 | PASS | 0 | 0 | [0] | [0] | 157.9 |
-| train_standard_gspo_replace_fault_verifier_error_v6 | PASS | 0 | 0 | [0] | [0] | 162.7 |
-| train_standard_gspo_replace_fault_verifier_timeout_v6 | PASS | 0 | 0 | [0] | [0] | 163.9 |
-| train_standard_gspo_replace_fault_version_v6 | PASS | 0 | 0 | [0] | [0] | 161.2 |
-| train_standard_gspo_replace_live_oracle_full_v6 | PASS | 0 | 0 | [0] | [0] | 358.3 |
-| train_standard_gspo_replace_live_oracle_smoke_v6 | PASS | 0 | 0 | [0] | [0] | 231.2 |
-| train_standard_gspo_replace_ref_v6 | PASS | 1 | 0 | [0, 1] | [0] | 181.1 |
-| train_standard_gspo_replace_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 235.9 |
-| train_standard_gspo_shadow_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 237.4 |
-| train_standard_vanilla_off_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 210.3 |
-| train_standard_vanilla_replace_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 234.2 |
-| train_standard_vanilla_shadow_v6 | PASS | 2 | 8 | [0, 1, 2] | [0, 1] | 238.2 |
+- Rows: 2048; cap hits: 78; short verifier-correct rows: 20; invalid extracted answers: 947.
+- Natural cap transitions: {'0->0': 78, '0->1': 0, '1->0': 0, '1->1': 0}. Nonzero effective corrections: 0.
+- Frozen original runtime/adapter versus hook: PASS, exact scores, masks, request calls and retained row order. Independent repeat differences: 14; no generated-token determinism claim.
 
-Standard main cases have two optimizer calls; the first has zero gradients, and the second changes all eight shards. DAPO off/shadow exhaust four candidate rounds without update; DAPO replace changes all eight shards once, serves version 1, then exhausts the next candidate budget. Data, reward and filtering were not adjusted.
+## Trainer cases
 
-## Live oracle and fault barriers
+| Case | Execution | Steps | Nonzero changed-weight versions | Served after nonzero update | Natural task deltas | Effective corrected rows | Mixed short-reward groups | Seconds |
+|---|---|---:|---|---|---:|---:|---:|---:|
+| train_dapo_vanilla_off_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 0 | 0 | 43 | 324.4 |
+| train_dapo_vanilla_replace_v6 | FAIL_TIMEOUT | 3 | [1, 2, 3] | [1, 2, 3] | 2 | 2 | 36 | 1809.0 |
+| train_dapo_vanilla_shadow_v6 | FAIL_TIMEOUT | 2 | [1, 2] | [1, 2] | 0 | 0 | 22 | 1809.0 |
+| train_standard_gspo_off_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 0 | 0 | 20 | 373.8 |
+| train_standard_gspo_replace_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 1 | 1 | 15 | 1566.2 |
+| train_standard_gspo_shadow_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 1 | 0 | 18 | 1361.7 |
+| train_standard_vanilla_off_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 0 | 0 | 17 | 371.1 |
+| train_standard_vanilla_replace_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 0 | 0 | 23 | 1474.1 |
+| train_standard_vanilla_shadow_v6 | PASS | 4 | [1, 2, 3, 4] | [1, 2, 3] | 0 | 0 | 17 | 1141.8 |
 
-- PASS: live smoke, 27 requests, exact requests/masks and frozen adapter scores, 12 independent tail differences, zero optimizer updates. Controlled pre-update exit is expected.
-- PASS: live full, 4 requests, exact requests/masks and frozen adapter scores, 1 independent tail differences, zero optimizer updates. Controlled pre-update exit is expected.
-- PASS: injected missing, 8 injection receipts, 0 optimizer receipts, published versions [0].
-- PASS: injected duplicate, 8 injection receipts, 0 optimizer receipts, published versions [0].
-- PASS: injected version, 8 injection receipts, 0 optimizer receipts, published versions [0].
-- PASS: injected verifier_error, 1 injection receipts, 0 optimizer receipts, published versions [0].
-- PASS: injected verifier_timeout, 1 injection receipts, 0 optimizer receipts, published versions [0].
-- PASS: injected release, 5 injection receipts, 0 optimizer receipts, published versions [0].
+Off bypasses the hook, so its hook-based correction counts are not measured. Short reward groups use hook inputs when present, otherwise full DAPO candidate batches or standard actor batches; the source is recorded per case. All-case token diversity is in `scale_coverage.json`. DAPO exhaustion is UNCOVERED, not a passed full-update case. A published version counts as served only when normal rollout metadata records it. Final publication alone does not prove serving.
 
-Faults are controlled callback/service-boundary injections, including a synthetic TimeoutError, not induced wall-clock network outages. Unconfirmed release requires no later sleep attempt. Expected nonzero exits are PASS only when the suite verifies injection/completion receipts and update barriers; timeout never passes.
+## GPU actor diagnostic
 
-## Evidence and resources
+Observed comparisons: `{'vanilla': {'status': 'PASS', 'shadow_exact': True, 'replace_changed_advantage_rows': 0, 'replace_changed_gradient_shards': 0, 'natural_gradient_effect': 'UNCOVERED'}, 'gspo': {'status': 'PASS', 'shadow_exact': True, 'replace_changed_advantage_rows': 0, 'replace_changed_gradient_shards': 0, 'natural_gradient_effect': 'UNCOVERED'}}`.
+Default GPU actor replay failed twice: repeated off-mode gradients differed beyond the fixed tolerance (maximum observed absolute difference0.000732421875), while inspected full loss inputs were exact. Both failed attempts remain saved. Explicit PyTorch deterministic algorithms and CUBLAS_WORKSPACE_CONFIG=:4096:8 in the standalone diagnostic restored exact repeats. This is not a claim of default trainer bitwise reproducibility; production code/configuration was not changed by that diagnostic fix.
+Actor selection is explicitly coverage-directed within the fixed natural capture: first two corrected UID groups, filling with earliest others; all four rows per group retained. Selection is recorded in `actor_h2048/selection.json`. Registered vanilla/GSPO losses and gradients repeat exactly. Shadow must match off. Replacement is allowed to change original GRPO advantages and gradients; an observed advantage change must change at least one gradient shard. No synthetic verifier outputs are used in this retest.
 
-`case_analysis.json` records exact actor short-prefix identity, finite loss/gradient metrics, actual UUIDs, continuation/release counts and reward chunk padding. Standard enabled cases exercise real 3-row reward chunks padded to 4 across two workers. Engine/worker import receipts exist for every main case; expanded server/reward module and remote release/drain acknowledgement instrumentation was added for later live/fault diagnostics. Earlier main cases retain runtime cleanup intervals rather than separate remote acknowledgement files. Worker audit files retain raw reward and actor batches, gradients, weight hashes, publication receipts, import paths, release/drain evidence and profiling intervals. Raw scores remain saved separately; corrections are restricted to the last valid H token; no continuation tail enters the actor.
+## Actual natural correction and actor credit
 
-- H128 direct capture: 57.1 s, sampled NVML peak per GPU [14335, 14357, 14335, 14337, 14357, 14335, 14375, 14335] MiB. Actor replay maximum CUDA allocated: 11.707 GiB.
-- H2048 direct capture: 266.7 s, sampled NVML peak per GPU [14451, 14457, 14453, 14611, 14335, 14335, 14335, 14565] MiB. Actor replay maximum CUDA allocated: 15.540 GiB.
+Selected real service trace: `{'hook_output': 'validation/evidence/train_dapo_vanilla_replace_v6/worker_audit/345720_1789113334118124304_hook_output.pt', 'policy_version': 0, 'corrections': [{'row': 82, 'uid': 'b8a2d358-a0cc-5f16-ba73-54b3845b434b', 'trajectory_id': 'b8a2d358-a0cc-5f16-ba73-54b3845b434b:2', 'short_acc': 0.0, 'long_acc': 1.0, 'short_task_score': -1.0, 'long_task_score': 1.0, 'delta': 2.0, 'changed_token_positions': [2047], 'valid_H_tokens': 2048, 'group_entered_actor': True, 'trajectory_entered_actor': True}]}`. Original verifier replay, oracle/hook scores and filtering passed exactly. Actual actor prefix tokens, effective scores and recomputed original GRPO advantages are exact.
+Natural-event GPU counterfactual: `{'vanilla': {'status': 'PASS', 'shadow_exact': True, 'replace_changed_advantage_rows': 4, 'replace_changed_gradient_shards': 8, 'natural_gradient_effect': 'COVERED'}, 'gspo': {'status': 'PASS', 'shadow_exact': True, 'replace_changed_advantage_rows': 4, 'replace_changed_gradient_shards': 8, 'natural_gradient_effect': 'COVERED'}}`.
+This event was observed in the prespecified trainer run, not fabricated or added to the512-prompt capture cohort. The exact actually retained8-row version0 actor batch, including original old_log_probs, is evaluated with original weights; all input tensors were matched before replay. No new generation or altered verifier is used for the conditional diagnostic. Other unobserved transitions remain uncovered.
 
-Trainer per-case wall time is listed above; CUDA allocation/reservation metrics are retained in `case_analysis.json`. NVML samples, CUDA allocation counters and profiling intervals measure different scopes and are not equated. Audit I/O overhead is included; timing equality is not asserted.
+## Limits and artifacts
 
-## Isolation, corrections and reproduction
+Unobserved natural transitions remain uncovered. An absence of corrections does not establish that the hook was never called: cap-hit/continuation, nonzero verifier delta, filtering and gradient effects are distinct gates. These are fixed-sample implementation diagnostics, not an accuracy benchmark or training-effectiveness/capacity/performance claim.
+Original190 CPU tests and both frozen characterizations passed again in `cpu_final/`; fresh CUDA/NCCL gates, raw token/verifier/actor/gradient data and source provenance are retained. Previous reference and fault-barrier validation applies to unchanged production code and is not represented as newly executed here. No formal checkpoint, benchmark evaluation, shared dependency change or production fix.
 
-No production algorithm/source fix was needed. Private runner fixes handle vLLM UUID parsing with a lazy import shim, Ray device assignment, private short IPC paths, CPU placement capacity and typed seed configuration. Earlier failed attempts and original logs remain in evidence. The final release-fault launch was first blocked by a transient GPU0 process-occupancy snapshot before trainer startup; its directory is retained with `_gate_attempt1`. The launcher now requires two idle snapshots with an empty compute-process list, and the release case was retried only after a fresh gate. No golden/detector/loss mathematics or shared dependencies changed. No formal checkpoint or benchmark evaluation ran.
-
-Reproduction commands and fixed parameters: `../README.md`. Each trainer directory includes `config.yaml`, `process.json`, gate and runtime logs. Final cleanup and provenance receipts: `final_state.json`, `final_manifest.json`. Final inspection found no owned processes and all eight GPUs at 0 MiB / 0% utilization; no forced process termination was needed. Validation code is committed separately from raw evidence/cache files.
+Final process/GPU state: `final_state.json`; source/model/runner hashes: `final_manifest.json`; execution timings and CUDA allocation metrics: `case_analysis.json`; sampled inference NVML peaks: `h2048_processes.json`. First failures remain preserved.

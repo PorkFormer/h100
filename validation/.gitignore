@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 cache_*/
 compat_v3/
+actor_cache*/

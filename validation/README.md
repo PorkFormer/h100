@@ -1,83 +1,88 @@
-# Qwen3-1.7B eight-GPU NCBR validation
+# Eight-GPU enlarged NCBR retest
 
-Production source is pinned to `37a812d41ec7c1c5a070ee7741bed819f60aed55`, oracle to
-`d23da0e17830c296ae6e375793a7ccea98870bb3`, and disabled baseline to
-`bfa08860fee9f4febaf7aa1041f0e7eb0ac09cd5`. All production files are unchanged.
-This directory contains validation orchestration and process-local compatibility/audit code.
-Run from a fresh isolated clone; do not reuse evidence filenames or active training resources.
-The report and raw artifacts for this run are under `evidence/`.
+This run responds to the user's request to increase test scale after the first run's
+coverage gaps. Production source remains37a812d; oracle d23da0e and disabled baseline
+bfa0886 are unchanged. The previous validation commit is98eb7d3; its artifacts remain
+untouched at `/tmp/ncbr_8gpu_20260911/validation/evidence`.
 
-The user changed the original two-GPU plan to all eight GPUs. Actor uses eight-rank FSDP;
-rollout uses eight TP=1 replicas. Each launch waits for idle devices and performs fresh
-UUID-bound CUDA probes. The UUID compatibility shim resolves NVML physical indices without
-changing CUDA_VISIBLE_DEVICES. It loads lazily after Ray assigns devices. Shared packages
-are not patched. Ray, IPC, cache and outputs stay inside this clone. There is no global
-`ray stop`, checkpoint save, benchmark evaluation, or modification of shared models.
+The new isolated root is `/tmp/ncbr_8gpu_scale_20260911`. Read `scale_plan.json` for the
+prespecified budget. The model and tokenizer/template are unchanged. The1024 unique
+prompt pool preserves the prior first128 exactly, then extends without replacement
+using the continuing seed42 RNG. Full original model/data hashes and prefix identity
+were rechecked before generation. No result-driven supplementation is allowed.
 
-Preparation and primary commands:
+Full-budget natural capture:512 prompts, n4, four sequential128-prompt blocks, H2048,
+L8192, all strict cap hits continued, K1. Eight UUID-bound TP1 replicas; each block
+starts original model/seed42. Request order and derived continuation seeds are fixed.
+Both independent continuation repeats are saved; token determinism is not presumed.
+Original reward shaping, verifier, detector and sampling parameters are unchanged.
+
+Trainer: nine DAPO/standard vanilla/standard GSPO off/shadow/replace cases, original
+model each time, standard train/minibatch64 prompts, DAPO train/minibatch2 prompts, microbatch1 per GPU,
+four actual AdamW steps maximum, lr1e-6. DAPO generates128 candidate prompts per round,
+retaining its original filter and maximum four rounds. Case timeout remains30 minutes;
+timeout is never PASS. Step count, nonzero gradient, changed shards, publication and
+actual serving of changed weights are measured separately. No formal checkpoints,
+benchmark evaluation or shared dependency changes. Ray/cache/IPC remain private.
+
+The actor diagnostic freezes all real captured outputs and checks original adapter
+versus hook first. It selects the first two naturally corrected UID groups, filling
+with earliest other groups if fewer exist, and preserves all four rows per group.
+This explicit coverage diagnostic is not a population-rate sample. Shadow must equal
+off exactly. Replace may change original GRPO advantages and GPU gradients; if those
+advantages differ, at least one gradient shard must differ. Per-mode repeats stay exact.
+
+Commands (from this clone; run GPU stages sequentially):
 
 ```bash
-python validation/prepare.py  # fresh run only; this run reused and revalidated the frozen manifest
+mkdir -p validation/evidence
+python validation/prepare.py > validation/evidence/prepare.log
 python validation/gate.py
-python verl/tests/experimental/ncbr_portable/verify.py --output-dir <fresh-private-output>
-python validation/launch.py --h 128 --l 512 --count 8
-python validation/replay.py --h 128 --l 512 --suffix v2
-python validation/replay.py --h 128 --l 512 --suffix v3
-python validation/launch.py --h 2048 --l 8192 --count 32
-python validation/replay.py --h 2048 --l 8192 --suffix v2
-python validation/replay.py --h 2048 --l 8192 --suffix v3
-python validation/launch_actor.py --h 128
-python validation/launch_actor.py --h 2048
-python validation/check_actor_modes.py
-python validation/tail_isolation.py  # bind an idle permitted GPU by UUID
-python validation/launch_trainer.py --entry dapo --mode off
-python validation/launch_trainer.py --entry dapo --mode shadow
-python validation/remaining_cases.py
-python validation/check_reference.py
-python validation/live_suite.py
-python validation/fault_suite.py
-python validation/analyze_cases.py
-python validation/check_receipts.py
-python validation/report.py
-python validation/cleanup_owned.py  # inspect after all suites exit
-python validation/finalize.py  # requires no active owned processes
+# torchrun --standalone --nnodes=1 --nproc-per-node=8 validation/nccl_probe.py,
+# with CUDA_VISIBLE_DEVICES set to the eight recorded UUIDs
+python verl/tests/experimental/ncbr_portable/verify.py --output-dir validation/evidence/cpu_scale
+python validation/scale_capture.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/scale_followthrough.py
+python validation/cleanup_owned.py
 ```
 
-`nccl_probe.py` is launched with torchrun --standalone --nnodes=1 --nproc-per-node=8,
-with CUDA_VISIBLE_DEVICES set to the eight frozen UUIDs. Each rank must report its
-expected UUID and an all-reduce result of 36. Commands and resolved trainer YAMLs
-are retained with each case. Do not run the commands concurrently on the same GPUs.
+The executed freeze and NCCL receipts are in evidence. The previous fault and reference
+checks remain evidence for unchanged production code; this retest targets increased
+natural correction/gradient/filter/version coverage. Previous-run RESULTS/WORKLOG files
+will be superseded by the new scoped report at completion. Never infer current PASS
+from those inherited historical files.
 
-The ordinary trainer cases use H2048/L8192, n=4, base seed42, temperature1/top_p1/top_k-1,
-ignore_eos=false, max_model_len9216, rollout memory0.35, eager execution, continuation
-concurrency4/request batch8/timeout600, reward workers2/long chunks3, buffer410,
-AdamW lr1e-6, mini-batch2 prompts and microbatch1 per GPU. Each vLLM engine is seeded42;
-continuation seeds use the unchanged stable derivation. Trainer UUIDs are deterministic
-UUID5 counters; the frozen capture uses prompt SHA256 UIDs. Never alter sampling or
-supplement prompts based on coverage. Independent generations are not presumed equal.
+The initial proposal increased DAPO required groups to64 as well; this was revised
+before any trainer launch to retain the original2-group target while increasing
+candidates to128. Initial and revised plans are both retained. No results from a
+64-group DAPO trainer exist or are claimed. The frozen prompt manifest is unchanged.
 
-The direct capture is preparatory. Frozen replay compares source runtime/adapter with hook,
-including real verifier outputs, exact tensors, request identity, masks and retained order.
-Real FSDP repeats verify registered vanilla/GSPO losses and gradients. GPU tail isolation
-uses a separately labeled synthetic task-score increment, not fabricated verifier output.
+Default actor backward repeated-gradient equality failed on the enlarged frozen input.
+Both attempts are preserved. The standalone actor diagnostic now enables PyTorch
+deterministic algorithms and CUBLAS_WORKSPACE_CONFIG=:4096:8; all eight rank repeats
+passed exactly afterward, with190 CPU/two characterizations repeated. This does not
+assert bitwise repeatability for the default real trainer.
 
-Live oracle diagnostics call the original runtime and hook against the same real H batch,
-weights and service, compare request/mask identity, and freeze original service output for
-an exact adapter comparison. Smoke uses the first8 prompts; full uses the first32. They
-stop deliberately after comparison and before any optimizer update. Exit code1 plus the
-live-validation-complete receipt is expected, and is checked by live_suite.py.
+Executed continuation after preserving the initial failures:
 
-Fault cases use the first2 fixed prompts at H128/L512 and real service/callback boundaries.
-Faults are explicitly recorded as controlled injections. fault_suite.py requires no AdamW
-step or new version after an injected fault, and no sleep after unconfirmed release.
-Expected fault exits are nonzero. No-cap cases remain uncovered.
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/remaining_cases.py --resume --continue-timeouts
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/replay_trainer_natural.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/select_actual_actor.py
+python validation/launch_actor.py --h 2048 --tag _natural --source validation/evidence/replay_trainer_natural/actor_actual_input.pt
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/scale_actor_compare.py --tag _natural
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/analyze_cases.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python validation/scale_coverage.py
+python validation/check_receipts.py
+python validation/scale_report.py
+python validation/cleanup_owned.py
+python validation/finalize.py
+```
 
-The audit wraps existing calls to save raw batches, verifier outputs, actual gradients,
-weight checksums, publication and cleanup receipts. It does not change loss, advantage,
-detector or reward mathematics. The live oracle's extra service calls are diagnostic-only.
-Early runner failures and their original logs are retained; see the report for limits and
-coverage. Cleanup script defaults to inspection and targets only this run's audit marker.
-
-For a stopped fault suite, preserve the failed case directory and original logs before
-`python validation/fault_suite.py --resume`; completed PASS cases are not rerun.
-The launcher requires two idle snapshots and no compute processes before its CUDA gate.
+Final results are in `RESULTS.md`: seven trainer cases completed four updates;
+DAPO shadow/replace timed out with two/three updates. Four natural0→1 events were
+observed in completed hook batches (DAPO replace2, GSPO shadow1, GSPO replace1),
+producing three effective replacement corrections. In the conditional replay of
+the exact actual version0 actor batch, both vanilla and GSPO changed four advantage
+rows and all eight gradient shards; shadow equaled off exactly. Natural1→0 and1→1
+remain uncovered. Final cleanup found no owned processes and all eight GPUs idle.

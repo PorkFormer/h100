@@ -21,7 +21,7 @@
     "eligible": 17383,
     "seed": 42,
     "selection": "numpy.default_rng.choice without replacement in first occurrence order",
-    "manifest_sha256": "86e6d3b6961165390767992ebc142d4e2da6de3080dd3e3e4d11172022f58ba7"
+    "manifest_sha256": "3cdc7da52002159cb8e2cffa45697f71f062915e737900907bcb86dc771fb331"
   },
   "commits": {
     "hook": "37a812d41ec7c1c5a070ee7741bed819f60aed55",
@@ -48,10 +48,8 @@
     "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
     "GPU-13224194-671f-4694-0208-64e41496e535"
   ],
-  "actor_world_size": 8,
-  "rollout_replicas": 8,
-  "rollout_tensor_parallel": 1,
-  "parameters_document": "README.md",
-  "evidence_root": "/tmp/ncbr_8gpu_20260911/validation/evidence",
-  "source_changed": false
+  "evidence_root": "/tmp/ncbr_8gpu_scale_20260911/validation/evidence",
+  "production_source_changed": false,
+  "scale_plan": "scale_plan.json",
+  "previous_evidence": "/tmp/ncbr_8gpu_20260911/validation/evidence"
 }

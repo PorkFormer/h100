@@ -13,7 +13,7 @@ from verl.experimental.natural_continuation_boundary_return.runtime import run_b
 from verl.experimental.natural_continuation_boundary_return.scoring import score_long_generations
 from verl.experimental.natural_continuation_boundary_return.reward_adapter import BoundaryRewardOutput
 from transformers import AutoTokenizer
-p=argparse.ArgumentParser();p.add_argument('--suffix',default='v2');p.add_argument('--h',type=int,default=128);p.add_argument('--l',type=int,default=512);a=p.parse_args();out=ROOT/'evidence'/f'replay_h{a.h}_{a.suffix}';out.mkdir(exist_ok=False)
+p=argparse.ArgumentParser();p.add_argument('--suffix',default='v2');p.add_argument('--block',type=int,default=None);p.add_argument('--h',type=int,default=128);p.add_argument('--l',type=int,default=512);a=p.parse_args();tag='' if a.block is None else f'_b{a.block:04d}';out=ROOT/'evidence'/f'replay_h{a.h}{tag}_{a.suffix}';out.mkdir(exist_ok=False)
 def oracle_module(name,filename):
     source=subprocess.check_output(['git','show',f'd23da0e:verl/verl/experimental/natural_continuation_boundary_return/{filename}.py'],cwd=ROOT.parent,text=True)
     (out/f'oracle_{filename}.py.txt').write_text(source)
@@ -23,7 +23,7 @@ oracle_runtime=oracle_module('validation_oracle_runtime','runtime')
 tok=AutoTokenizer.from_pretrained('/workspace/models/Qwen3-1.7B-Base',local_files_only=True)
 rows=[];requests=[];saved={};repeat_diffs=[]
 for replica in range(8):
-    folder=ROOT/'evidence'/f'infer_h{a.h}_replica{replica}'
+    folder=ROOT/'evidence'/f'infer_h{a.h}{tag}_replica{replica}'
     rows.extend(json.loads((folder/'short.json').read_text()))
     rep0=json.loads((folder/'repeat_0_continuations.json').read_text());rep1=json.loads((folder/'repeat_1_continuations.json').read_text())
     repeat_diffs.extend([x['request_id'] for x,y in zip(rep0,rep1,strict=True) if x!=y]);saved.update({r['request_id']:r for r in rep0})

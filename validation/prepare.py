@@ -30,7 +30,10 @@ for key,(_,row) in unique.items():
     ids=tok.apply_chat_template(row['prompt'],tokenize=True,add_generation_prompt=True)
     if hasattr(ids,'get'): ids=ids['input_ids']
     if len(ids)<=1024: eligible.append((key,row,ids))
-indices=np.random.default_rng(42).choice(len(eligible),128,replace=False)
+rng=np.random.default_rng(42)
+first=rng.choice(len(eligible),128,replace=False)
+remaining=np.array([i for i in range(len(eligible)) if i not in set(first)])
+indices=np.concatenate([first,rng.choice(remaining,896,replace=False)])
 selected=[eligible[i] for i in indices]
 pq.write_table(__import__('pyarrow').Table.from_pylist([x[1] for x in selected],schema=table.schema),OUT/'prompts.parquet')
 with (OUT/'prompts.jsonl').open('x') as f:
