@@ -1,0 +1,126 @@
+{
+  "pool2048": {
+    "fixed_wave_4": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      }
+    },
+    "work_conserving_4": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      }
+    },
+    "work_conserving_8": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 78,
+        "retained": 76,
+        "changed_rows": 0
+      }
+    }
+  },
+  "natural_actor": {
+    "fixed_wave_4": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 17,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 17,
+        "retained": 36,
+        "changed_rows": 1
+      }
+    },
+    "work_conserving_4": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 17,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 17,
+        "retained": 36,
+        "changed_rows": 1
+      }
+    },
+    "work_conserving_8": {
+      "off": {
+        "exact": true,
+        "requests": 0,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "shadow": {
+        "exact": true,
+        "requests": 17,
+        "retained": 32,
+        "changed_rows": 0
+      },
+      "replace": {
+        "exact": true,
+        "requests": 17,
+        "retained": 36,
+        "changed_rows": 1
+      }
+    }
+  }
+}

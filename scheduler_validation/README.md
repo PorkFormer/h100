@@ -25,7 +25,12 @@ CUDA_VISIBLE_DEVICES='' OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python schedule
 python scheduler_validation/freeze.py
 python scheduler_validation/launch.py --case nccl_initial --kind nccl
 python scheduler_validation/launch.py --case repeat_old_0 --scheduler fixed_wave --concurrency 4
+python scheduler_validation/remaining.py
 python scheduler_validation/performance_report.py
+python scheduler_validation/event_report.py
+CUDA_VISIBLE_DEVICES='' OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scheduler_validation/trainer_report.py
+python scheduler_validation/final_checks.py
+python scheduler_validation/finalize.py
 ```
 
 Every output name is exclusive. Preserve failed runs and use a new explicit name
@@ -46,3 +51,14 @@ all timing ratios are diagnostic only. Capacity effects are a separate compariso
 `evidence/` holds raw output, first failures, generated tokens, event traces,
 CUDA/NCCL receipts, frozen comparisons and per-run memory samples. Historical
 `validation/RESULTS.md` belongs to the base run; it is not this scheduler's result.
+
+Completed outcomes are in `RESULTS.md`; compact committed receipts are in `results/`.
+`event_report.py` audits the 24 paired traces and reports per-request dispatch,
+generation, completed-wait, release and slot durations. `pending_idle_slot_seconds`
+integrates unused slots only while undispatched work remains; it is a sum of slot
+time. `metrics.json` also reports wall time with at least one refillable slot.
+Completed requests waiting for a fixed-wave barrier still occupy slots; their
+wait is reported separately as a sum across requests, not elapsed wall time.
+The older repeat traces predate generation-complete instrumentation and are
+excluded from this additional per-phase audit. Raw repeat outputs remain in the
+repeat-determinism and performance gates.

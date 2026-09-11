@@ -1,0 +1,152 @@
+{
+  "old_repeat": {
+    "exact": false,
+    "different_requests": 2
+  },
+  "scheduler": {
+    "pairs": [
+      {
+        "index": 0,
+        "seconds_a": 1456.6655791499943,
+        "seconds_b": 824.9902317790256,
+        "ratio": 1.7656761535331287,
+        "tokens_a": 196866,
+        "tokens_b": 218586,
+        "exact_work": false,
+        "different_requests": 31
+      },
+      {
+        "index": 1,
+        "seconds_a": 1458.3127147780033,
+        "seconds_b": 769.4635593900166,
+        "ratio": 1.8952329801479668,
+        "tokens_a": 198505,
+        "tokens_b": 195455,
+        "exact_work": false,
+        "different_requests": 37
+      },
+      {
+        "index": 2,
+        "seconds_a": 1463.2780639780103,
+        "seconds_b": 792.0144733790075,
+        "ratio": 1.8475395503003376,
+        "tokens_a": 198817,
+        "tokens_b": 209603,
+        "exact_work": false,
+        "different_requests": 36
+      },
+      {
+        "index": 3,
+        "seconds_a": 1457.2149092930194,
+        "seconds_b": 752.8346386530029,
+        "ratio": 1.9356374354669936,
+        "tokens_a": 196866,
+        "tokens_b": 198651,
+        "exact_work": false,
+        "different_requests": 37
+      },
+      {
+        "index": 4,
+        "seconds_a": 1468.8038215050183,
+        "seconds_b": 881.6643913890002,
+        "ratio": 1.6659443614264846,
+        "tokens_a": 198505,
+        "tokens_b": 233026,
+        "exact_work": false,
+        "different_requests": 33
+      },
+      {
+        "index": 5,
+        "seconds_a": 1466.0015718000068,
+        "seconds_b": 791.5767862890207,
+        "ratio": 1.8520017226285108,
+        "tokens_a": 198505,
+        "tokens_b": 208272,
+        "exact_work": false,
+        "different_requests": 35
+      }
+    ],
+    "missing": [],
+    "work_comparable": false,
+    "diagnostic_ratio_mean": 1.8270053672505704,
+    "diagnostic_paired_95_ci": [
+      1.7517906567648434,
+      1.893547017359795
+    ],
+    "performance_pass": false,
+    "interpretation": "DIAGNOSTIC_ONLY"
+  },
+  "capacity": {
+    "pairs": [
+      {
+        "index": 0,
+        "seconds_a": 764.9802067280107,
+        "seconds_b": 405.101974596997,
+        "ratio": 1.8883645469490176,
+        "tokens_a": 207617,
+        "tokens_b": 198411,
+        "exact_work": false,
+        "different_requests": 33
+      },
+      {
+        "index": 1,
+        "seconds_a": 788.8596687339887,
+        "seconds_b": 430.33757473298465,
+        "ratio": 1.8331182658717622,
+        "tokens_a": 205954,
+        "tokens_b": 207932,
+        "exact_work": false,
+        "different_requests": 36
+      },
+      {
+        "index": 2,
+        "seconds_a": 815.0623162320117,
+        "seconds_b": 408.0428503730218,
+        "ratio": 1.997491968029592,
+        "tokens_a": 215281,
+        "tokens_b": 195805,
+        "exact_work": false,
+        "different_requests": 39
+      },
+      {
+        "index": 3,
+        "seconds_a": 786.446612721018,
+        "seconds_b": 410.90490660700016,
+        "ratio": 1.9139382374744809,
+        "tokens_a": 205138,
+        "tokens_b": 199175,
+        "exact_work": false,
+        "different_requests": 35
+      },
+      {
+        "index": 4,
+        "seconds_a": 782.9673444509972,
+        "seconds_b": 418.15464982501,
+        "ratio": 1.872434862983479,
+        "tokens_a": 209069,
+        "tokens_b": 206268,
+        "exact_work": false,
+        "different_requests": 27
+      },
+      {
+        "index": 5,
+        "seconds_a": 755.0846292169881,
+        "seconds_b": 415.3936951890064,
+        "ratio": 1.8177565956397592,
+        "tokens_a": 199570,
+        "tokens_b": 207493,
+        "exact_work": false,
+        "different_requests": 34
+      }
+    ],
+    "missing": [],
+    "work_comparable": false,
+    "diagnostic_ratio_mean": 1.8871840794913484,
+    "diagnostic_paired_95_ci": [
+      1.8437581888259231,
+      1.9376183628341253
+    ],
+    "performance_pass": false,
+    "interpretation": "DIAGNOSTIC_ONLY"
+  }
+}

@@ -14,6 +14,17 @@ if logs:
     receipt=E/f'{name}_process.json'
     if receipt.exists():
         proc=json.loads(receipt.read_text());result.update(code=proc['code'],timed_out=proc['timed_out'],seconds=proc['seconds'])
+    if name.startswith('train_'):
+        steps=collections.Counter();published=[]
+        for path in (E/name/'worker_audit').glob('*.json'):
+            try:
+                value=json.loads(path.read_text())
+            except (OSError,json.JSONDecodeError):continue
+            if not isinstance(value,dict):continue
+            if value.get('event')=='actual_AdamW_step':steps[value['pid']]+=1
+            if value.get('event')=='publish_done':published.append(value['version'])
+        result['logical_updates_observed']=min(steps.values()) if len(steps)==8 else 0
+        result['published_versions_observed']=sorted(set(published))
     if name=='repeat_old_1':
         base={g['request_id']:g for g in json.loads((E/'repeat_old_0/capture.json').read_text())['generations']}
         files=list((E/name).glob('boundary-return-*.json'))

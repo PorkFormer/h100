@@ -1,0 +1,16 @@
+{
+  "vanilla": {
+    "status": "PASS",
+    "shadow_exact": true,
+    "replace_changed_advantage_rows": 4,
+    "replace_changed_gradient_shards": 8,
+    "natural_gradient_effect": "COVERED"
+  },
+  "gspo": {
+    "status": "PASS",
+    "shadow_exact": true,
+    "replace_changed_advantage_rows": 4,
+    "replace_changed_gradient_shards": 8,
+    "natural_gradient_effect": "COVERED"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "revision": "e3c4bb7150ebed1dcea383e386e2012532fbaf84",
+  "comparisons": {
+    "golden.json": {
+      "exact": true,
+      "sha256": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795"
+    },
+    "boundary_golden.json": {
+      "exact": true,
+      "sha256": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
+    }
+  },
+  "commands": [
+    [
+      "/usr/bin/python",
+      "/tmp/ncbr_scheduler_20260911/verl/tests/experimental/ncbr_portable/characterize.py",
+      "--root",
+      "/tmp/ncbr_scheduler_20260911",
+      "--output",
+      "scheduler_validation/evidence/cpu_release_audit_fix/golden.json"
+    ],
+    [
+      "/usr/bin/python",
+      "/tmp/ncbr_scheduler_20260911/verl/tests/experimental/ncbr_portable/characterize_boundaries.py",
+      "--root",
+      "/tmp/ncbr_scheduler_20260911",
+      "--output",
+      "scheduler_validation/evidence/cpu_release_audit_fix/boundary_golden.json"
+    ],
+    [
+      "/usr/bin/python",
+      "-c",
+      "import sys; sys.path.insert(0, '/tmp/ncbr_scheduler_20260911/verl'); import ray; ray.init=lambda *a,**k: (_ for _ in ()).throw(AssertionError('Ray initialization forbidden')); import pytest; raise SystemExit(pytest.main(['-q', '-p', 'no:cacheprovider', 'verl/tests/experimental/natural_continuation_boundary_return', 'verl/tests/experimental/ncbr_portable/test_standard_on_cpu.py', 'verl/tests/experimental/ncbr_portable/test_hook_on_cpu.py', 'verl/tests/experimental/probe_credit/test_dapo_trainer_on_cpu.py', 'verl/tests/experimental/probe_credit/test_dynamic_sampling_on_cpu.py']))"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "status": "PASS"
+}

@@ -1,0 +1,10 @@
+{
+  "work_conserving_4": {
+    "status": "PASS",
+    "exact_loss_input_and_gradient_files": 96
+  },
+  "work_conserving_8": {
+    "status": "PASS",
+    "exact_loss_input_and_gradient_files": 96
+  }
+}

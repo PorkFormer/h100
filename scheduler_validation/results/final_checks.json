@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "cases": 36,
+  "frozen_inputs": 28,
+  "model_files": 10,
+  "dependencies": {
+    "torch": "2.10.0+cu129",
+    "vllm": "0.18.0",
+    "ray": "2.54.1",
+    "transformers": "5.3.0",
+    "flash-attn": "2.8.3",
+    "tensordict": "0.10.0",
+    "numpy": "1.26.4",
+    "pyarrow": "23.0.1"
+  },
+  "production_sources": "exact against implementation plus failure-log audit fix",
+  "cases_without_owned_cleanup_receipt": [
+    "nccl_initial",
+    "actor_fixed_wave_4",
+    "actor_work_conserving_4",
+    "actor_work_conserving_8",
+    "repeat_old_0",
+    "repeat_old_1"
+  ]
+}

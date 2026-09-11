@@ -1,0 +1,302 @@
+[
+  {
+    "case": "train_dapo_vanilla_shadow_c4",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 1387.2768264329934,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 99,
+    "release_acks": 99,
+    "prefix_rows_verified": 32,
+    "effective_changed_rows": 0,
+    "peak_sampled_mib": [
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799
+    ]
+  },
+  {
+    "case": "train_dapo_vanilla_replace_c4",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 1147.0211851650092,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 87,
+    "release_acks": 87,
+    "prefix_rows_verified": 32,
+    "effective_changed_rows": 1,
+    "peak_sampled_mib": [
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799
+    ]
+  },
+  {
+    "case": "train_standard_gspo_replace_c4",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 984.7995515280054,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 67,
+    "release_acks": 67,
+    "prefix_rows_verified": 1024,
+    "effective_changed_rows": 3,
+    "peak_sampled_mib": [
+      21947,
+      21965,
+      22305,
+      21985,
+      22205,
+      21945,
+      21947,
+      22045
+    ]
+  },
+  {
+    "case": "train_dapo_vanilla_shadow_c8",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 896.5418071459862,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 110,
+    "release_acks": 110,
+    "prefix_rows_verified": 32,
+    "effective_changed_rows": 0,
+    "peak_sampled_mib": [
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799,
+      16799
+    ]
+  },
+  {
+    "case": "train_dapo_vanilla_replace_c8",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 970.9728417310107,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 104,
+    "release_acks": 104,
+    "prefix_rows_verified": 32,
+    "effective_changed_rows": 0,
+    "peak_sampled_mib": [
+      20629,
+      20007,
+      19451,
+      19191,
+      18909,
+      18589,
+      18529,
+      18475
+    ]
+  },
+  {
+    "case": "train_standard_gspo_replace_c8",
+    "actual_gpu_uuids": [
+      "13224194-671f-4694-0208-64e41496e535",
+      "2c086b8e-87c3-974c-c473-85d17b270814",
+      "64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+      "70988604-c711-e035-404f-63b5ea2558b0",
+      "773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+      "8018bbce-bfb7-cd66-71b5-aaebab242cac",
+      "e2686387-7def-f3a5-8105-d40cc8310f65",
+      "f7684add-78ef-b29f-5434-b5c11c3d41c6"
+    ],
+    "source_provenance_exact": true,
+    "status": "PASS",
+    "seconds": 766.0621914310032,
+    "logical_updates": 4,
+    "nonzero_changed_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "published": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "actually_served": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "requests": 52,
+    "release_acks": 52,
+    "prefix_rows_verified": 1024,
+    "effective_changed_rows": 1,
+    "peak_sampled_mib": [
+      22007,
+      16799,
+      16799,
+      16799,
+      21903,
+      21905,
+      16799,
+      16885
+    ]
+  }
+]
