@@ -31,7 +31,7 @@ python scheduler_validation/performance_report.py
 Every output name is exclusive. Preserve failed runs and use a new explicit name
 for retries. The manifest binds original saved data/model/dependencies; runners
 read prior artifacts and write only inside this independent checkout or a unique
-`/tmp/ncs_<case>` runtime directory. They never reset GPUs or stop shared Ray.
+`/tmp/ncs_<case-or-hash>` runtime directory. They never reset GPUs or stop shared Ray.
 Eight devices must be idle and pass fresh CUDA probes before every GPU launch.
 
 Performance protocol: two old repeats, then six pairs comparing fixed-wave 4 with

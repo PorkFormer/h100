@@ -1,0 +1,19 @@
+{
+  "revision": "b4077ebdbc50c1fb129a04570049eca15a584990",
+  "scope": "One failure-log argument includes prior slot-owner release errors; successful scheduling and cleanup barrier are unchanged.",
+  "first_failure": "evidence/release_receipt_before.log",
+  "validation": "evidence/cpu_release_audit_fix",
+  "cpu_tests": 216,
+  "characterizations": {
+    "golden.json": {
+      "exact": true,
+      "sha256": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795"
+    },
+    "boundary_golden.json": {
+      "exact": true,
+      "sha256": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
+    }
+  },
+  "runtime_sha256": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
+  "gpu_evidence_applicability": "Successful execution unchanged; existing exact frozen GPU actor comparisons remain applicable."
+}

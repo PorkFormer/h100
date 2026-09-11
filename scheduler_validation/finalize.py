@@ -20,7 +20,7 @@ for path in sorted(E.rglob('*')):
         artifacts[str(path.relative_to(R))]=dict(bytes=path.stat().st_size,sha256=sha(path))
 source={str(p.relative_to(R.parent)):sha(p) for p in R.glob('*.py')}
 record=dict(time=time.time(),revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=R,text=True).strip(),
-            implementation=json.loads((R/'source_manifest.json').read_text()),runner_files=source,artifacts=artifacts,
-            runtime_directories=[str(Path('/tmp')/('ncs_'+p.name.removesuffix('_process.json'))) for p in E.glob('*_process.json')])
+            implementation=json.loads((R/'source_manifest.json').read_text()),audit_fix=json.loads((R/'audit_fix_manifest.json').read_text()),runner_files=source,artifacts=artifacts,
+            runtime_directories=[json.loads(p.read_text()).get('runtime_directory', str(Path('/tmp')/('ncs_'+p.name.removesuffix('_process.json')))) for p in E.glob('*_process.json')])
 with (E/'final_manifest.json').open('x') as f:f.write(json.dumps(record,indent=2))
 print(f'Bound {len(artifacts)} raw evidence files')

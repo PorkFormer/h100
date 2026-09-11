@@ -8,7 +8,9 @@ with (E/f'{a.case}_gate.log').open('x') as f:
 uuids=subprocess.check_output(['nvidia-smi','--query-gpu=uuid','--format=csv,noheader'],text=True).splitlines()
 assert uuids==json.loads((R/'manifest.json').read_text())['uuid_order']
 cache=R/'cache'/a.case;cache.mkdir(parents=True,exist_ok=False)
-tmp=Path('/tmp')/('ncs_'+a.case);tmp.mkdir(exist_ok=False)
+import hashlib
+runtime_name=a.case if len(a.case)<=18 else hashlib.sha256((str(R)+a.case).encode()).hexdigest()[:12]
+tmp=Path('/tmp')/('ncs_'+runtime_name);tmp.mkdir(exist_ok=False)
 env=dict(os.environ,CUDA_VISIBLE_DEVICES=','.join(uuids),NCBR_UUID_COMPAT='1',
     PYTHONPATH=str(R.parent/'validation/compat')+':'+str(R.parent/'verl'),OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',
     PYTHONDONTWRITEBYTECODE='1',HF_HUB_OFFLINE='1',XDG_CACHE_HOME=str(cache),HF_HOME=str(cache/'hf'),
@@ -54,7 +56,7 @@ cleanup=cleanup_owned(tmp)
 (E/f'{a.case}_owned_cleanup.json').write_text(json.dumps(cleanup,indent=2))
 if (cleanup['remaining'] or cleanup['errors']) and code==0:code=1
 receipt=dict(command=cmd,pid=proc.pid,code=code,timed_out=timed_out,seconds=time.monotonic()-start,
-             peak_sampled_mib=peak,samples=samples,uuids=uuids)
+             peak_sampled_mib=peak,samples=samples,uuids=uuids,runtime_directory=str(tmp))
 (E/f'{a.case}_process.json').write_text(json.dumps(receipt,indent=2))
 print(json.dumps({k:v for k,v in receipt.items() if k!='samples'}),flush=True)
 sys.exit(0 if code==0 and not timed_out else 1)

@@ -9,7 +9,11 @@ The active shared checkout is unchanged. Default remains `fixed_wave`.
   cleanup failures and repeated cancellation. Tests were introduced before code;
   initial collection failure is preserved in `evidence/tests_before.log`.
 - Original 190 CPU tests and both unchanged frozen characterizations passed.
-  Complete count: 215 passed, plus 4 independent runner gate/ownership tests.
+  Complete count: 216 passed, plus 4 independent runner gate/ownership tests.
+- Failure-receipt audit fix: prior slot-owner release errors are now included in
+  the aggregate error count. The barrier already failed closed. First failing
+  test and 216-test/two-characterization rerun are retained; successful scheduling
+  and actor inputs are unchanged (`audit_fix_manifest.json`).
 - Frozen 2048-row pool (78 continuations) and real natural-correction batch
   (17 continuations) pass exact old-4/new-4/new-8 replay for off/shadow/replace.
   Requests/calls, token/masks, raw/effective rewards, filter order, all actor tensors
@@ -23,7 +27,11 @@ The active shared checkout is unchanged. Default remains `fixed_wave`.
   All three variants pass their own eight-rank repeated-gradient checks.
   The real 0-to-1 event changes 4 advantage rows and all 8 gradient shards for
   both vanilla and GSPO; shadow remains exactly equal to off.
-- Six paired scheduler and six paired capacity comparisons: RUNNING/PENDING.
+- Both real old-scheduler repeats completed: 196866 versus 198676 tokens, with
+  2/78 differing requests (first evidence:
+  `evidence/old_repeat_first_difference.json`). Timings therefore remain
+  DIAGNOSTIC_ONLY; numerical determinism settings and tolerances are unchanged.
+  Six paired scheduler and six paired capacity comparisons are still RUNNING/PENDING.
 - Six four-update trainer cases: PENDING; no integration PASS claimed yet.
 
 The first old repeat was launched before the runner moved load-balancer readiness
