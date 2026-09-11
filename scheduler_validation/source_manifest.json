@@ -1,0 +1,14 @@
+{
+  "base": "c557509845f5aacbde9b990ba9157b66502a294b",
+  "implementation": "51255bae1c9f37b0ad0dfde6f273e475c665b616",
+  "files": {
+    "verl/tests/experimental/natural_continuation_boundary_return/test_scheduler_on_cpu.py": "40f94714e6d34d0df27d581d1b2d43c19730885c5d73c84f42fc1a1bdedc1baa",
+    "verl/verl/experimental/natural_continuation_boundary_return/runtime.py": "f2ce0ae6d3645b3ceae745b2dec7cce0efa880dc0b81b4d5888c449e3c197cb2",
+    "verl/verl/experimental/natural_continuation_boundary_return/scheduler.py": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
+    "verl/verl/trainer/config/rollout/rollout.yaml": "0a9ab97394c1c4270b14f25d903027bb4aab3652e448b3c62e8b4f206d87d485",
+    "verl/verl/workers/config/rollout.py": "d79bc4e680a14c25a5ffa9c327413248a34642cd2f6b5ed3bc5b14b6883eb54d"
+  },
+  "cpu_tests": 215,
+  "characterizations": "exact",
+  "scheduler_default": "fixed_wave"
+}
