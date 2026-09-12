@@ -1,0 +1,134 @@
+{
+  "status": "PASS",
+  "completed_at": "2026-09-12T08:50:55.621293+00:00",
+  "removed": [
+    {
+      "path": "/tmp/ncbr_scheduler_20260911/scheduler_validation_next/cache",
+      "logical_bytes": 141858276
+    },
+    {
+      "path": "/tmp/ncbr_scheduler_20260911/scheduler_validation_next/__pycache__",
+      "logical_bytes": 115937
+    },
+    {
+      "path": "/tmp/ncs_09d8d6a56392",
+      "logical_bytes": 1214195
+    },
+    {
+      "path": "/tmp/ncs_12c42f154900",
+      "logical_bytes": 1002458
+    },
+    {
+      "path": "/tmp/ncs_278de6de3a23",
+      "logical_bytes": 1855064
+    },
+    {
+      "path": "/tmp/ncs_2ab0f634785e",
+      "logical_bytes": 1856219
+    },
+    {
+      "path": "/tmp/ncs_349d8d553c9b",
+      "logical_bytes": 981189
+    },
+    {
+      "path": "/tmp/ncs_35ae1fe2e062",
+      "logical_bytes": 1215061
+    },
+    {
+      "path": "/tmp/ncs_3758489aef85",
+      "logical_bytes": 1213465
+    },
+    {
+      "path": "/tmp/ncs_431f0cc44215",
+      "logical_bytes": 1858106
+    },
+    {
+      "path": "/tmp/ncs_45a8c88c30df",
+      "logical_bytes": 998762
+    },
+    {
+      "path": "/tmp/ncs_489bffdf1029",
+      "logical_bytes": 772772
+    },
+    {
+      "path": "/tmp/ncs_58aed4acce45",
+      "logical_bytes": 999510
+    },
+    {
+      "path": "/tmp/ncs_6439f51fdabc",
+      "logical_bytes": 1216978
+    },
+    {
+      "path": "/tmp/ncs_82c34d525f3e",
+      "logical_bytes": 771724
+    },
+    {
+      "path": "/tmp/ncs_8ae02ae22749",
+      "logical_bytes": 1856487
+    },
+    {
+      "path": "/tmp/ncs_8ff623611c9f",
+      "logical_bytes": 999086
+    },
+    {
+      "path": "/tmp/ncs_9fe37d5f14aa",
+      "logical_bytes": 1214695
+    },
+    {
+      "path": "/tmp/ncs_ab2430dc236c",
+      "logical_bytes": 1216230
+    },
+    {
+      "path": "/tmp/ncs_b04756c50494",
+      "logical_bytes": 1215075
+    },
+    {
+      "path": "/tmp/ncs_cb37740a9672",
+      "logical_bytes": 998935
+    },
+    {
+      "path": "/tmp/ncs_collect_v1",
+      "logical_bytes": 6034996
+    },
+    {
+      "path": "/tmp/ncs_e7f1d8a4288f",
+      "logical_bytes": 1215593
+    },
+    {
+      "path": "/tmp/ncs_ea7bfbba262c",
+      "logical_bytes": 1214373
+    },
+    {
+      "path": "/tmp/ncs_f05053aff96d",
+      "logical_bytes": 1193188
+    },
+    {
+      "path": "/tmp/ncs_sweep_c128",
+      "logical_bytes": 770510
+    },
+    {
+      "path": "/tmp/ncs_sweep_c16",
+      "logical_bytes": 1618617
+    },
+    {
+      "path": "/tmp/ncs_sweep_c32",
+      "logical_bytes": 1195788
+    },
+    {
+      "path": "/tmp/ncs_sweep_c64",
+      "logical_bytes": 977485
+    },
+    {
+      "path": "/tmp/ncs_sweep_c8",
+      "logical_bytes": 2480658
+    }
+  ],
+  "removed_logical_bytes": 182131432,
+  "runtime_archive": "/tmp/ncbr_scheduler_publish_20260912/completed_runtime_logs.tar.gz",
+  "runtime_archive_sha256": "40631fb97df07052aec98f3946106a9f18a6b861810d13c158c816fba17e6849",
+  "archived_runtime_files": 4312,
+  "sealed_files_preserved": 6274,
+  "first_failures_preserved": true,
+  "report_and_email_receipts_preserved": true,
+  "processes_killed": false
+}

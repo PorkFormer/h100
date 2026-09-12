@@ -1,0 +1,27 @@
+{
+  "verl/tests/experimental/natural_continuation_boundary_return/test_scheduler_on_cpu.py": {
+    "actual": "f886b484dbf81ce0d25045865af7ed45c633713c861909d3f2199d270309880b",
+    "expected": "40f94714e6d34d0df27d581d1b2d43c19730885c5d73c84f42fc1a1bdedc1baa",
+    "match": false
+  },
+  "verl/verl/experimental/natural_continuation_boundary_return/runtime.py": {
+    "actual": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
+    "expected": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
+    "match": true
+  },
+  "verl/verl/experimental/natural_continuation_boundary_return/scheduler.py": {
+    "actual": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
+    "expected": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
+    "match": true
+  },
+  "verl/verl/trainer/config/rollout/rollout.yaml": {
+    "actual": "0a9ab97394c1c4270b14f25d903027bb4aab3652e448b3c62e8b4f206d87d485",
+    "expected": "0a9ab97394c1c4270b14f25d903027bb4aab3652e448b3c62e8b4f206d87d485",
+    "match": true
+  },
+  "verl/verl/workers/config/rollout.py": {
+    "actual": "d79bc4e680a14c25a5ffa9c327413248a34642cd2f6b5ed3bc5b14b6883eb54d",
+    "expected": "d79bc4e680a14c25a5ffa9c327413248a34642cd2f6b5ed3bc5b14b6883eb54d",
+    "match": true
+  }
+}

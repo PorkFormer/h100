@@ -1,0 +1,12 @@
+{
+  "report_sha256": "b1ecd83a65eaa33a34427d10aa8e440cde5aa0dbac436e2543e93baea2ee7d9a",
+  "sealed_manifest_sha256": "acfc7f061db8cf8c3e3f8b5db53f7da5390229bcec09b1f4a56b298e0a643844",
+  "input_bundle_sha256": "854cc174794339f8175f8f36e90e2522061c668e89437dc57b111f7c4a488008",
+  "inputs": {
+    "workload.json": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+    "prompts.jsonl": "b452caf9656bcf792bde7a1a9b2b4ac61ef302e043de203bfa2f4a323f6618b5"
+  },
+  "raw_evidence_root": "/tmp/ncbr_scheduler_20260911/scheduler_validation_next/evidence",
+  "raw_evidence_in_git": false,
+  "preserved_sealed_files": 6274
+}

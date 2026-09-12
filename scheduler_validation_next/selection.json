@@ -1,0 +1,1127 @@
+{
+  "C_sat": 128,
+  "high_load": 128,
+  "comparison_concurrencies": [
+    64,
+    128
+  ],
+  "additional_bracket": true,
+  "rule": "Lowest successful concurrency at >=95% maximum observed decode throughput; all selected instances audited; latency and HBM are reported for manual stability assessment",
+  "sweep": [
+    {
+      "status": "PASS",
+      "scheduler": "work_conserving",
+      "concurrency": 8,
+      "startup_seconds": 82.36467745699338,
+      "warmup_seconds": 2.2664456350030378,
+      "continuation_seconds": 533.1570518850058,
+      "epoch_start": 1789181929.6289375,
+      "epoch_end": 1789182462.7859893,
+      "monotonic_start": 175788.43477056,
+      "request_count": 128,
+      "natural": false,
+      "workload_sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+      "prefill_tokens": 282624,
+      "batch_size": 256,
+      "tokens": 281580,
+      "cleanup": "drain_and_release_ack",
+      "case": "sweep_c8",
+      "audit": "PASS",
+      "eligibility_signature": "ef778380aee74ae5c2461141608037c5a11d7e6dbf4dc3a405f7e7a396f6eec5",
+      "request_per_second": 0.24007935288007357,
+      "decoded_tokens_per_second": 528.1370639372743,
+      "total_tokens_per_second": 1058.2322750964768,
+      "seconds_per_request": 4.165289467851608,
+      "seconds_per_1k_decode": 1.8934478723098436,
+      "seconds_per_1k_total": 0.9449721233543289,
+      "active_mean": 7.747460634131995,
+      "active_p50": 8.0,
+      "active_p90": 8.0,
+      "slot_mean": 7.7480175859155755,
+      "slot_utilization": 0.9685021982394469,
+      "idle_slot_seconds": 134.34620102011831,
+      "pending_idle_slot_seconds": 0.45310543198138475,
+      "pending_but_idle_wall_seconds": 0.08265475605730899,
+      "admission_queue_request_seconds": 28501.821680032997,
+      "HOL_request_seconds": 0.08152512580272742,
+      "release_request_seconds": 0.21541764517314732,
+      "dispatch_request_seconds": 0.3289331590058282,
+      "request_latency_p90": 85.96545429709367,
+      "gpu_util_mean": 37.448122529644266,
+      "gpu_util_per_device_mean": [
+        38.37154150197628,
+        37.03162055335969,
+        38.462450592885375,
+        38.25296442687747,
+        37.34782608695652,
+        37.27272727272727,
+        37.77075098814229,
+        35.07509881422925
+      ],
+      "gpu_util_per_device_p50": [
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0
+      ],
+      "gpu_util_per_device_p90": [
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        40.0
+      ],
+      "peak_sampled_mib": [
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773
+      ],
+      "length_quantiles": [
+        18.0,
+        562.5,
+        1403.5,
+        3445.5,
+        5895.0,
+        6144.0,
+        6144.0
+      ],
+      "engine_timing": {
+        "continuation_queue": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_prefill_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_decode_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_cleanup_release": {
+          "available": true,
+          "count": 128,
+          "request_seconds": 0.22725264509790577
+        }
+      },
+      "dispatch_gap_p50": 2.3991984110034537,
+      "dispatch_gap_p90": 9.341725162009244,
+      "dispatch_gap_max": 21.11795936198905,
+      "observed_per_service_active_mean": {
+        "0": 0.9674862943261284,
+        "1": 0.9371563885190267,
+        "2": 0.9680987751078516,
+        "3": 0.971200081635042,
+        "4": 0.973039151547837,
+        "5": 1.0258032931896621,
+        "6": 0.9816786325258302,
+        "7": 0.9223810636872196
+      },
+      "active_engine_mapping": [
+        {
+          "pid": 863649,
+          "cuda_visible": "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863651,
+          "cuda_visible": "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863650,
+          "cuda_visible": "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863652,
+          "cuda_visible": "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863654,
+          "cuda_visible": "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863656,
+          "cuda_visible": "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863653,
+          "cuda_visible": "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        },
+        {
+          "pid": 863655,
+          "cuda_visible": "GPU-13224194-671f-4694-0208-64e41496e535",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "76978f6091df1f45818ed758d0f53de96566dad546c74716e8824862"
+        }
+      ]
+    },
+    {
+      "status": "PASS",
+      "scheduler": "work_conserving",
+      "concurrency": 16,
+      "startup_seconds": 81.84813026801567,
+      "warmup_seconds": 2.2825300629774574,
+      "continuation_seconds": 300.8045297880017,
+      "epoch_start": 1789182590.4314978,
+      "epoch_end": 1789182891.2360277,
+      "monotonic_start": 176449.237330424,
+      "request_count": 128,
+      "natural": false,
+      "workload_sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+      "prefill_tokens": 282624,
+      "batch_size": 256,
+      "tokens": 281580,
+      "cleanup": "drain_and_release_ack",
+      "case": "sweep_c16",
+      "audit": "PASS",
+      "eligibility_signature": "20383c04a65109920c5db26e30c607651d81455f3b65e6c12cc7d4cffcd31091",
+      "request_per_second": 0.42552550684728946,
+      "decoded_tokens_per_second": 936.089626703592,
+      "total_tokens_per_second": 1875.649945822407,
+      "seconds_per_request": 2.350035388968763,
+      "seconds_per_1k_decode": 1.0682737757937413,
+      "seconds_per_1k_total": 0.533148523916884,
+      "active_mean": 14.4524726060216,
+      "active_p50": 16.0,
+      "active_p90": 16.0,
+      "slot_mean": 14.453461591543721,
+      "slot_utilization": 0.9033413494714826,
+      "idle_slot_seconds": 465.20575875477516,
+      "pending_idle_slot_seconds": 0.9495349589851685,
+      "pending_but_idle_wall_seconds": 0.09114467186736874,
+      "admission_queue_request_seconds": 13073.149589014298,
+      "HOL_request_seconds": 0.08670754087506793,
+      "release_request_seconds": 0.21078378407401033,
+      "dispatch_request_seconds": 0.5617757222498767,
+      "request_latency_p90": 88.66872727740555,
+      "gpu_util_mean": 37.816901408450704,
+      "gpu_util_per_device_mean": [
+        39.16901408450704,
+        38.53521126760563,
+        35.75352112676056,
+        37.29577464788732,
+        39.71830985915493,
+        39.514084507042256,
+        39.640845070422536,
+        32.90845070422535
+      ],
+      "gpu_util_per_device_p50": [
+        40.0,
+        40.0,
+        40.0,
+        39.0,
+        40.0,
+        40.0,
+        40.0,
+        39.0
+      ],
+      "gpu_util_per_device_p90": [
+        40.0,
+        40.0,
+        40.0,
+        40.0,
+        41.0,
+        41.0,
+        41.0,
+        40.0
+      ],
+      "peak_sampled_mib": [
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773
+      ],
+      "length_quantiles": [
+        18.0,
+        562.5,
+        1403.5,
+        3445.5,
+        5895.0,
+        6144.0,
+        6144.0
+      ],
+      "engine_timing": {
+        "continuation_queue": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_prefill_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_decode_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_cleanup_release": {
+          "available": true,
+          "count": 128,
+          "request_seconds": 0.22458429503603838
+        }
+      },
+      "dispatch_gap_p50": 1.3738920580071863,
+      "dispatch_gap_p90": 3.853673546202481,
+      "dispatch_gap_max": 10.74045097400085,
+      "observed_per_service_active_mean": {
+        "0": 1.9157108935067744,
+        "1": 1.8356823834608684,
+        "2": 1.7461043020667812,
+        "3": 1.7955595010080996,
+        "4": 1.8436131603265438,
+        "5": 1.9920977450913355,
+        "6": 1.7267708027866941,
+        "7": 1.5950662404389961
+      },
+      "active_engine_mapping": [
+        {
+          "pid": 871960,
+          "cuda_visible": "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871961,
+          "cuda_visible": "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871962,
+          "cuda_visible": "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871963,
+          "cuda_visible": "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871964,
+          "cuda_visible": "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871965,
+          "cuda_visible": "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871966,
+          "cuda_visible": "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        },
+        {
+          "pid": 871967,
+          "cuda_visible": "GPU-13224194-671f-4694-0208-64e41496e535",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "d6edb60e0d75e9b5a067024d217b4e28dae6e64859815aed446ecd6f"
+        }
+      ]
+    },
+    {
+      "status": "PASS",
+      "scheduler": "work_conserving",
+      "concurrency": 32,
+      "startup_seconds": 80.19401942397235,
+      "warmup_seconds": 2.287273969006492,
+      "continuation_seconds": 191.20913842899608,
+      "epoch_start": 1789183017.2123635,
+      "epoch_end": 1789183208.4215019,
+      "monotonic_start": 176876.018194822,
+      "request_count": 128,
+      "natural": false,
+      "workload_sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+      "prefill_tokens": 282624,
+      "batch_size": 256,
+      "tokens": 281580,
+      "cleanup": "drain_and_release_ack",
+      "case": "sweep_c32",
+      "audit": "PASS",
+      "eligibility_signature": "c4f8c9792bfbaad138b9800413d1bc2a49a1fc3e42527d98d9d323b2aebfc7fe",
+      "request_per_second": 0.6694240717345825,
+      "decoded_tokens_per_second": 1472.628360304873,
+      "total_tokens_per_second": 2950.7167106948314,
+      "seconds_per_request": 1.493821393976532,
+      "seconds_per_1k_decode": 0.6790579530825914,
+      "seconds_per_1k_total": 0.3389007139775615,
+      "active_mean": 22.958684504072693,
+      "active_p50": 32.0,
+      "active_p90": 32.0,
+      "slot_mean": 22.96024858416558,
+      "slot_utilization": 0.7175077682551744,
+      "idle_slot_seconds": 1728.4830798339972,
+      "pending_idle_slot_seconds": 2.077026397717418,
+      "pending_but_idle_wall_seconds": 0.11321059407782741,
+      "admission_queue_request_seconds": 4865.633359158499,
+      "HOL_request_seconds": 0.09959186107153073,
+      "release_request_seconds": 0.1994745459232945,
+      "dispatch_request_seconds": 1.1822945188905578,
+      "request_latency_p90": 90.76382892119581,
+      "gpu_util_mean": 37.129120879120876,
+      "gpu_util_per_device_mean": [
+        34.10989010989011,
+        40.395604395604394,
+        31.846153846153847,
+        42.1978021978022,
+        39.57142857142857,
+        33.16483516483517,
+        38.120879120879124,
+        37.62637362637363
+      ],
+      "gpu_util_per_device_p50": [
+        40.0,
+        40.0,
+        41.0,
+        41.0,
+        40.0,
+        40.0,
+        40.0,
+        42.0
+      ],
+      "gpu_util_per_device_p90": [
+        44.0,
+        45.0,
+        44.0,
+        45.0,
+        45.0,
+        42.0,
+        43.0,
+        47.0
+      ],
+      "peak_sampled_mib": [
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773
+      ],
+      "length_quantiles": [
+        18.0,
+        562.5,
+        1403.5,
+        3445.5,
+        5895.0,
+        6144.0,
+        6144.0
+      ],
+      "engine_timing": {
+        "continuation_queue": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_prefill_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_decode_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_cleanup_release": {
+          "available": true,
+          "count": 128,
+          "request_seconds": 0.21367764583555982
+        }
+      },
+      "dispatch_gap_p50": 0.5596865709812846,
+      "dispatch_gap_p90": 1.7978923155926176,
+      "dispatch_gap_max": 8.832930726988707,
+      "observed_per_service_active_mean": {
+        "0": 2.756699913261155,
+        "1": 2.984335550013109,
+        "2": 2.6460258587736534,
+        "3": 3.201446511162461,
+        "4": 2.943396372171855,
+        "5": 2.66953454877171,
+        "6": 2.951158742664469,
+        "7": 2.799903754044708
+      },
+      "active_engine_mapping": [
+        {
+          "pid": 879202,
+          "cuda_visible": "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879204,
+          "cuda_visible": "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879203,
+          "cuda_visible": "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879205,
+          "cuda_visible": "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879206,
+          "cuda_visible": "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879207,
+          "cuda_visible": "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879208,
+          "cuda_visible": "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        },
+        {
+          "pid": 879210,
+          "cuda_visible": "GPU-13224194-671f-4694-0208-64e41496e535",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "b65a2152000fae3f04cf5484ae4227a7719898875c595ccadb279e7b"
+        }
+      ]
+    },
+    {
+      "status": "PASS",
+      "scheduler": "work_conserving",
+      "concurrency": 64,
+      "startup_seconds": 83.11072519098525,
+      "warmup_seconds": 2.316720025992254,
+      "continuation_seconds": 122.19893244098057,
+      "epoch_start": 1789183337.4956293,
+      "epoch_end": 1789183459.6945617,
+      "monotonic_start": 177196.301462116,
+      "request_count": 128,
+      "natural": false,
+      "workload_sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+      "prefill_tokens": 282624,
+      "batch_size": 256,
+      "tokens": 281580,
+      "cleanup": "drain_and_release_ack",
+      "case": "sweep_c64",
+      "audit": "PASS",
+      "eligibility_signature": "060099f409057cb53cd3103a4289fa520e6ccd65837c2ca741cf0f5268139e1b",
+      "request_per_second": 1.0474723260108776,
+      "decoded_tokens_per_second": 2304.2754496729913,
+      "total_tokens_per_second": 4617.094345505009,
+      "seconds_per_request": 0.9546791596951607,
+      "seconds_per_1k_decode": 0.4339758947403245,
+      "seconds_per_1k_total": 0.21658643405750502,
+      "active_mean": 36.2058000997749,
+      "active_p50": 38.0,
+      "active_p90": 64.0,
+      "slot_mean": 36.207803654495635,
+      "slot_utilization": 0.5657469321014943,
+      "idle_slot_seconds": 3396.1767236107553,
+      "pending_idle_slot_seconds": 4.978741172351874,
+      "pending_but_idle_wall_seconds": 0.11621761211426929,
+      "admission_queue_request_seconds": 989.7575400525529,
+      "HOL_request_seconds": 0.08150272603961639,
+      "release_request_seconds": 0.16332952192169614,
+      "dispatch_request_seconds": 2.413760477822507,
+      "request_latency_p90": 91.02746678999684,
+      "gpu_util_mean": 39.706896551724135,
+      "gpu_util_per_device_mean": [
+        43.43103448275862,
+        38.758620689655174,
+        36.172413793103445,
+        44.206896551724135,
+        37.224137931034484,
+        32.39655172413793,
+        36.87931034482759,
+        48.58620689655172
+      ],
+      "gpu_util_per_device_p50": [
+        46.0,
+        48.0,
+        44.0,
+        46.0,
+        44.0,
+        40.0,
+        46.0,
+        49.0
+      ],
+      "gpu_util_per_device_p90": [
+        50.0,
+        51.300000000000004,
+        49.300000000000004,
+        49.0,
+        48.0,
+        49.0,
+        50.300000000000004,
+        51.0
+      ],
+      "peak_sampled_mib": [
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773
+      ],
+      "length_quantiles": [
+        18.0,
+        562.5,
+        1403.5,
+        3445.5,
+        5895.0,
+        6144.0,
+        6144.0
+      ],
+      "engine_timing": {
+        "continuation_queue": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_prefill_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_decode_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_cleanup_release": {
+          "available": true,
+          "count": 128,
+          "request_seconds": 0.17391102784313262
+        }
+      },
+      "dispatch_gap_p50": 0.026778928993735462,
+      "dispatch_gap_p90": 0.8064781926048454,
+      "dispatch_gap_max": 1.9323533569986466,
+      "observed_per_service_active_mean": {
+        "0": 4.855182262035196,
+        "1": 4.729885919921442,
+        "2": 4.10063767864784,
+        "3": 4.814701066894927,
+        "4": 3.921831271394487,
+        "5": 3.377503879875494,
+        "6": 4.363908748012924,
+        "7": 6.0223965596946325
+      },
+      "active_engine_mapping": [
+        {
+          "pid": 885943,
+          "cuda_visible": "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885945,
+          "cuda_visible": "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885944,
+          "cuda_visible": "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885947,
+          "cuda_visible": "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885948,
+          "cuda_visible": "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885946,
+          "cuda_visible": "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885949,
+          "cuda_visible": "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        },
+        {
+          "pid": 885950,
+          "cuda_visible": "GPU-13224194-671f-4694-0208-64e41496e535",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "4c42af6a03f87324735ec9c258e1e40e677c0a01e4f4d378253bd32c"
+        }
+      ]
+    },
+    {
+      "status": "PASS",
+      "scheduler": "work_conserving",
+      "concurrency": 128,
+      "startup_seconds": 80.38382315900526,
+      "warmup_seconds": 2.275688976980746,
+      "continuation_seconds": 97.63073498898302,
+      "epoch_start": 1789183584.4635944,
+      "epoch_end": 1789183682.0943294,
+      "monotonic_start": 177443.269427126,
+      "request_count": 128,
+      "natural": false,
+      "workload_sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+      "prefill_tokens": 282624,
+      "batch_size": 256,
+      "tokens": 281580,
+      "cleanup": "drain_and_release_ack",
+      "case": "sweep_c128",
+      "audit": "PASS",
+      "eligibility_signature": "be7374a392a0558cff98cecc8345627820929167c9d61d5995dbedd1aba5db09",
+      "request_per_second": 1.3110625461791714,
+      "decoded_tokens_per_second": 2884.1327480713367,
+      "total_tokens_per_second": 5778.958850034947,
+      "seconds_per_request": 0.7627401171014299,
+      "seconds_per_1k_decode": 0.3467246785602067,
+      "seconds_per_1k_total": 0.17304155055437928,
+      "active_mean": 45.54576702287279,
+      "active_p50": 39.0,
+      "active_p90": 93.0,
+      "slot_mean": 45.54860513223597,
+      "slot_utilization": 0.3558484775955935,
+      "idle_slot_seconds": 8049.790281806665,
+      "pending_idle_slot_seconds": 11.897227456473047,
+      "pending_but_idle_wall_seconds": 0.12852433399530128,
+      "admission_queue_request_seconds": 11.897227456473047,
+      "HOL_request_seconds": 0.07865351211512461,
+      "release_request_seconds": 0.19843319099163637,
+      "dispatch_request_seconds": 7.830458140873816,
+      "request_latency_p90": 92.57457691860327,
+      "gpu_util_mean": 46.16111111111111,
+      "gpu_util_per_device_mean": [
+        45.8,
+        49.022222222222226,
+        50.577777777777776,
+        49.22222222222222,
+        45.08888888888889,
+        43.48888888888889,
+        50.266666666666666,
+        35.82222222222222
+      ],
+      "gpu_util_per_device_p50": [
+        47.0,
+        51.0,
+        53.0,
+        51.0,
+        43.0,
+        44.0,
+        50.0,
+        40.0
+      ],
+      "gpu_util_per_device_p90": [
+        52.0,
+        52.6,
+        56.0,
+        53.6,
+        51.6,
+        51.6,
+        56.6,
+        50.6
+      ],
+      "peak_sampled_mib": [
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773,
+        14773
+      ],
+      "length_quantiles": [
+        18.0,
+        562.5,
+        1403.5,
+        3445.5,
+        5895.0,
+        6144.0,
+        6144.0
+      ],
+      "engine_timing": {
+        "continuation_queue": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_prefill_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_decode_engine": {
+          "available": false,
+          "count": 0,
+          "request_seconds": null
+        },
+        "continuation_cleanup_release": {
+          "available": true,
+          "count": 128,
+          "request_seconds": 0.20884847408160567
+        }
+      },
+      "dispatch_gap_p50": 0.0004724710015580058,
+      "dispatch_gap_p90": 0.0010018028202466668,
+      "dispatch_gap_max": 0.0030621649930253625,
+      "observed_per_service_active_mean": {
+        "0": 5.101290347083368,
+        "1": 6.030066118404679,
+        "2": 7.568732577281303,
+        "3": 6.5281677003861915,
+        "4": 4.946150107438264,
+        "5": 5.194353417387651,
+        "6": 6.77875254065881,
+        "7": 3.3180493674518647
+      },
+      "active_engine_mapping": [
+        {
+          "pid": 892404,
+          "cuda_visible": "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892405,
+          "cuda_visible": "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892406,
+          "cuda_visible": "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892407,
+          "cuda_visible": "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892408,
+          "cuda_visible": "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892410,
+          "cuda_visible": "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892409,
+          "cuda_visible": "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        },
+        {
+          "pid": 892411,
+          "cuda_visible": "GPU-13224194-671f-4694-0208-64e41496e535",
+          "modules": {
+            "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+            "verl": "/tmp/ncbr_scheduler_20260911/verl/verl/__init__.py",
+            "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+            "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py"
+          },
+          "tp": 1,
+          "node_id": "40cce02f5d21854e4ddd4efe21d7d9c7b5963d4e9754217cd9bfb1d1"
+        }
+      ]
+    }
+  ]
+}

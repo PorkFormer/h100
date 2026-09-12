@@ -1,0 +1,9 @@
+{
+  "post_final_check_log_close": true,
+  "changed_since_preliminary_binding": [
+    "RESULTS.md",
+    "evidence/final_checks.log",
+    "report.py"
+  ],
+  "reason": "Final check stdout closes after its preliminary manifest is written; final seal binds closed logs and final reporting files."
+}

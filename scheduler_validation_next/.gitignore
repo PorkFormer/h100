@@ -1,0 +1,10 @@
+# Large raw evidence and reconstructible runtime state stay local.
+/evidence/
+/cache/
+__pycache__/
+*.py[cod]
+# Exact inputs are distributed in results/frozen_inputs.tar.gz.
+/workload.json
+/prompts.jsonl
+# Redundant full sweep dump; selection.json and results/instances.json retain metrics.
+/sweep.json

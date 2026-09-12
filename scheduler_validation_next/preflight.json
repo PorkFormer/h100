@@ -1,0 +1,73 @@
+{
+  "hostname": "p-kt-dgx-a100-05",
+  "branch": "perf/continuation-scheduler",
+  "sha": "d7a0f810c678f2b20c55085dca182a109fdd500a",
+  "diff": "",
+  "CUDA_VISIBLE_DEVICES": null,
+  "validated_source": {
+    "verl/tests/experimental/natural_continuation_boundary_return/test_scheduler_on_cpu.py": {
+      "actual": "f886b484dbf81ce0d25045865af7ed45c633713c861909d3f2199d270309880b",
+      "expected": "40f94714e6d34d0df27d581d1b2d43c19730885c5d73c84f42fc1a1bdedc1baa",
+      "match": false
+    },
+    "verl/verl/experimental/natural_continuation_boundary_return/runtime.py": {
+      "actual": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
+      "expected": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
+      "match": true
+    },
+    "verl/verl/experimental/natural_continuation_boundary_return/scheduler.py": {
+      "actual": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
+      "expected": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
+      "match": true
+    },
+    "verl/verl/trainer/config/rollout/rollout.yaml": {
+      "actual": "0a9ab97394c1c4270b14f25d903027bb4aab3652e448b3c62e8b4f206d87d485",
+      "expected": "0a9ab97394c1c4270b14f25d903027bb4aab3652e448b3c62e8b4f206d87d485",
+      "match": true
+    },
+    "verl/verl/workers/config/rollout.py": {
+      "actual": "d79bc4e680a14c25a5ffa9c327413248a34642cd2f6b5ed3bc5b14b6883eb54d",
+      "expected": "d79bc4e680a14c25a5ffa9c327413248a34642cd2f6b5ed3bc5b14b6883eb54d",
+      "match": true
+    }
+  },
+  "model": "/workspace/models/Qwen3-1.7B-Base",
+  "model_sha256": {
+    ".gitattributes": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+    "LICENSE": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+    "README.md": "579b9d7052fa567f439114f01feceed2b06f47d830d06c8ac829f389fd2e39a4",
+    "config.json": "1bb33a92c3548fbc68b889b490e810440435253598835bd71dff0396060c12db",
+    "generation_config.json": "8c970692323e3ea0e9b8b0a4dca79388d31226e41f83c9fd6014804280ebf6e8",
+    "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+    "model.safetensors": "6df85b39330e5a425ee36253d0f894e4387e4f0a15b9c53cb467d668e6b3a841",
+    "tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+    "tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+    "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  },
+  "dependencies": {
+    "torch": "2.10.0+cu129",
+    "vllm": "0.18.0",
+    "ray": "2.54.1",
+    "transformers": "5.3.0",
+    "flash-attn": "2.8.3",
+    "tensordict": "0.10.0",
+    "numpy": "1.26.4",
+    "pyarrow": "23.0.1"
+  },
+  "modules": {
+    "torch": "/usr/local/lib/python3.12/dist-packages/torch/__init__.py",
+    "ray": "/usr/local/lib/python3.12/dist-packages/ray/__init__.py",
+    "vllm": "/usr/local/lib/python3.12/dist-packages/vllm/__init__.py",
+    "transformers": "/usr/local/lib/python3.12/dist-packages/transformers/__init__.py"
+  },
+  "uuid_order": [
+    "GPU-f7684add-78ef-b29f-5434-b5c11c3d41c6",
+    "GPU-e2686387-7def-f3a5-8105-d40cc8310f65",
+    "GPU-2c086b8e-87c3-974c-c473-85d17b270814",
+    "GPU-64c5e803-7e61-0d9b-acbf-9ad0483a3059",
+    "GPU-70988604-c711-e035-404f-63b5ea2558b0",
+    "GPU-773d1baa-6d1f-5034-12f7-9f3c25506c0d",
+    "GPU-8018bbce-bfb7-cd66-71b5-aaebab242cac",
+    "GPU-13224194-671f-4694-0208-64e41496e535"
+  ]
+}

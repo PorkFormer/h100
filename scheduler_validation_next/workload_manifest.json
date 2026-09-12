@@ -1,0 +1,21 @@
+{
+  "count": 256,
+  "unique_count": 256,
+  "sha256": "000dce9a4848680205605cf0251dff5ecc1e86e01bc5c2138d1902fc844c3ba6",
+  "all_collected": 279,
+  "selection": "First 256 in deterministic prompt then branch order; complete raw batches retained",
+  "prompts_sha256": "b452caf9656bcf792bde7a1a9b2b4ac61ef302e043de203bfa2f4a323f6618b5",
+  "source_case": "collect_v1",
+  "model_sha256": {
+    ".gitattributes": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+    "LICENSE": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+    "README.md": "579b9d7052fa567f439114f01feceed2b06f47d830d06c8ac829f389fd2e39a4",
+    "config.json": "1bb33a92c3548fbc68b889b490e810440435253598835bd71dff0396060c12db",
+    "generation_config.json": "8c970692323e3ea0e9b8b0a4dca79388d31226e41f83c9fd6014804280ebf6e8",
+    "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+    "model.safetensors": "6df85b39330e5a425ee36253d0f894e4387e4f0a15b9c53cb467d668e6b3a841",
+    "tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+    "tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+    "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  }
+}
