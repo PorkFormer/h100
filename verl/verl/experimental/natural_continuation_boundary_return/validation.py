@@ -51,9 +51,13 @@ def validate_boundary_return_preflight(config: Any, *, use_critic: bool | None =
     reward = _config_get(config, "reward")
     reward_manager = _config_get(reward, "reward_manager")
     if _config_get(reward_manager, "source") != "register":
-        raise ValueError("boundary_return requires the registered DAPO reward manager")
-    if _config_get(reward_manager, "name") != "dapo":
-        raise ValueError("boundary_return requires the DAPO reward manager")
+        raise ValueError("boundary_return requires the registered DAPO reward manager or standard naive GRPO/GSPO")
+    manager_name = _config_get(reward_manager, "name")
+    if manager_name != "dapo":
+        actor = _config_get(_config_get(config, "actor_rollout_ref"), "actor")
+        loss = _config_get(_config_get(actor, "policy_loss"), "loss_mode")
+        if require_dynamic_filter or manager_name != "naive" or loss not in ("vanilla", "gspo"):
+            raise ValueError("boundary_return requires the DAPO reward manager or standard naive GRPO/GSPO")
     if boundary.correctness_key != "acc":
         raise ValueError("boundary_return v1 requires correctness_key=acc")
     if boundary.task_score_key != "score":

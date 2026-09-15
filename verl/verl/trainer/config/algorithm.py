@@ -20,6 +20,8 @@ from typing import Any, Optional
 from verl.base_config import BaseConfig
 
 __all__ = [
+    'CensorAwareAdvantageConfig',
+
     "AlgoConfig",
     "FilterGroupsConfig",
     "KLControlConfig",
@@ -29,6 +31,20 @@ __all__ = [
     "RolloutCorrectionConfig",
     "SuccessSupportFloorConfig",
 ]
+
+
+@dataclass
+class CensorAwareAdvantageConfig(BaseConfig):
+    """Forced-answer post-GRPO advantage intervention."""
+
+    enable: bool = False
+    apply: bool = True
+    mode: str = "attenuate_negative_correctness"
+
+    def __post_init__(self):
+        if self.enable:
+            raise ValueError("Compatibility config supports disabled intervention only")
+
 
 
 @dataclass
@@ -993,6 +1009,7 @@ class AlgoConfig(BaseConfig):
     use_pf_ppo: bool = False
     pf_ppo: dict[str, Any] = field(default_factory=dict)
     filter_groups: Optional[FilterGroupsConfig] = None
+    censor_aware_advantage: CensorAwareAdvantageConfig = field(default_factory=CensorAwareAdvantageConfig)
     probe_credit: ProbeCreditConfig = field(default_factory=ProbeCreditConfig)
     readiness_dominance: ReadinessDominanceConfig = field(
         default_factory=ReadinessDominanceConfig

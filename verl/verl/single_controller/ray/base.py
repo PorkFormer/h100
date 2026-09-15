@@ -188,6 +188,7 @@ class ResourcePoolManager:
     mapping: dict[int, str]
     max_colocate_count: int = 3
     resource_pool_dict: dict[str, RayResourcePool] = field(default_factory=dict)
+    node_resource: Optional[str] = None
 
     def create_resource_pool(self):
         """Create Ray resource pools for distributed training.
@@ -207,6 +208,7 @@ class ResourcePoolManager:
                 use_gpu=True,
                 max_colocate_count=self.max_colocate_count,
                 name_prefix=resource_pool_name,
+                accelerator_type=self.node_resource,
             )
             self.resource_pool_dict[resource_pool_name] = resource_pool
 

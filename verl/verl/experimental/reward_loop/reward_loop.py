@@ -327,7 +327,8 @@ class RewardLoopManager:
     def _init_reward_loop_workers(self):
         self.reward_loop_workers = []
         num_workers = self.config.reward.num_workers
-        node_ids = [node["NodeID"] for node in ray.nodes() if node["Alive"] and node["Resources"].get("CPU", 0) > 0]
+        from verl.utils.node_placement import pinned_node_ip, training_node_ids
+        node_ids = training_node_ids()
 
         for i in range(num_workers):
             # Round-robin scheduling over the all nodes
@@ -338,7 +339,7 @@ class RewardLoopManager:
                     name=f"reward_loop_worker_{i}",
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=node_id,
-                        soft=True,
+                        soft=not bool(pinned_node_ip()),
                     ),
                 ).remote(self.config, self.reward_router_address)
             )

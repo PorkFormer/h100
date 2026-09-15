@@ -24,6 +24,9 @@ from verl.workers.config.disaggregation import DisaggregationConfig
 from verl.workers.config.model import MtpConfig
 
 __all__ = [
+    'ForcedAnswerTrainingCreditConfig',
+    'ForcedAnswerProbeConfig',
+
     "BoundaryReturnConfig",
     "SamplingConfig",
     "MultiTurnConfig",
@@ -36,6 +39,48 @@ __all__ = [
     "CheckpointEngineConfig",
     "SkipConfig",
 ]
+
+
+@dataclass
+class ForcedAnswerTrainingCreditConfig(BaseConfig):
+    """Optional training-time credit correction from forced-answer probes."""
+
+    enable: bool = False
+    activation_threshold: float = 0.75
+    reward_mode: str = "centered_pfa"
+
+    def __post_init__(self):
+        if self.enable:
+            raise ValueError("Compatibility config supports disabled intervention only")
+
+
+@dataclass
+class ForcedAnswerProbeConfig(BaseConfig):
+    """Diagnostic forced-answer generation for response-cap trajectories."""
+
+    enable: bool = False
+    num_samples: int = 2
+    max_new_tokens: int = 64
+    temperature: float = 1.0
+    top_p: float = 1.0
+    instruction: str = "\n\nProvide only the final answer in this exact format: Answer: <final answer>"
+    correctness_key: str = "acc"
+    correctness_threshold: float = 0.5
+    success_threshold: float = 0.0
+    high_confidence_threshold: float = 1.0
+    save_examples: bool = False
+    max_examples_per_step: int = 8
+    examples_dir: Optional[str] = None
+    response_tail_chars: int = 512
+    max_concurrent_requests: int = 128
+    strict: bool = True
+    seed: int = 0
+    training_credit: ForcedAnswerTrainingCreditConfig = field(default_factory=ForcedAnswerTrainingCreditConfig)
+
+    def __post_init__(self):
+        if self.enable:
+            raise ValueError("Compatibility config supports disabled intervention only")
+
 
 
 @dataclass
@@ -280,6 +325,7 @@ class RolloutConfig(BaseConfig):
 
     val_kwargs: SamplingConfig = field(default_factory=SamplingConfig)
 
+    forced_answer_probe: ForcedAnswerProbeConfig = field(default_factory=ForcedAnswerProbeConfig)
     boundary_return: BoundaryReturnConfig = field(default_factory=BoundaryReturnConfig)
 
     max_model_len: Optional[int] = None

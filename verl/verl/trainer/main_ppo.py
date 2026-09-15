@@ -50,6 +50,11 @@ def main(config):
 
     map_ncbr_config(config)
     validate_boundary_return_preflight(config, require_dynamic_filter=False)
+    if config.trainer.get("grpo_audit_path"):
+        from pathlib import Path
+        path = Path(config.trainer.grpo_audit_path).parent
+        path.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(config, path / "actual_resolved_config.yaml", resolve=True)
     run_ppo(config)
 
 
@@ -86,6 +91,9 @@ def run_ppo(config, task_runner_class=None) -> None:
 
     if task_runner_class is None:
         task_runner_class = ray.remote(num_cpus=1)(TaskRunner)  # please make sure main_task is not scheduled on head
+
+    from verl.utils.node_placement import pin_actor
+    task_runner_class = pin_actor(task_runner_class)
 
     # Create a remote instance of the TaskRunner class, and
     # Execute the `run` method of the TaskRunner instance remotely and wait for it to complete
@@ -192,7 +200,8 @@ class TaskRunner:
 
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager
 
-        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=self.mapping)
+        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=self.mapping,
+            node_resource=f"node:{config.trainer.node_ip}" if config.trainer.get("node_ip") else None)
         return resource_pool_manager
 
     def add_reward_model_resource_pool(self, config):

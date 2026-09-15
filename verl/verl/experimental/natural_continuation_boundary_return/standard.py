@@ -2,6 +2,7 @@
 import contextlib
 
 import numpy as np
+import torch
 
 from verl.experimental.agent_loop.agent_loop import build_rollout_sampling_params
 from verl.trainer.ppo.reward import extract_reward
@@ -45,11 +46,46 @@ def align_standard_identity(batch):
     batch.non_tensor_batch["trajectory_id"] = np.asarray(ids, dtype=object)
 
 
+def validate_naive_raw_rewards(batch, scores, extras):
+    """Fail closed: registered math verifier, binary accuracy and raw +/-1 reward."""
+    sources = batch.non_tensor_batch.get("data_source", ())
+    if len(sources) != len(batch) or any(
+        not (str(x) in {"math_dapo", "math", "math_dapo_reasoning"} or str(x).startswith("aime"))
+        for x in sources
+    ):
+        raise ValueError("naive NCBR requires the registered math verifier")
+    for key in ("acc", "score"):
+        if key not in extras or len(extras[key]) != len(batch):
+            raise ValueError(f"naive NCBR missing aligned {key}")
+    acc = np.asarray(extras["acc"], dtype=float)
+    task = np.asarray(extras["score"], dtype=float)
+    if not np.isin(acc, [0, 1]).all() or not np.array_equal(task, 2 * acc - 1):
+        raise ValueError("naive NCBR requires binary acc and raw +/-1 task score")
+    mask = batch.batch.get("response_mask")
+    if mask is None:
+        mask = batch.batch["attention_mask"][:, -scores.shape[1]:]
+    if scores.shape != mask.shape or not bool(torch.isfinite(scores).all()):
+        raise ValueError("naive NCBR invalid raw token scores")
+    expected = torch.zeros_like(scores)
+    for row in range(len(batch)):
+        indices = torch.nonzero(mask[row], as_tuple=True)[0]
+        if not len(indices):
+            raise ValueError("naive NCBR empty response")
+        expected[row, indices[-1]] = float(task[row])
+    if not torch.equal(scores, expected):
+        raise ValueError("naive NCBR raw reward must be terminal +/-1 without shaping")
+
+
 def apply_standard_boundary(trainer, batch, raw_scores, extras, boundary, timing_raw):
+    naive = trainer.config.reward.reward_manager.name == "naive"
+    if naive:
+        validate_naive_raw_rewards(batch, raw_scores, extras)
     def score_batch(long_batch):
         # Same colocated reward pipeline as the original standard entry point.
         long_batch = long_batch.union(trainer._compute_reward_colocate(long_batch))
         scores, reward_extras = extract_reward(long_batch)
+        if naive:
+            validate_naive_raw_rewards(long_batch, scores, reward_extras)
         return BoundaryRewardOutput(scores, reward_extras)
 
     def score_long(candidate, generations, config):

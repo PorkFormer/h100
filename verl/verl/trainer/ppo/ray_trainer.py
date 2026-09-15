@@ -1319,6 +1319,7 @@ class RayPPOTrainer:
             batch_td,
             calculate_entropy=calculate_entropy,
             distillation_use_topk=distillation_use_topk,
+            grpo_audit=bool(self.config.trainer.get("grpo_audit_path")),
             global_batch_size=ppo_mini_batch_size,
             mini_batch_size=ppo_mini_batch_size,
             epochs=ppo_epochs,
@@ -1348,6 +1349,7 @@ class RayPPOTrainer:
         shuffle = self.config.critic.shuffle
         tu.assign_non_tensor(
             batch_td,
+            grpo_audit=bool(self.config.trainer.get("grpo_audit_path")),
             global_batch_size=ppo_mini_batch_size,
             mini_batch_size=ppo_mini_batch_size,
             epochs=ppo_epochs,
@@ -1413,6 +1415,9 @@ class RayPPOTrainer:
             assert val_metrics, f"{val_metrics=}"
             pprint(f"Initial validation metrics: {val_metrics}")
             logger.log(data=val_metrics, step=self.global_steps)
+            if self.config.trainer.get("grpo_audit_path"):
+                from verl.trainer.ppo.grpo_audit import write_progress
+                write_progress(self.config, self.global_steps, val_metrics)
             if self.config.trainer.get("val_only", False):
                 self._shutdown_dump_executor()
                 return
@@ -1552,6 +1557,8 @@ class RayPPOTrainer:
                             )
                             reward_tensor = outcome.effective_scores
                             metrics.update(outcome.metrics)
+                            metrics["boundary_return/corrected_count"] = float(outcome.corrected_mask.sum().item())
+                            metrics["boundary_return/policy_version"] = float(self._ncbr_policy_version)
 
                     # Operating Mode Selection:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
@@ -1660,6 +1667,10 @@ class RayPPOTrainer:
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
                         )
+
+                    if self.config.trainer.get("grpo_audit_path"):
+                        from verl.trainer.ppo.grpo_audit import audit_batch
+                        audit_batch(batch, self.config, self.global_steps, self.use_reference_policy)
 
                     # update critic
                     if self.use_critic:
@@ -1781,6 +1792,9 @@ class RayPPOTrainer:
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
+                if self.config.trainer.get("grpo_audit_path"):
+                    from verl.trainer.ppo.grpo_audit import write_progress
+                    write_progress(self.config, self.global_steps, metrics)
 
                 progress_bar.update(1)
                 self.global_steps += 1

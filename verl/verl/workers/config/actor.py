@@ -191,7 +191,7 @@ class ActorConfig(BaseConfig):
     clip_ratio_schedule: ClipRatioScheduleConfig = field(default_factory=ClipRatioScheduleConfig)
     freeze_vision_tower: bool = False
     policy_loss: PolicyLossConfig = field(default_factory=PolicyLossConfig)
-    clip_ratio_c: float = 3.0
+    clip_ratio_c: Optional[float] = 3.0
     loss_agg_mode: str = "token-mean"
     loss_scale_factor: Optional[int] = None
     entropy_coeff: float = 0

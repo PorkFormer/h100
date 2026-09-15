@@ -245,6 +245,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
         disable_auto_offload = tu.pop(data, key="disable_auto_offload", default=False)
         mini_batch_size = tu.pop(data, key="mini_batch_size", default=None)
         num_mini_batch = tu.pop(data, key="num_mini_batch", default=None)
+        grpo_audit = tu.pop(data, key="grpo_audit", default=False)
         epochs = tu.pop(data, key="epochs", default=1)
         seed = tu.pop(data, key="seed", default=42)
         dataloader_kwargs = tu.pop(data, key="dataloader_kwargs", default={})
@@ -298,9 +299,13 @@ class TrainingWorker(Worker, DistProfilerExtension):
                     update_lr_scheduler=batch_idx == total_num_iterations - 1,
                     disable_auto_offload=True,
                 )
+                if grpo_audit:
+                    assert len(global_token_num) == 128
                 actor_output = self.train_batch(mini_batch_td)
                 output_lst.append(actor_output)
 
+            if grpo_audit:
+                assert len(output_lst) == 16
             if self.engine.is_mp_src_rank_with_outputs():
                 actor_output = [tu.get(output, "metrics") for output in output_lst]
                 metrics = {}
@@ -315,6 +320,9 @@ class TrainingWorker(Worker, DistProfilerExtension):
                             )
                     append_to_dict(metrics, output)
 
+                if grpo_audit:
+                    metrics["grpo_optimizer_updates"] = [len(output_lst)]
+                    metrics["grpo_minibatch_trajectories"] = [128]
                 output = tu.get_tensordict(tensor_dict={}, non_tensor_dict={"metrics": metrics}).cpu()
             else:
                 output = None

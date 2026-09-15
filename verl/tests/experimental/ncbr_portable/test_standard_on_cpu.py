@@ -16,7 +16,7 @@ from verl.workers.config.actor import ActorConfig
 
 
 def run_standard(mp, *, mode="replace", enable=None, loss_name="gspo", tail=(99,),
-                 long_scores=(0, 1, 0, 1), failure=None, baseline_fit=None, balance=False):
+                 long_scores=(0, 1, 0, 1), failure=None, baseline_fit=None, balance=False, raw_naive=False):
     actual_fit = baseline_fit or ray_trainer.RayPPOTrainer.fit
     trace, actors, snapshots, calls = [], [], {}, {"client": 0, "long": 0}
     class Logger:
@@ -35,6 +35,9 @@ def run_standard(mp, *, mode="replace", enable=None, loss_name="gspo", tail=(99,
         cfg.ncbr = {"enable": enable}
         cfg.algorithm.filter_groups.enable = False
         cfg.actor_rollout_ref.actor = {"loss_agg_mode": "token-mean", "loss_scale_factor": None}
+        if raw_naive:
+            cfg.reward.reward_manager.name = "naive"
+            cfg.actor_rollout_ref.actor.policy_loss = {"loss_mode": loss_name}
         cfg.actor_rollout_ref.rollout.skip = {"enable": False}
         cfg.global_profiler.profile_continuous_steps = False
         cfg.trainer.critic_warmup = 0
@@ -48,7 +51,7 @@ def run_standard(mp, *, mode="replace", enable=None, loss_name="gspo", tail=(99,
         self._start_profiling = lambda *a: None
         self._stop_profiling = lambda *a: None
         self.use_rm = True
-        self.use_reference_policy = True
+        self.use_reference_policy = not raw_naive
         old_sleep = self.checkpoint_manager.sleep_replicas
         self.checkpoint_manager.sleep_replicas = lambda: (trace.append("sleep"), old_sleep())[-1]
         old_rollout = self.async_rollout_manager.generate_sequences
@@ -95,10 +98,19 @@ def run_standard(mp, *, mode="replace", enable=None, loss_name="gspo", tail=(99,
             scores = torch.zeros_like(batch.batch["responses"], dtype=torch.float32)
             scores[:, -1] = torch.tensor(values)
             scores[:, 0] -= .125
+            task_values = np.asarray(values, dtype=float)
+            if raw_naive:
+                task_values = 2 * task_values - 1
+                scores.zero_()
+                mask = batch.batch["attention_mask"][:, -scores.shape[1]:]
+                for row in range(len(batch)):
+                    last = torch.nonzero(mask[row], as_tuple=True)[0][-1]
+                    scores[row, last] = float(task_values[row])
+                batch.non_tensor_batch["data_source"] = np.asarray(["math_dapo"] * len(batch))
             if not is_long:
                 snapshots["raw"] = scores.clone()
                 snapshots["pre_hook"] = copy.deepcopy(batch)
-            extras = {"acc": np.asarray(values, dtype=float), "score": np.asarray(values, dtype=float)}
+            extras = {"acc": np.asarray(values, dtype=float), "score": task_values}
             if is_long and failure in ("error", "timeout"):
                 extras[failure] = np.asarray([True] * len(batch))
             return DataProto.from_dict(tensors={"rm_scores": scores}, non_tensors=extras,
@@ -206,3 +218,27 @@ def test_standard_balancing_keeps_trajectory_identity(monkeypatch):
     batch = run.actors[0]["batch"]
     assert batch.non_tensor_batch["trajectory_id"].tolist() == run.snapshots["identities"][[2, 3, 0, 1]].tolist()
     assert run.trace.index("balance") < run.trace.index("short_reward") < run.trace.index("continue")
+
+
+@pytest.mark.parametrize("loss_name", ["vanilla", "gspo"])
+def test_raw_naive_off_shadow_replace_and_tail(loss_name):
+    runs = []
+    for mode, tail in [("off", (99,)), ("shadow", (99,)), ("replace", (99,)), ("replace", (71, 72, 73))]:
+        with pytest.MonkeyPatch.context() as mp:
+            runs.append(run_standard(mp, mode=mode, loss_name=loss_name, raw_naive=True, tail=tail))
+    for run in runs:
+        assert run.result.error is None, run.result.error
+        assert len(run.actors) == 1
+        batch = run.actors[0]["batch"]
+        assert "ref_log_prob" not in batch.batch
+        for key in ("responses", "input_ids", "attention_mask"):
+            assert torch.equal(batch.batch[key], run.snapshots["pre_hook"].batch[key])
+    off, shadow, replace, tail = [r.actors[0] for r in runs]
+    for key in ("loss", "grad"):
+        assert torch.equal(off[key], shadow[key])
+        assert torch.equal(replace[key], tail[key])
+    for key in ("token_level_rewards", "advantages"):
+        assert torch.equal(off["batch"].batch[key], shadow["batch"].batch[key])
+        assert torch.equal(replace["batch"].batch[key], tail["batch"].batch[key])
+    assert not torch.equal(off["batch"].batch["token_level_rewards"], replace["batch"].batch["token_level_rewards"])
+    assert torch.equal(replace["batch"].batch["token_level_rewards"].sum(-1), torch.tensor([-1., 1., -1., 1.]))
