@@ -1,0 +1,13 @@
+{
+  "README.md": "a2ff6fb9ad04c78f74649bc65af3bc4055775c4b73430f797bedb14bf2aa7c42",
+  "evaluate.py": "2717b396fb5cae8140e94c5b7c54a976b87b835b7314e172314202d4030ab931",
+  "input_provenance.json": "027dcff5a505c8a3c3f635b87c9a081763d022e568b4665e30fefa234a0e1312",
+  "templates/common.py": "e4663555814b09853b237cd1f9a0481eff9339c03781038f357a402b720829c9",
+  "templates/controller.py": "dd0e8254f779ad53ed77234cef4f89f2e13163c4cc894cfed398291a71a68b56",
+  "templates/driver.py": "7fcf95fa1beed3821697582d994667d2740d8c77f5175eb828e4721e6a86a535",
+  "templates/generation_config.json": "5da06cb9b0bffa68e2e07b2c9f96aff7204033d774e9cc27a7483c20ed28ba1a",
+  "templates/results.py": "7543d3ff15d6492c1feb14374f0b068c13f74dfd2e7cb8a47745029872b70f6d",
+  "templates/worker.py": "3b4dd207620d4f9d23dc9631322c7e5813da6f81eed22c39292bc000b9d8ab26",
+  "test_manual.py": "101493bcac72f06d97dffb13b576a93cf9dc595bf42a812c6c373f47b5ea6dd2",
+  "test_results.py": "08fcc17426032702ff3eb92ec20acd45ab37b70a016c43cfffa00080b1d47f49"
+}
