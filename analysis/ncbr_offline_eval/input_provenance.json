@@ -1,0 +1,30 @@
+{
+  "files": [
+    {
+      "name": "prompts.parquet",
+      "sha256": "1a990fcaa31bf8fd64b49f06cc74d434e36f90530d1210db0a3de2f9ae92788f",
+      "source": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_l4096_aligned_eval_20260913/prompts.parquet"
+    },
+    {
+      "name": "prompt_manifest.json",
+      "sha256": "a980102f04027996186a13905ae2bbdf56bd4d49a22903c6aad5387c13e82d4b",
+      "source": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_l4096_aligned_eval_20260913/prompt_manifest.json"
+    },
+    {
+      "name": "seeds.json",
+      "sha256": "7d82a6da675cabd39d71873850b6c6dd6858fa94889146e9c5a8bf25f3a62939",
+      "source": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_l4096_aligned_eval_20260913/seeds.json"
+    }
+  ],
+  "external_assets_sha256": {
+    "/workspace/rl/h100-natural-continuation-boundary-return-v1/verl/verl/utils/reward_score/math_dapo.py": "4d8db99737fc392285772f4dd71dc54995ec57013f320a31d7ab027902e59d6f",
+    "/workspace/models/Qwen3-4B-Base/tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+    "/workspace/models/Qwen3-4B-Base/config.json": "304b2545a258d35620f1d4bf46940c0471d9baa00715ff8e77f84c2fca5057c1",
+    "/workspace/models/Qwen3-4B-Base/generation_config.json": "8c970692323e3ea0e9b8b0a4dca79388d31226e41f83c9fd6014804280ebf6e8",
+    "/workspace/models/Qwen3-4B-Base/model.safetensors.index.json": "d6c42883a895dfef5b0080ed2116a1bcd764f558406b98923d675978a1abf29c",
+    "/workspace/models/Qwen3-4B-Base/tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+    "/workspace/models/Qwen3-4B-Base/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  },
+  "method_source": "/workspace/rl/h100/analysis/ncbr_h1024_l4096_s300_eval_20260920",
+  "template_derivation": "Independent copy; manual checkpoint and per-output runtime configuration; original deployed files unchanged"
+}

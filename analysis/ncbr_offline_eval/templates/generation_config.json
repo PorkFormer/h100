@@ -1,0 +1,122 @@
+{
+  "benchmark": [
+    "AIME2024",
+    "AIME2025",
+    "AMC23"
+  ],
+  "bootstrap_replicates": 10000,
+  "bootstrap_seed": 20260812,
+  "checkpoint_steps": [
+    300
+  ],
+  "dataset_revision": "80815d37005feb82cd7f8fbc6901d5d3eff43057",
+  "dataset_sha256": "b696e87ba47be4e879a60fd4ef1d4aa522ba78c5ae013c6aff5cc9788a397c5e",
+  "engine": {
+    "backend": "vLLM",
+    "dtype": "bfloat16",
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "gpu_memory_utilization": 0.72,
+    "max_num_batched_tokens": 32768,
+    "max_num_seqs": 8,
+    "tensor_parallel_size": 1,
+    "workers": 8
+  },
+  "environment": {
+    "numpy": "1.26.4",
+    "pyarrow": "23.0.1",
+    "torch": "2.10.0+cu129",
+    "transformers": "5.3.0",
+    "vllm": "0.18.0"
+  },
+  "execution": {
+    "logical_shards": 8,
+    "batch_size": 8,
+    "physical_gpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "waves": [
+      [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ]
+      ]
+    ]
+  },
+  "expected_per_horizon": 3200,
+  "h8192_prefix_use": "H8192 prefixes may be scored only for answer-migration audit, never as formal H2048 samples",
+  "historical_manifest": "/workspace/rl/h100/analysis/fa_tr_v1/pilot_s200_continuation/evaluation/checkpoint_sweep_avg16_avg32/h8192/manifest.json",
+  "historical_manifest_sha256": "41ba28eb353510d1d54a0dbac790226b0a7397ad8d38ce4eff8a06c12d7ab1f2",
+  "horizons": {
+    "h2048": {
+      "max_model_len": 4096,
+      "max_new_tokens": 2048,
+      "output_root": "/workspace/rl/h100/analysis/ncbr_h1024_l4096_s300_eval_20260920/formal/generation/h2048"
+    },
+    "h8192": {
+      "max_model_len": 9216,
+      "max_new_tokens": 8192,
+      "output_root": "/workspace/rl/h100/analysis/ncbr_h1024_l4096_s300_eval_20260920/formal/generation/h8192"
+    }
+  },
+  "ignore_eos": false,
+  "independence": "H2048 and H8192 are generated in separate vLLM launches and separate output roots",
+  "input_token_limit": 1024,
+  "master_seed": 42,
+  "model_states": 1,
+  "prompt_id_range": [
+    512,
+    611
+  ],
+  "prompts": 100,
+  "protocol": "independent-horizon-generation-v1",
+  "repetition_penalty": 1.0,
+  "samples_per_prompt": 32,
+  "seed_rule": "stable_sampling_seed(42,prompt_id,rollout_index) using offline-answer-timing-v1",
+  "source_evaluation": [
+    "/workspace/rl/h100/analysis/ncbr_boundary_return_s300_seed1_20260828",
+    "/workspace/rl/h100/analysis/ncbr_amc23_s300_seed1_20260909"
+  ],
+  "target_experiment": "ncbr_h1024_l4096_20260919_r5",
+  "temperature": 1.0,
+  "tokenizer": "/workspace/models/Qwen3-4B-Base",
+  "top_k": -1,
+  "top_p": 1.0,
+  "verifier": "math_dapo.compute_score (unchanged historical implementation)"
+}
