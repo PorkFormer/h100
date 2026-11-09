@@ -1,5 +1,75 @@
 # 环境锁定与安装说明
 
+## 指定的容器镜像
+
+本次复现使用用户指定的容器基础环境：
+
+```text
+docker.1ms.run/verlai/verl:vllm018.dev1
+```
+
+宿主机需要兼容 CUDA 12.9 的 NVIDIA 驱动、Docker 和 NVIDIA Container Toolkit。Python、CUDA toolkit、编译器及训练依赖在容器内检查；无需为容器训练另外在宿主机安装 Python 训练环境。这里记录的是指定镜像地址，尚未实际拉取该镜像或验证其内部包版本，不能仅凭 `vllm018.dev1` 标签认定它与锁定环境完全一致。
+
+### 在宿主机启动容器
+
+先按上手指南解压源码包、搬运模型及三份原始数据，再在**解压后的 `qwen3_4b_reproduction` 目录**执行。以下假设宿主机数据放在 `/data`；如不同，只修改 `HOST_DATA_DIR`，容器内仍统一使用 `/data`。
+
+```bash
+IMAGE="docker.1ms.run/verlai/verl:vllm018.dev1"
+REPRO_DIR="$(pwd)"
+HOST_DATA_DIR="/data"
+mkdir -p "$HOST_DATA_DIR/qwen3_4b_reproduction"
+docker pull "$IMAGE"
+
+# tag 可能变化；保留本次实际镜像 ID 和 RepoDigests，便于后续核对。
+docker image inspect "$IMAGE" --format '{{json .}}' \
+  > "$HOST_DATA_DIR/qwen3_4b_reproduction/container-image.json"
+
+docker run --gpus all -it \
+  --name qwen3-4b-repro \
+  --shm-size=64g \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  --ulimit nofile=524288:524288 \
+  --mount "type=bind,source=$REPRO_DIR,target=/workspace/qwen3_4b_reproduction" \
+  --mount "type=bind,source=$HOST_DATA_DIR,target=/data" \
+  --workdir /workspace/qwen3_4b_reproduction \
+  --entrypoint /bin/bash \
+  "$IMAGE"
+```
+
+代码目录、数据和训练输出均通过 bind mount 保存在宿主机。64GiB 共享内存用于满足默认 16GiB Ray object store 的空间要求。此命令面向单机，不需要 host networking 或 privileged 模式。所有训练命令都在容器内部执行；在宿主机持久终端中运行上述命令，避免关闭交互终端导致任务中断。容器停止后可用 `docker start -ai qwen3-4b-repro` 重新进入，但不会自动恢复训练。
+
+### 在容器内选择 Python 环境
+
+```bash
+nvidia-smi
+python3 --version
+command -v python3
+nvcc --version
+
+# 先检查镜像自带 Python：不启动 Ray、不加载训练权重、不进行训练。
+PYTHON_BIN="$(command -v python3)" bash run.sh environment
+```
+
+首次检查前，`settings.env` 中的 `PYTHON_BIN` 应保持注释，避免覆盖上面传入的解释器。`environment` 会检查锁定依赖版本、实际训练模块导入和本包源码，不会因为镜像内预装了另一份 verl 就使用它。
+
+- **检查通过：**将 `command -v python3` 输出的绝对路径填入 `settings.env` 的 `PYTHON_BIN`，复用镜像环境，跳过 `setup_env.sh`。启动器通过 `PYTHONPATH` 加载本包源码，无需覆盖镜像预装的 verl。
+- **检查未通过：**按下文锁定安装流程，在容器内运行 `bash setup_env.sh` 创建独立 `.venv`。先确认容器内有 uv、CUDA 12.9 toolkit 和 C++ 编译器；不要直接升级或覆盖镜像的全局依赖。安装完成后保持 `PYTHON_BIN` 注释，使启动器使用包内 `.venv/bin/python`。
+
+无论选择哪条路径，都要填写容器内路径 `/data/models/Qwen3-4B-Base`、三份 `/data/*.parquet` 和输出目录 `/data/qwen3_4b_reproduction`，然后依次执行：
+
+```bash
+bash run.sh config all
+bash run.sh check all
+bash run.sh smoke all
+bash run.sh train all
+```
+
+镜像环境检查通过不等于 GPU 冒烟通过；两组各 2 步的实际 GPU 测试仍需在目标机器执行。
+
+## 锁定依赖与独立环境安装
+
 `requirements.lock` 由原运行环境的训练依赖递归闭包生成，包含 Ray default、vLLM 指定的 extras 及 CPU 测试依赖。所有条目固定版本；未纳入 Megatron、Mindspeed、其他项目环境或操作系统 apt 包。torch/torchvision/torchaudio 从 CUDA 12.9 wheel 源单独安装，FlashAttention 单独构建。`provenance/dependencies.json` 记录完整版本与依赖声明例外。
 
 本机的 cryptography 41.0.7 来自 Debian 系统包，其 metadata 不包含 PyPI wheel 对 CFFI 的声明。因此另补充锁定 `cffi==1.17.1`、`pycparser==2.22`，供新建隔离环境安装。它们不改变训练算法；环境检查对新虚拟环境要求这两个版本，对原系统解释器允许已有系统 CFFI backend，并实际执行一次本地密码库运算验证二进制可用。总计 224 个历史依赖版本＋2 个可移植安装补充项。

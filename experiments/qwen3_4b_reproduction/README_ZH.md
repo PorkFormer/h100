@@ -8,7 +8,7 @@
 
 推荐 Linux x86_64、8 张 A100/H100 80GB 或同等兼容 NVIDIA GPU、32 个以上逻辑 CPU、512GiB 系统内存、至少 1TB 可用磁盘。默认检查至少 128GiB **空闲**系统内存，这是启动下限，不是峰值内存保证。GPU 必须支持 BF16；脚本拒绝不足 80GB 级别显存的卡。
 
-安装支持 CUDA 12.9 的 NVIDIA 驱动与 CUDA toolkit（`nvcc`、C++ 编译器用于构建 FlashAttention）。若运行在容器中，暴露全部目标 GPU，使用 `--ipc=host` 或 `--shm-size=64g`；默认 Ray object store 为 16GiB，启动检查要求 `/dev/shm` 至少有 20GiB 空闲。容器退出会终止训练。
+指定容器镜像为 **`docker.1ms.run/verlai/verl:vllm018.dev1`**。宿主机准备兼容 CUDA 12.9 的 NVIDIA 驱动、Docker 和 NVIDIA Container Toolkit；Python、CUDA toolkit（`nvcc`）及 C++ 编译器在容器内检查。默认 Ray object store 为 16GiB，启动检查要求 `/dev/shm` 至少有 20GiB 空闲，启动容器时设置 `--shm-size=64g`。完整的镜像拉取、目录挂载和启动命令见 [ENVIRONMENT.md](ENVIRONMENT.md)。
 
 ```bash
 sha256sum -c qwen3_4b_reproduction.tar.gz.sha256
@@ -45,7 +45,15 @@ rsync -a --info=progress2 \
 
 ## 3. 安装环境并设置路径
 
-安装 uv（已有 uv 可跳过），然后运行环境脚本：
+先按 [容器环境说明](ENVIRONMENT.md) 启动指定镜像，并在容器内检查自带环境：
+
+```bash
+PYTHON_BIN="$(command -v python3)" bash run.sh environment
+```
+
+检查通过时，将该 Python 的绝对路径写入 `settings.env` 的 `PYTHON_BIN`，跳过下面的重新安装。镜像标签不能替代版本检查；本次尚未实际拉取或验证该镜像。
+
+若需要建立独立环境，在容器内安装 uv（已有 uv 可跳过），然后运行环境脚本，并保持 `settings.env` 中的 `PYTHON_BIN` 注释：
 
 ```bash
 curl -LsSf https://astral.sh/uv/0.9.5/install.sh | sh

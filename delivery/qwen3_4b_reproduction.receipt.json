@@ -1,7 +1,7 @@
 {
   "archive": "qwen3_4b_reproduction.tar.gz",
-  "sha256": "1b9c66726bf40f2feb141a13f964f0f31652fcac6bc8f253ee2218a1eff9b5aa",
-  "bytes": 1637206,
+  "sha256": "5689d21d15ed21aa548915b5054dae876e164519d0a34743f257d89eb16bfc13",
+  "bytes": 1639050,
   "files_verified": 765,
   "source_files": 738,
   "cpu_tests_passed": 247,
@@ -10,5 +10,8 @@
   "independent_extraction_verified": true,
   "fresh_dependency_install_executed": false,
   "gpu_training_executed": false,
-  "completed_at_utc": "2026-11-09T11:15:45.596317+00:00"
+  "completed_at_utc": "2026-11-09T11:15:45.596317+00:00",
+  "container_image": "docker.1ms.run/verlai/verl:vllm018.dev1",
+  "container_image_tested": false,
+  "documentation_updated_at_utc": "2026-11-09T11:23:30.525857+00:00"
 }
