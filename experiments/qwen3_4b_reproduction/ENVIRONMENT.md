@@ -1,5 +1,7 @@
 # 环境锁定与安装说明
 
+首次在新机器运行，先按 [手动下载与路径配置](PATHS_AND_DOWNLOAD_ZH.md) 自行下载源码、模型和原始预处理数据，并选择自己的存储目录。本文所有宿主机路径只是示例；`settings.env` 必须手动填写新机器运行环境中实际可见的路径。
+
 ## 指定的容器镜像
 
 本次复现使用用户指定的容器基础环境：
@@ -12,18 +14,21 @@ docker.1ms.run/verlai/verl:vllm018.dev1
 
 ### 在宿主机启动容器
 
-先按上手指南解压源码包、搬运模型及三份原始数据，再在**解压后的 `qwen3_4b_reproduction` 目录**执行。以下假设宿主机数据放在 `/data`；如不同，只修改 `HOST_DATA_DIR`，容器内仍统一使用 `/data`。
+先在新机器手动下载并解压源码包、下载模型及三份原始数据。把下面 `HOST_CODE_DIR` 和 `HOST_DATA_DIR` 改成**新机器宿主机上的实际绝对路径**。`HOST_CODE_DIR` 应直接包含 run.sh、settings.env 和 verl/。下面选择固定的容器内挂载目标，方便填写 settings；这些目标路径不代表旧机器的目录要求。
 
 ```bash
+set -euo pipefail
 IMAGE="docker.1ms.run/verlai/verl:vllm018.dev1"
-REPRO_DIR="$(pwd)"
-HOST_DATA_DIR="/data"
-mkdir -p "$HOST_DATA_DIR/qwen3_4b_reproduction"
+HOST_CODE_DIR="/mnt/nvme/qwen3-repro/qwen3_4b_reproduction"  # 手动改为实际源码包目录
+HOST_DATA_DIR="/mnt/nvme/qwen3-repro/data"                 # 手动改为实际资产目录
+test -f "$HOST_CODE_DIR/run.sh"
+test -d "$HOST_CODE_DIR/verl"
+mkdir -p "$HOST_DATA_DIR/runs"
 docker pull "$IMAGE"
 
 # tag 可能变化；保留本次实际镜像 ID 和 RepoDigests，便于后续核对。
 docker image inspect "$IMAGE" --format '{{json .}}' \
-  > "$HOST_DATA_DIR/qwen3_4b_reproduction/container-image.json"
+  > "$HOST_DATA_DIR/runs/container-image.json"
 
 docker run --gpus all -it \
   --name qwen3-4b-repro \
@@ -31,7 +36,7 @@ docker run --gpus all -it \
   --ulimit memlock=-1 \
   --ulimit stack=67108864 \
   --ulimit nofile=524288:524288 \
-  --mount "type=bind,source=$REPRO_DIR,target=/workspace/qwen3_4b_reproduction" \
+  --mount "type=bind,source=$HOST_CODE_DIR,target=/workspace/qwen3_4b_reproduction" \
   --mount "type=bind,source=$HOST_DATA_DIR,target=/data" \
   --workdir /workspace/qwen3_4b_reproduction \
   --entrypoint /bin/bash \
@@ -57,7 +62,7 @@ PYTHON_BIN="$(command -v python3)" bash run.sh environment
 - **检查通过：**将 `command -v python3` 输出的绝对路径填入 `settings.env` 的 `PYTHON_BIN`，复用镜像环境，跳过 `setup_env.sh`。启动器通过 `PYTHONPATH` 加载本包源码，无需覆盖镜像预装的 verl。
 - **检查未通过：**按下文锁定安装流程，在容器内运行 `bash setup_env.sh` 创建独立 `.venv`。先确认容器内有 uv、CUDA 12.9 toolkit 和 C++ 编译器；不要直接升级或覆盖镜像的全局依赖。安装完成后保持 `PYTHON_BIN` 注释，使启动器使用包内 `.venv/bin/python`。
 
-无论选择哪条路径，都要填写容器内路径 `/data/models/Qwen3-4B-Base`、三份 `/data/*.parquet` 和输出目录 `/data/qwen3_4b_reproduction`，然后依次执行：
+无论选择哪条 Python 路径，都要在 `settings.env` 手动填写源码、模型、三份数据和输出路径。按上述挂载示例：`VERL_ROOT=/workspace/qwen3_4b_reproduction/verl`，模型为 `/data/models/Qwen3-4B-Base`，三份数据为 `/data/*.parquet`，输出为 `/data/runs`。完整变量表及修改示例见 [路径配置指南](PATHS_AND_DOWNLOAD_ZH.md)，配置后依次执行：
 
 ```bash
 bash run.sh config all

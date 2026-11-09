@@ -4,6 +4,8 @@
 
 源码来自完整工作区 `b1835ea0fb388eb6e4d29a58ab18b408cae7b34d`，不是上游默认 verl，也不是精简 submission 包。包内 `verl/` 包含训练所需完整运行时代码及相关测试。包不含数据、模型、历史 checkpoint、凭据或其他实验输出。
 
+**新机器首先阅读 [手动下载与路径配置](PATHS_AND_DOWNLOAD_ZH.md)**：自行选择新机器存储目录，下载源码包、Base 模型和三份原始预处理数据，设置 Docker 挂载，再手工填写 `settings.env`。文中的绝对路径均为示例，不要求与旧机器一致；启动器不会自动下载资产或沿用旧机器目录。
+
 ## 1. 准备机器与解压
 
 推荐 Linux x86_64、8 张 A100/H100 80GB 或同等兼容 NVIDIA GPU、32 个以上逻辑 CPU、512GiB 系统内存、至少 1TB 可用磁盘。默认检查至少 128GiB **空闲**系统内存，这是启动下限，不是峰值内存保证。GPU 必须支持 BF16；脚本拒绝不足 80GB 级别显存的卡。
@@ -19,19 +21,9 @@ sha256sum -c SHA256SUMS
 
 首次验证压缩包完整性后再编辑 `settings.env`；编辑后整个包的 SHA256SUMS 会合理地提示该文件变化，启动器只锁定实验配置与运行时源码，不锁定用户机器设置。
 
-## 2. 搬运原始 Base 和数据
+## 2. 在新机器手动下载 Base 和数据
 
-在原机器执行以下命令；将 `USER@NEW_HOST` 和目标路径换成自己的。目标目录先创建好，模型目录末尾的 `/` 不要遗漏。
-
-```bash
-ssh USER@NEW_HOST 'mkdir -p /data/models/Qwen3-4B-Base /data'
-rsync -a --info=progress2 /workspace/models/Qwen3-4B-Base/ \
-  USER@NEW_HOST:/data/models/Qwen3-4B-Base/
-rsync -a --info=progress2 \
-  /workspace/rl/data/dapo_math_17k_train.parquet \
-  /workspace/rl/data/aime-2024-verl.parquet \
-  /workspace/rl/data/aime-2025-verl.parquet USER@NEW_HOST:/data/
-```
+按 [下载与路径指南](PATHS_AND_DOWNLOAD_ZH.md) 在新机器执行下载：源码来自远程仓库的交付包；Base 来自 `Qwen/Qwen3-4B-Base`，固定 revision；三份历史预处理 Parquet 的下载地址由你手动提供。当前没有已核实的这三份文件的公开下载 URL，不能用公开原始题库替代。该流程不要求访问或复用旧机器的绝对路径。
 
 必须保留原始文件内容，包括题目、答案、chat template、样本重复和顺序。**不要使用 Instruct 模型、旧训练导出的 HF 权重、去重后的 17k 数据或重新转换的数据。**
 
@@ -65,15 +57,21 @@ bash setup_env.sh
 
 核心版本为 Python 3.12、torch 2.10.0+cu129、vLLM 0.18.0、Ray 2.54.1、Transformers 5.3.0、FlashAttention 2.8.3、FlashInfer 0.6.6。**不要执行 `pip install -e 'verl[vllm]'` 或直接安装未锁定的 requirements**。历史环境存在两个已知依赖声明冲突，安装方法及验证边界见 [ENVIRONMENT.md](ENVIRONMENT.md)。
 
-编辑 `settings.env` 中这五个必填路径：
+在新机器手动编辑 `settings.env`。容器运行时填写**容器内路径**，直接运行时填写新机器本地路径。以下是独立源码包挂载到 `/workspace/qwen3_4b_reproduction`、资产挂载到 `/data` 的示例；其他位置按实际情况改写：
 
 ```bash
+VERL_ROOT="/workspace/qwen3_4b_reproduction/verl"
 MODEL_PATH="/data/models/Qwen3-4B-Base"
 TRAIN_FILE="/data/dapo_math_17k_train.parquet"
 VAL_FILE_1="/data/aime-2024-verl.parquet"
 VAL_FILE_2="/data/aime-2025-verl.parquet"
-OUTPUT_ROOT="/data/qwen3_4b_reproduction"
+OUTPUT_ROOT="/data/runs"
+CACHE_ROOT="/tmp/q4repro-cache"
+# .venv 用户保持 PYTHON_BIN 注释；镜像环境用户填写 command -v python3 的实际输出。
+# PYTHON_BIN="/workspace/qwen3_4b_reproduction/.venv/bin/python"
 ```
+
+源码根目录应含 `setup.py` 和内层 `verl/`，不能误填内层 Python 包路径。源码包与 Git checkout 的目录层级不同；宿主机/容器路径对照表、Python 选择、输出位置和文件检查命令统一见 [手动下载与路径配置](PATHS_AND_DOWNLOAD_ZH.md)。
 
 路径允许空格，shell 中需保持双引号。其余默认值已适配 8 卡；不要为提速改 batch、n、H、L、学习率或 reward。`CUDA_VISIBLE_DEVICES` 接受物理卡编号或完整 GPU UUID；`GPUS_PER_NODE` 必须与之相符。启动器固定单节点，TP=2，要求 GPU 数可整除 128 条响应的全局 mini-batch。其他合法卡数仅通过算术检查，并不表示已完成该拓扑的训练验证。
 
