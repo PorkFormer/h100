@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "python": "3.12.3 (main, Mar  3 2026, 12:15:18) [GCC 13.3.0]",
+  "source": {
+    "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d",
+    "files_verified": 738
+  },
+  "portable_supplements": {
+    "cffi": "source-system CFFI backend; target venv must install pinned wheel",
+    "pycparser": "source-system CFFI backend; target venv must install pinned wheel"
+  },
+  "known_metadata_conflicts": [
+    {
+      "package": "vllm",
+      "requirement": "transformers<5,>=4.56.0",
+      "installed": "5.3.0"
+    },
+    {
+      "package": "opencv-python-headless",
+      "requirement": "numpy>=2; python_version >= \"3.9\"",
+      "installed": "1.26.4"
+    }
+  ],
+  "gpu_training_tested": false
+}

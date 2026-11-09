@@ -1,0 +1,14 @@
+{
+  "archive": "qwen3_4b_reproduction.tar.gz",
+  "sha256": "1b9c66726bf40f2feb141a13f964f0f31652fcac6bc8f253ee2218a1eff9b5aa",
+  "bytes": 1637206,
+  "files_verified": 765,
+  "source_files": 738,
+  "cpu_tests_passed": 247,
+  "final_launcher_tests_passed": 29,
+  "frozen_goldens_exact": true,
+  "independent_extraction_verified": true,
+  "fresh_dependency_install_executed": false,
+  "gpu_training_executed": false,
+  "completed_at_utc": "2026-11-09T11:15:45.596317+00:00"
+}

@@ -1,0 +1,338 @@
+{
+  "dapo": {
+    "changed_historical_fields": {
+      "data.train_files": {
+        "historical": "__TRAIN_FILE__",
+        "current": "/data/dapo_math_17k_train.parquet",
+        "reason": "asset location"
+      },
+      "data.val_files": {
+        "historical": [
+          "__VAL_FILE_1__",
+          "__VAL_FILE_2__"
+        ],
+        "current": [
+          "/data/aime-2024-verl.parquet",
+          "/data/aime-2025-verl.parquet"
+        ],
+        "reason": "asset location"
+      },
+      "actor_rollout_ref.rollout.trace.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.trace.experiment_name": {
+        "historical": "dapo",
+        "current": "dapo_s300_repro_v1",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.prometheus.served_model_name": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "actor_rollout_ref.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "trainer.total_training_steps": {
+        "historical": 600,
+        "current": 300,
+        "reason": "300-step target / separate smoke"
+      },
+      "trainer.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "trainer.experiment_name": {
+        "historical": "dapo",
+        "current": "dapo_s300_repro_v1",
+        "reason": "run identity"
+      },
+      "trainer.logger": {
+        "historical": [
+          "console",
+          "wandb"
+        ],
+        "current": [
+          "console",
+          "file",
+          "wandb"
+        ],
+        "reason": "local JSONL + offline W&B"
+      },
+      "trainer.nnodes": {
+        "historical": 2,
+        "current": 1,
+        "reason": "single-node topology"
+      },
+      "trainer.resume_mode": {
+        "historical": "auto",
+        "current": "disable",
+        "reason": "fresh Base initialization"
+      },
+      "trainer.default_local_dir": {
+        "historical": "__CHECKPOINT_DIR__",
+        "current": "/data/qwen3_4b_reproduction/dapo_s300_repro_v1/checkpoints",
+        "reason": "output location"
+      },
+      "critic.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      }
+    },
+    "current_interface_additions": {
+      "model_engine": "dp",
+      "actor_rollout_ref.actor.clip_ratio_schedule._target_": "verl.workers.config.ClipRatioScheduleConfig",
+      "actor_rollout_ref.actor.clip_ratio_schedule.enable": false,
+      "actor_rollout_ref.actor.clip_ratio_schedule.type": "linear",
+      "actor_rollout_ref.actor.clip_ratio_schedule.clip_low_start": null,
+      "actor_rollout_ref.actor.clip_ratio_schedule.clip_low_end": null,
+      "actor_rollout_ref.actor.clip_ratio_schedule.clip_high_start": null,
+      "actor_rollout_ref.actor.clip_ratio_schedule.clip_high_end": null,
+      "actor_rollout_ref.actor.clip_ratio_schedule.schedule_steps": 0,
+      "actor_rollout_ref.actor.clip_ratio_schedule.start_step": 0,
+      "actor_rollout_ref.rollout.boundary_return._target_": "verl.workers.config.rollout.BoundaryReturnConfig",
+      "actor_rollout_ref.rollout.boundary_return.enable": null,
+      "actor_rollout_ref.rollout.boundary_return.mode": "off",
+      "actor_rollout_ref.rollout.boundary_return.long_response_length": 8192,
+      "actor_rollout_ref.rollout.boundary_return.correctness_key": "acc",
+      "actor_rollout_ref.rollout.boundary_return.correctness_threshold": 0.5,
+      "actor_rollout_ref.rollout.boundary_return.task_score_key": "score",
+      "actor_rollout_ref.rollout.boundary_return.max_concurrent_requests": 128,
+      "actor_rollout_ref.rollout.boundary_return.request_batch_size": 512,
+      "actor_rollout_ref.rollout.boundary_return.scheduler": "fixed_wave",
+      "actor_rollout_ref.rollout.boundary_return.request_timeout_seconds": 600.0,
+      "actor_rollout_ref.rollout.boundary_return.long_reward_chunk_size": 256,
+      "actor_rollout_ref.rollout.boundary_return.verify_shadow_candidate_noop": false,
+      "actor_rollout_ref.rollout.boundary_return.seed": 0,
+      "actor_rollout_ref.rollout.boundary_return.strict": true,
+      "algorithm.probe_credit._target_": "verl.trainer.config.ProbeCreditConfig",
+      "algorithm.probe_credit.enable": false,
+      "algorithm.probe_credit.coef": 0.0,
+      "algorithm.probe_credit.rho": 0.5,
+      "algorithm.probe_credit.relative_positions": [
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        0.9
+      ],
+      "algorithm.probe_credit.n": 4,
+      "algorithm.probe_credit.temperature": 0.7,
+      "algorithm.probe_credit.top_p": 0.95,
+      "algorithm.probe_credit.top_k": -1,
+      "algorithm.probe_credit.max_tokens": 64,
+      "algorithm.probe_credit.stop": [
+        "\n"
+      ],
+      "algorithm.probe_credit.answer_prefix": "\n\nAnswer:",
+      "algorithm.probe_credit.norm_probe_by_std": true,
+      "algorithm.probe_credit.epsilon": 1e-06,
+      "algorithm.probe_credit.probe_zero_position": true,
+      "algorithm.probe_credit.strict": true,
+      "algorithm.probe_credit.debug_dump": false,
+      "algorithm.probe_credit.max_concurrent_requests": 128,
+      "algorithm.probe_credit.request_batch_size": 512,
+      "algorithm.readiness_dominance._target_": "verl.trainer.config.ReadinessDominanceConfig",
+      "algorithm.readiness_dominance.mode": "off",
+      "algorithm.success_support_floor._target_": "verl.trainer.config.SuccessSupportFloorConfig",
+      "algorithm.success_support_floor.mode": "off",
+      "algorithm.on_policy_budgeted_capability_floor._target_": "verl.trainer.config.OnPolicyBudgetedCapabilityFloorConfig",
+      "algorithm.on_policy_budgeted_capability_floor.mode": "off",
+      "global_profiler._target_": "verl.utils.profiler.ProfilerConfig",
+      "global_profiler.tool": null,
+      "global_profiler.steps": null,
+      "global_profiler.profile_continuous_steps": false,
+      "global_profiler.save_path": "outputs/profile",
+      "global_profiler.global_tool_config.nsys._target_": "verl.utils.profiler.config.NsightToolConfig",
+      "global_profiler.global_tool_config.nsys.discrete": false,
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range": "cudaProfilerApi",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range-end": null,
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.kill": "none",
+      "global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries": 100000,
+      "global_profiler.global_tool_config.torch_memory.stack_depth": 32,
+      "global_profiler.global_tool_config.torch_memory.context": "all",
+      "global_profiler.global_tool_config.torch_memory.stacks": "all",
+      "global_profiler.global_tool_config.precision_debugger._target_": "verl.utils.profiler.config.PrecisionDebuggerToolConfig",
+      "global_profiler.global_tool_config.precision_debugger.config_path": null,
+      "global_profiler.global_tool_config.precision_debugger.steps": null,
+      "global_profiler.global_tool_config.precision_debugger.stages": null,
+      "global_profiler.global_tool_config.precision_debugger.strict": false,
+      "transfer_queue.enable": false,
+      "transfer_queue.metrics.enabled": false,
+      "transfer_queue.metrics.port": 0,
+      "transfer_queue.backend.storage_backend": "SimpleStorage",
+      "transfer_queue.backend.SimpleStorage.total_storage_size": 100000,
+      "transfer_queue.backend.SimpleStorage.num_data_storage_units": 8,
+      "transfer_queue.backend.MooncakeStore.auto_init": false,
+      "transfer_queue.backend.MooncakeStore.metadata_server": "localhost:50123",
+      "transfer_queue.backend.MooncakeStore.master_server_address": "localhost:50124",
+      "transfer_queue.backend.MooncakeStore.local_hostname": "localhost",
+      "transfer_queue.backend.MooncakeStore.protocol": "tcp",
+      "transfer_queue.backend.MooncakeStore.global_segment_size": 4294967296,
+      "transfer_queue.backend.MooncakeStore.local_buffer_size": 1073741824,
+      "transfer_queue.backend.MooncakeStore.device_name": "",
+      "ray_kwargs.ray_init.address": "local",
+      "ray_kwargs.ray_init.num_cpus": 32,
+      "ray_kwargs.ray_init.num_gpus": 8,
+      "ray_kwargs.ray_init.include_dashboard": false,
+      "ray_kwargs.ray_init.object_store_memory": 17179869184,
+      "ray_kwargs.timeline_json_file": null,
+      "ncbr.enable": null
+    }
+  },
+  "ncbr": {
+    "changed_historical_fields": {
+      "data.train_files": {
+        "historical": "__TRAIN_FILE__",
+        "current": "/data/dapo_math_17k_train.parquet",
+        "reason": "asset location"
+      },
+      "data.val_files": {
+        "historical": [
+          "__VAL_FILE_1__",
+          "__VAL_FILE_2__"
+        ],
+        "current": [
+          "/data/aime-2024-verl.parquet",
+          "/data/aime-2025-verl.parquet"
+        ],
+        "reason": "asset location"
+      },
+      "actor_rollout_ref.rollout.trace.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.trace.experiment_name": {
+        "historical": "ncbr",
+        "current": "ncbr_s300_repro_v1",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.prometheus.served_model_name": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "actor_rollout_ref.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "trainer.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "trainer.experiment_name": {
+        "historical": "ncbr",
+        "current": "ncbr_s300_repro_v1",
+        "reason": "run identity"
+      },
+      "trainer.logger": {
+        "historical": [
+          "console",
+          "wandb"
+        ],
+        "current": [
+          "console",
+          "file",
+          "wandb"
+        ],
+        "reason": "local JSONL + offline W&B"
+      },
+      "trainer.nnodes": {
+        "historical": 2,
+        "current": 1,
+        "reason": "single-node topology"
+      },
+      "trainer.resume_mode": {
+        "historical": "resume_path",
+        "current": "disable",
+        "reason": "fresh Base initialization"
+      },
+      "trainer.resume_from_path": {
+        "historical": "__HISTORICAL_STEP20__",
+        "current": null,
+        "reason": "fresh Base initialization"
+      },
+      "trainer.val_before_train": {
+        "historical": false,
+        "current": true,
+        "reason": "fresh run initial validation"
+      },
+      "trainer.default_local_dir": {
+        "historical": "__CHECKPOINT_DIR__",
+        "current": "/data/qwen3_4b_reproduction/ncbr_s300_repro_v1/checkpoints",
+        "reason": "output location"
+      },
+      "critic.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      }
+    },
+    "current_interface_additions": {
+      "model_engine": "dp",
+      "actor_rollout_ref.rollout.boundary_return.enable": null,
+      "actor_rollout_ref.rollout.boundary_return.scheduler": "fixed_wave",
+      "global_profiler._target_": "verl.utils.profiler.ProfilerConfig",
+      "global_profiler.tool": null,
+      "global_profiler.steps": null,
+      "global_profiler.profile_continuous_steps": false,
+      "global_profiler.save_path": "outputs/profile",
+      "global_profiler.global_tool_config.nsys._target_": "verl.utils.profiler.config.NsightToolConfig",
+      "global_profiler.global_tool_config.nsys.discrete": false,
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range": "cudaProfilerApi",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range-end": null,
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.kill": "none",
+      "global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries": 100000,
+      "global_profiler.global_tool_config.torch_memory.stack_depth": 32,
+      "global_profiler.global_tool_config.torch_memory.context": "all",
+      "global_profiler.global_tool_config.torch_memory.stacks": "all",
+      "global_profiler.global_tool_config.precision_debugger._target_": "verl.utils.profiler.config.PrecisionDebuggerToolConfig",
+      "global_profiler.global_tool_config.precision_debugger.config_path": null,
+      "global_profiler.global_tool_config.precision_debugger.steps": null,
+      "global_profiler.global_tool_config.precision_debugger.stages": null,
+      "global_profiler.global_tool_config.precision_debugger.strict": false,
+      "transfer_queue.enable": false,
+      "transfer_queue.metrics.enabled": false,
+      "transfer_queue.metrics.port": 0,
+      "transfer_queue.backend.storage_backend": "SimpleStorage",
+      "transfer_queue.backend.SimpleStorage.total_storage_size": 100000,
+      "transfer_queue.backend.SimpleStorage.num_data_storage_units": 8,
+      "transfer_queue.backend.MooncakeStore.auto_init": false,
+      "transfer_queue.backend.MooncakeStore.metadata_server": "localhost:50123",
+      "transfer_queue.backend.MooncakeStore.master_server_address": "localhost:50124",
+      "transfer_queue.backend.MooncakeStore.local_hostname": "localhost",
+      "transfer_queue.backend.MooncakeStore.protocol": "tcp",
+      "transfer_queue.backend.MooncakeStore.global_segment_size": 4294967296,
+      "transfer_queue.backend.MooncakeStore.local_buffer_size": 1073741824,
+      "transfer_queue.backend.MooncakeStore.device_name": "",
+      "ray_kwargs.ray_init.address": "local",
+      "ray_kwargs.ray_init.num_cpus": 32,
+      "ray_kwargs.ray_init.num_gpus": 8,
+      "ray_kwargs.ray_init.include_dashboard": false,
+      "ray_kwargs.ray_init.object_store_memory": 17179869184,
+      "ray_kwargs.timeline_json_file": null,
+      "ncbr.enable": null
+    }
+  }
+}

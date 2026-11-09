@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "files_verified": 16,
+  "row_counts": [
+    1791700,
+    960,
+    30
+  ],
+  "base_chat_template": "PASS",
+  "note": "Full model hashes are capture-time hashes; config/tokenizer_config/data hashes also match historical records."
+}

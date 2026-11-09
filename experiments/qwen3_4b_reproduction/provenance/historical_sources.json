@@ -1,0 +1,10 @@
+{
+  "dapo": {
+    "historical_run": "qwen3_4b_base_dapo_b256_g768_m16_n8_r2048_s600_v1",
+    "historical_config_sha256": "ae2cda90c4651b35b9df4d5f419532823de7e564d94e632ed04f43b1032b80ee"
+  },
+  "ncbr": {
+    "historical_run": "qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1",
+    "historical_config_sha256": "a6741117e5a07ab346589061b96201f8699d59cf04e3a1c23fb10f8f21ba33b2"
+  }
+}
