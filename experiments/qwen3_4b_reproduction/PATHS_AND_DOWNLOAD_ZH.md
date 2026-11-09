@@ -36,6 +36,10 @@ sha256sum -c SHA256SUMS
 
 ### Base 模型
 
+模型下载链接：[https://huggingface.co/Qwen/Qwen3-4B-Base](https://huggingface.co/Qwen/Qwen3-4B-Base)。
+
+历史固定版本文件列表：[revision 906bfd4b4dc7f14ee4320094d8b41684abff8539](https://huggingface.co/Qwen/Qwen3-4B-Base/tree/906bfd4b4dc7f14ee4320094d8b41684abff8539)。可在页面手动下载，或使用下面的命令下载到新机器自行选择的模型目录。
+
 下载的是 `Qwen/Qwen3-4B-Base`，不是 Instruct 模型，也不是某次训练的 checkpoint。当前 Base 本地下载记录中的 revision 为 `906bfd4b4dc7f14ee4320094d8b41684abff8539`，下面固定该 revision；最终以包内资产哈希检查为准。
 
 示例使用 uv 的隔离下载工具，不安装进训练 Python。若下载环境尚无 uv，先安装并加入 PATH（已有 uv 时跳过）：

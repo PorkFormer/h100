@@ -23,6 +23,8 @@ sha256sum -c SHA256SUMS
 
 ## 2. 在新机器手动下载 Base 和数据
 
+Base 模型下载链接：[https://huggingface.co/Qwen/Qwen3-4B-Base](https://huggingface.co/Qwen/Qwen3-4B-Base)。固定版本及下载命令见 [手动下载与路径配置](PATHS_AND_DOWNLOAD_ZH.md)。
+
 按 [下载与路径指南](PATHS_AND_DOWNLOAD_ZH.md) 在新机器执行下载：源码来自远程仓库的交付包；Base 来自 `Qwen/Qwen3-4B-Base`，固定 revision；三份历史预处理 Parquet 的下载地址由你手动提供。当前没有已核实的这三份文件的公开下载 URL，不能用公开原始题库替代。该流程不要求访问或复用旧机器的绝对路径。
 
 必须保留原始文件内容，包括题目、答案、chat template、样本重复和顺序。**不要使用 Instruct 模型、旧训练导出的 HF 权重、去重后的 17k 数据或重新转换的数据。**

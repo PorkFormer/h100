@@ -1,7 +1,7 @@
 {
   "archive": "qwen3_4b_reproduction.tar.gz",
-  "sha256": "71edc05546f05e7c33c736f6227a47a364dd7be6e203a05d2a04aa49f5673de0",
-  "bytes": 1642962,
+  "sha256": "bce02a39552998987389505460c1a9e3ebb9779290ddc28fa9191717e2b602f6",
+  "bytes": 1643219,
   "files_verified": 766,
   "source_files": 738,
   "cpu_tests_passed": 247,
@@ -13,5 +13,5 @@
   "completed_at_utc": "2026-11-09T11:15:45.596317+00:00",
   "container_image": "docker.1ms.run/verlai/verl:vllm018.dev1",
   "container_image_tested": false,
-  "documentation_updated_at_utc": "2026-11-09T11:32:13.821800+00:00"
+  "documentation_updated_at_utc": "2026-11-09T11:33:16.632543+00:00"
 }
