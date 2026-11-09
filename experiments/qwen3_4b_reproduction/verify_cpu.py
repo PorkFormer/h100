@@ -29,7 +29,7 @@ paths = [source / 'tests/experimental/natural_continuation_boundary_return',
          goldens / 'test_standard_on_cpu.py', goldens / 'test_hook_on_cpu.py',
          source / 'tests/experimental/probe_credit/test_dapo_trainer_on_cpu.py',
          source / 'tests/experimental/probe_credit/test_dynamic_sampling_on_cpu.py',
-         run.ROOT / 'test_reproduction.py']
+         run.ROOT / 'test_reproduction.py', run.ROOT / 'test_offline_eval.py']
 args = ['-q', '-p', 'no:cacheprovider', *map(str, paths)]
 bootstrap = ('import ray; ray.init=lambda *a,**k: (_ for _ in ()).throw(AssertionError("Ray forbidden")); '
              f'import pytest; raise SystemExit(pytest.main({args!r}))')

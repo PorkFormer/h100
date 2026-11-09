@@ -8,9 +8,9 @@
     "boundary_golden.json": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
   },
   "status": "PASS",
-  "tests_passed": 247,
-  "validated_at_utc": "2026-11-09T11:15:09.601440+00:00",
-  "validation_location": "independent extracted bundle under /tmp",
+  "tests_passed": 265,
+  "validated_at_utc": "2026-11-09T13:32:10.347274+00:00",
+  "validation_location": "current workspace; offline eval inputs reconstructed from historical files",
   "launcher_final_contract_tests_passed": 29,
   "output_path_file_rejection": "PASS",
   "gpu_training_executed": false,
@@ -18,7 +18,11 @@
   "launcher_files_sha256": {
     "build_bundle.py": "729a3b10018216db2d119e13a70e95fab8e71529d0504ec4ac4d67b76b9ee37d",
     "test_reproduction.py": "681564aaeab186063cc05ab9009ff7179b693627ce32ce43368285fbae5a6e0e",
-    "verify_cpu.py": "27b9399f932689acd1a4b5bbe650a6e5f86ee9f2351dd08f54936b039a09364f",
-    "run.py": "fccba08ac0bf3cdef94441c74e048f901b4db4250623e886d9c59d06323c1768"
-  }
+    "verify_cpu.py": "e3b25154dfe5a2842fb7f0ee2fce937d86d619503e2c6394a8f9b369c1c1d3ee",
+    "run.py": "fccba08ac0bf3cdef94441c74e048f901b4db4250623e886d9c59d06323c1768",
+    "evaluate.py": "7b6c027f13deeab7d045835e15ba29e35bfab737e032bf0b9527dd31d2ed84dd",
+    "evaluate.sh": "2ce7c27fe614532a6fa41bb79adbd63cf2970beb45f62aef40301cc7e54841fb",
+    "test_offline_eval.py": "d0fef32c7312e34265df679ddbc14e4ff41a95e3fea025b4d94e1e41fcdc01df"
+  },
+  "offline_eval_tests_passed": 18
 }

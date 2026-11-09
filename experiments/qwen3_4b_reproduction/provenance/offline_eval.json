@@ -1,0 +1,40 @@
+{
+  "semantic_sha256": "56dfdb7268974333f7959336cb4aed58977feaaf357894d4fbdbe50e348566cb",
+  "amc23_sha256": "b696e87ba47be4e879a60fd4ef1d4aa522ba78c5ae013c6aff5cc9788a397c5e",
+  "amc23_revision": "80815d37005feb82cd7f8fbc6901d5d3eff43057",
+  "verifier_sha256": "4d8db99737fc392285772f4dd71dc54995ec57013f320a31d7ab027902e59d6f",
+  "historical_prompts_sha256": "1a990fcaa31bf8fd64b49f06cc74d434e36f90530d1210db0a3de2f9ae92788f",
+  "protocol": "independent-horizon-generation-v1",
+  "samples": 32,
+  "logical_shards": 8,
+  "batch_size": 8,
+  "master_seed": 42,
+  "horizons": [
+    2048,
+    8192
+  ],
+  "bootstrap_seed": 20260812,
+  "bootstrap_replicates": 10000,
+  "engine": {
+    "dtype": "bfloat16",
+    "tensor_parallel_size": 1,
+    "max_model_len": {
+      "2048": 4096,
+      "8192": 9216
+    },
+    "gpu_memory_utilization": 0.72,
+    "max_num_seqs": 8,
+    "max_num_batched_tokens": 32768,
+    "enable_prefix_caching": true,
+    "enable_chunked_prefill": true,
+    "seed": 42
+  },
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": -1,
+    "repetition_penalty": 1.0,
+    "ignore_eos": false,
+    "n": 1
+  }
+}

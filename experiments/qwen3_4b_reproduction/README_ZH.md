@@ -168,3 +168,7 @@ VERL_ROOT="$PWD/verl" .venv/bin/python verify_cpu.py
 包内验证脚本检查两个冻结行为参考结果，并运行 NCBR、DAPO 动态采样和新启动器契约测试。仓库内使用时省略 VERL_ROOT，自动找到相邻源码。
 
 已完成的检查与未完成项见 [VALIDATION.md](VALIDATION.md)。**当前交付没有在目标 8×80GB 机器执行训练、没有跑 300 步、也没有实测目标机峰值显存或最终分数。** 目标机执行 `smoke all` 后再启动正式训练；CPU 通过或 Ray 成功启动都不能代替 GPU 验收。
+
+## 独立离线评测
+
+AIME24 / AIME25 / AMC23 的数据下载、手动路径配置、checkpoint 导出、独立2K/8K采样及重评分见 [OFFLINE_EVAL_ZH.md](OFFLINE_EVAL_ZH.md)。入口为 `evaluate.sh`，配置为 `eval_settings.env`；不需要 W&B 登录。

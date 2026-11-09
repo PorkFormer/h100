@@ -161,3 +161,7 @@ bash run.sh train all
 ```
 
 请逐项确认命令成功后再继续；`test` 失败表示文件位置或挂载配置有误。`config` 仅校验配置；`check` 才会核验完整文件内容、依赖与 GPU；最后两条命令会实际训练。上述设置和下载均不会自动同步旧机器上的路径或训练状态。
+
+## 独立离线评测
+
+AIME24 / AIME25 / AMC23 的数据下载、手动路径配置、checkpoint 导出、独立2K/8K采样及重评分见 [OFFLINE_EVAL_ZH.md](OFFLINE_EVAL_ZH.md)。入口为 `evaluate.sh`，配置为 `eval_settings.env`；不需要 W&B 登录。

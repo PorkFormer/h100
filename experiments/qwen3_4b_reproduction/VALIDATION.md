@@ -21,3 +21,7 @@
 - CPU 测试包含续写尾部不进入 actor、边界奖励、动态采样和关闭 NCBR 的行为检查，但不能证明不同 GPU 拓扑的训练轨迹或最终分数逐位相同。
 
 目标机验收顺序：`config all` → `check all` → `smoke all` → `train all`。冒烟不改变 batch/n/H/L；正式训练不读取冒烟或历史 checkpoint。`status.json` 的 complete 需要实际完成目标步数、验证及预期 checkpoint 检查。
+
+## 独立离线评测增补
+
+完整 CPU 回归现为265项通过（原247项加18项离线评测测试），两份 frozen golden 仍逐字节一致。100道历史题目的语义哈希及3200个采样种子已逐一核对；源码和 Base tokenizer 的 CPU preflight 通过。测试覆盖固定分片顺序、采样参数、结果身份/长度/文本校验、完整6400条合成结果重评分、缺失结果拒绝、Avg@32与pass@32计算及同step比较限制。合成结果只验证脚本逻辑，不是模型成绩。记录见 `provenance/offline_eval_validation.json`。未执行GPU离线生成或新机器容器测试。

@@ -97,3 +97,7 @@ bash run.sh train all
 运行时缓存放在 `CACHE_ROOT` 下，默认 `/tmp/q4repro-cache`；Ray session 使用独立短目录 `/tmp/q4r-*`。缓存及 session 日志不会自动清理，可在确认对应任务已退出后手动清理。完整环境检查会显示已知 metadata 冲突，同时验证固定包版本、真实导入和源码哈希。
 
 本次交付在现有历史依赖环境做了导入及 CPU 行为验证；没有重新下载并建立一个完全干净的目标机器环境。最终安装兼容性由目标机的 `setup_env.sh`、`check all` 和 `smoke all` 分阶段确认。
+
+## 独立离线评测
+
+AIME24 / AIME25 / AMC23 的数据下载、手动路径配置、checkpoint 导出、独立2K/8K采样及重评分见 [OFFLINE_EVAL_ZH.md](OFFLINE_EVAL_ZH.md)。入口为 `evaluate.sh`，配置为 `eval_settings.env`；不需要 W&B 登录。
