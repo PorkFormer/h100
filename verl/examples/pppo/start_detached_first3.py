@@ -1,4 +1,4 @@
-"""Restart only a verified-dead, incomplete G=1 attempt with detached supervision."""
+"""Start detached training/orchestration; checks are performed by the Codex session."""
 import argparse
 import json
 import os
@@ -27,7 +27,8 @@ def main():
         print('Dead-process prerequisite verified. --run archives interrupted attempt and launches detached jobs.')
         return
     stamp=str(time.time_ns())
-    interrupted=RUN/'interrupted'/stamp;interrupted.mkdir(parents=True)
+    existing=[root for root in (smoke,auto) if root.exists()]
+    interrupted=RUN/('interrupted' if existing else 'process_launches')/stamp;interrupted.mkdir(parents=True)
     for root,name,status_name in [(smoke,'smoke-g1','training_status.json'),(auto,'automation','status.json')]:
         if root.exists():
             previous=read_status(root/status_name)
@@ -35,7 +36,8 @@ def main():
             previous.update(state='INTERRUPTED',detected_at=time.time(),
                             reason='Driver/coordinator process absent, no successful update; exit cause not established')
             write_json(root/status_name,previous)
-    notify('process_interruption_'+stamp,'检测到driver与协调器退出：未完成更新，保留现场并改为持久进程重启')
+    if existing:
+        notify('process_interruption_'+stamp,'检测到driver与协调器退出：未完成更新，保留现场并改为持久进程重启')
     for root,name in [(smoke,'smoke-g1'),(auto,'automation')]:
         if root.exists():root.rename(interrupted/name)
     env=os.environ.copy();env.update(PYTHONPATH=str(REPO/'verl'),PYTHONDONTWRITEBYTECODE='1',WANDB_MODE='offline')
@@ -57,7 +59,6 @@ def main():
         time.sleep(1)
     else:raise RuntimeError('Detached driver did not publish job identity within 120 seconds')
     spawn('continuation',[sys.executable,'-u',str(Path(__file__).with_name('continue_ncbr_matched.py')),'--run'])
-    spawn('first3_monitor',[sys.executable,'-u',str(Path(__file__).with_name('monitor_first3.py'))])
     print(json.dumps(receipts,indent=2),flush=True)
 
 

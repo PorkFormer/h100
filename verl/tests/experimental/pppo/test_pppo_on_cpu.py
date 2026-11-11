@@ -96,7 +96,10 @@ def test_crop_and_raw_tokens_and_scoring():
     fallback=candidate()
     fallback.batch['pppo_prefix_length'][0]=0
     actor_batch(fallback,'cropped',0)
-    assert fallback.batch['responses'].shape[-1]==32
+    assert fallback.batch['responses'].shape[-1]==8
+    assert fallback.batch['response_mask'][0].sum()==1
+    assert fallback.batch['responses'][0,0]==20
+    assert fallback.meta_info['pppo_zero_prefix_fallback'] is False
     assert not fallback.batch['pppo_loss_mask'][0].any()
 
 
@@ -267,3 +270,31 @@ def test_checkpoint_pending_commit_restore_and_corruption(tmp_path,monkeypatch):
     (state_path.parent/'data.pt').write_bytes(b'corrupt')
     with pytest.raises(ValueError,match='size mismatch'):
         resumed._load_checkpoint()
+
+
+@pytest.mark.parametrize('all_zero',[False,True])
+def test_zero_prefix_guard_preserves_objective_and_gradients(all_zero):
+    original=candidate()
+    original.batch['pppo_prefix_length'][0]=0
+    if all_zero:original.batch['pppo_prefix_length'].zero_()
+    reference=actor_batch(copy.deepcopy(original),'full_mask_reference',0)
+    cropped=actor_batch(copy.deepcopy(original),'cropped',0)
+    width=cropped.batch['responses'].shape[-1]
+    assert width==(1 if all_zero else 8)
+    assert (cropped.batch['response_mask'].sum(-1)>=1).all()
+    for name in ['pppo_original_length','pppo_group_total_length','pppo_row_weight','pppo_advantage']:
+        torch.testing.assert_close(cropped.batch[name],reference.batch[name])
+    torch.manual_seed(11)
+    current=torch.randn(16,32,dtype=torch.double,requires_grad=True)
+    old=torch.randn_like(current)
+    def objective(batch,logp,oldp):
+        return prefix_objective(logp,oldp,batch.batch['pppo_advantage'].double(),
+                                batch.batch['pppo_loss_mask'],batch.batch['pppo_row_weight'].double(),16)
+    full=objective(reference,current,old)
+    short=objective(cropped,current[:,:width],old[:,:width])
+    torch.testing.assert_close(full,short,rtol=1e-12,atol=1e-12)
+    grad_full=torch.autograd.grad(full,current,retain_graph=True)[0]
+    grad_crop=torch.autograd.grad(short,current)[0]
+    torch.testing.assert_close(grad_full,grad_crop,rtol=1e-12,atol=1e-12)
+    assert not grad_crop[0].any()
+    assert not grad_crop[:,width:].any()

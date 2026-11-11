@@ -71,7 +71,7 @@ class FrozenRank:
         tokenizer=model.tokenizer
         prompt=tokenizer.encode('Solve the following math problem step by step. What is 17 times 23?\nAnswer:',add_special_tokens=False)
         text=tokenizer.encode('We multiply 17 by 23. First compute 17 times 20, which is 340. Then add 51. The answer is 391.\n',add_special_tokens=False)
-        lengths=torch.tensor([32,63,127,511,1024,2048,4096,8192])
+        lengths=torch.tensor([2,6,127,511,1024,2048,4096,8192])
         width=8192
         h=lengths*15//100
         prompts=torch.tensor([[tokenizer.pad_token_id]*3+prompt]*8)
@@ -192,6 +192,7 @@ class FrozenRank:
                     grad_norm_relative_error=abs(a['grad_norm']-b['grad_norm'])/max(abs(a['grad_norm']),1e-12),
                     reference_loss=a['loss'],cropped_loss=b['loss'],
                     original_lengths=lengths.tolist(),prefix_lengths=h.tolist(),
+                    zero_prefix_rows=int((h==0).sum()),cropped_guard_tokens=int((h==0).sum()),
                     within_view_old_current_max_abs={name:float((value['old']-value['current']).abs().max())
                                                      for name,value in results.items()},
                     denominator_identical=bool(torch.equal(a['denominator'],b['denominator'])),

@@ -158,6 +158,7 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
         metrics["pppo/optimized_tokens"] = int(batch.batch["pppo_loss_mask"].sum())
         metrics["pppo/actor_input_tokens"] = int(batch.batch["attention_mask"].sum())
         metrics["pppo/zero_prefix_fallback"] = int(batch.meta_info["pppo_zero_prefix_fallback"])
+        metrics["pppo/zero_prefix_rows"] = batch.meta_info["pppo_zero_prefix_rows"]
         metrics["pppo/zero_advantage_fraction"] = float((a == 0).float().mean())
         self.checkpoint_manager.sleep_replicas()
         return batch

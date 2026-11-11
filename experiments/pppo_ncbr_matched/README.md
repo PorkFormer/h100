@@ -193,3 +193,21 @@ with independent sessions, closed inherited descriptors and file-backed logs;
 all three were verified reparented to PID 1. This lifecycle repair changes no
 training/config fingerprint. Six monitor tests guard against counting smoke,
 missing/duplicate steps, wrong update counts, nonfinite metrics and stale drivers.
+
+
+## Monitoring correction and zero-prefix execution repair
+
+The user clarified that periodic checks must be performed by this active Codex
+session, not a monitoring script, and set the interval to five minutes. The
+standalone `monitor_first3.py` process was stopped. The detached launcher no longer
+starts that script. Training and sequential stage orchestration remain detached.
+
+The successful G=1 smoke revealed `pppo/zero_prefix_fallback=1`: one zero-length
+prefix had reverted every actor row to full-mask execution. The repaired cropped
+view retains only one original guard token on zero-prefix rows, with an entirely
+empty PPO loss mask on those rows. Other rows remain cropped. No original length,
+reward, group normalization, advantage, model precision or experiment hyperparameter
+changes. CPU tests compare full/cropped objective gradients for mixed/all-zero
+prefixes; the real BF16 Gate 2 batch now includes original lengths 2 and 6 (zero
+prefixes) while retaining the 8192-token maximum. Prior successful smoke evidence
+is preserved, and affected gates must be rerun before any formal launch.
