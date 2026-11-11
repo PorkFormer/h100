@@ -57,6 +57,10 @@ class FrozenRank:
         cc=omega_conf_to_dataclass(c.actor_rollout_ref.actor.checkpoint)
         engine=FSDPEngineWithLMHead(model,ec,oc,cc)
         engine.initialize()
+        linear_tile = int(os.environ.get('PPPO_GATE_LINEAR_TILE', '0'))
+        if linear_tile:
+            from stable_linear_diagnostic import install_fixed_tile_linear
+            install_fixed_tile_linear(engine.module, linear_tile)
         engine.pppo_strict_update=True
         tokenizer=model.tokenizer
         prompt=tokenizer.encode('Solve the following math problem step by step. What is 17 times 23?\nAnswer:',add_special_tokens=False)
@@ -123,6 +127,7 @@ class FrozenRank:
 
         # Compare all forward/backward paths before any optimizer mutation. A
         # same-view repeat separates stochastic kernels from length effects.
+        frozen_old = None
         for view in ['full_mask_reference','cropped','full_mask_repeat']:
             with torch.no_grad():
                 for parameter, value in zip(parameters,initial,strict=True): parameter.copy_(value.to(parameter.device))
@@ -140,7 +145,11 @@ class FrozenRank:
                 capture['view']=None
                 capture['indices']=None
             old=no_padding_2_padding(inferred['model_output']['log_probs'],td).detach()
-            td['old_log_probs']=old
+            if frozen_old is None:
+                frozen_old = old.detach().clone()
+            # A frozen-batch equivalence test must hold the PPO denominator
+            # fixed. Separately recomputed old probabilities remain measured.
+            td['old_log_probs']=frozen_old[:, :batch.batch['responses'].shape[-1]].clone()
             tu.assign_non_tensor(td,micro_batch_size_per_gpu=1)
             with engine.train_mode():
                 engine.optimizer_zero_grad()
@@ -186,6 +195,8 @@ class FrozenRank:
                                           update=compare_vectors(a['update'],repeat['update'])),
                     suffix_logprob_gradient_max=max(suffix_gradient_max),
                     max_memory_allocated_bytes=torch.cuda.max_memory_allocated())
+        report['shared_frozen_old_log_probs']=True
+        report['linear_tile']=linear_tile
         report['bf16_reduced_precision_reduction']=torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
         report['passed']=all([report['old_logprob_max_abs']<=.05,report['current_logprob_max_abs']<=.05,
                              report['loss_relative_error']<=.02,report['grad_norm_relative_error']<=.02,
@@ -216,7 +227,9 @@ def main():
     parser.add_argument('--output',type=Path,default=RUN/'acceptance/gate2')
     parser.add_argument('--trace-kernels',action='store_true',help='Diagnostic only; enable deterministic FlashAttention backward and first-layer tracing')
     parser.add_argument('--fp32-reduction', action='store_true', help='Diagnostic only: BF16 GEMM with reduced precision reduction disabled')
+    parser.add_argument('--linear-tile', type=int, default=0, help='Diagnostic only: fixed BF16 linear token tiles for both full and cropped views')
     args=parser.parse_args()
+    if args.linear_tile < 0: parser.error('--linear-tile must be nonnegative')
     if args.output.exists(): raise SystemExit('Use a new gate evidence directory; never overwrite failures')
     args.output.mkdir(parents=True)
     from omegaconf import OmegaConf
@@ -228,11 +241,13 @@ def main():
         environment.update(PPPO_GATE_TRACE_KERNELS='1',FLASH_ATTENTION_DETERMINISTIC='1')
     if args.fp32_reduction:
         environment['PPPO_GATE_FP32_REDUCTION']='1'
+    if args.linear_tile:
+        environment['PPPO_GATE_LINEAR_TILE']=str(args.linear_tile)
     ray.init(address='10.8.191.127:6395',runtime_env={'env_vars':environment},log_to_driver=True)
     actors=[]
     started=time.time()
     report=dict(gate=2,status='FAIL',code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
-                acceptance_eligible=not (args.trace_kernels or args.fp32_reduction),
+                acceptance_eligible=not (args.trace_kernels or args.fp32_reduction or args.linear_tile),
                 diagnostic_fp32_reduction=args.fp32_reduction,
                 code_fingerprint=code_fingerprint(),
                 config_sha256=sha(args.config),thresholds=dict(logprob_max_abs=.05,relative_error=.02,gradient_cosine=.999))
