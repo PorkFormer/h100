@@ -152,3 +152,23 @@ G=1 are not rerun merely to install this orchestration-only wrapper.
 Live state/logs/mail receipts: `outputs/pppo_ncbr_matched_16xa10040g_s300/automation/`.
 Without `--run`, the wrapper checks prerequisites and prints status without
 launching training or sending mail.
+
+## Authorized repair boundary (2026-11-11)
+
+The user authorizes engineering repairs and revalidation without repeated approval,
+while preserving comparison with historical NCBR. Do not alter the frozen model /
+tokenizer identity, source data and holdout split, question ordering/repetitions,
+prompt/verifier/evaluation contract, response caps, N/G, train/candidate/mini/micro
+batches, optimizer, schedule horizon, update counts, seeds, PPPO objective or eta
+schedule to make a failed run succeed. Existing disclosed algorithm/data/numerical
+execution differences remain disclosed; they do not authorize additional drift.
+
+Prefer compatibility fixes, bounded request scheduling/chunking, communication,
+metadata alignment and resource-management repairs. Preserve failed attempts,
+review field-level differences and rerun affected gates before retrying. Runtime
+or GPU-hour effects of execution changes must be reported separately. A required
+change to a protected scientific condition is a blocker, not an automatic fallback.
+
+The coordinator advances validated stages and reports failures; it does not
+silently rewrite code/config or blindly retry a failed scientific experiment.
+Engineering diagnosis and repair must precede restarting a stopped chain.
