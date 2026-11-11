@@ -1,0 +1,15 @@
+{
+  "allocated_gpu_hours": 0.0856908384958903,
+  "code_commit": "0fec3c97ce8669d912014472c5929f11701621e9",
+  "code_fingerprint": "b0f8d20d771a5521d5ca74168f4d423d70c687673c882bf145ca3376e363face",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "error": "RayTaskError(ValidationError)(ValidationError(\"Incompatible value 'None' for field of type 'int'\\n    full_key: max_token_len_per_gpu\\n    object_type=FSDPEngineConfig\"))",
+  "gate": 2,
+  "status": "FAIL",
+  "thresholds": {
+    "gradient_cosine": 0.999,
+    "logprob_max_abs": 0.05,
+    "relative_error": 0.02
+  },
+  "wall_seconds": 19.280438661575317
+}

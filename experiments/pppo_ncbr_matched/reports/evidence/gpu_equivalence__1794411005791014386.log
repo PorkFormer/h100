@@ -1,0 +1,95 @@
+2026-11-11 15:30:06,731	INFO worker.py:1810 -- Connecting to existing Ray cluster at address: 10.8.191.127:6395...
+2026-11-11 15:30:06,789	INFO worker.py:2013 -- Connected to Ray cluster.
+/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py:2052: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Traceback (most recent call last):
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 194, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 179, in main
+    rows=ray.get([a.run.remote(i,f'tcp://10.8.191.127:{port}',str(args.config),str(args.output))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/auto_init_hook.py", line 22, in auto_init_wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/client_mode_hook.py", line 104, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 2981, in get
+    values, debugger_breakpoint = worker.get_objects(
+                                  ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 1012, in get_objects
+    raise value.as_instanceof_cause()
+ray.exceptions.RayTaskError(ValidationError): [36mray::FrozenRank.run()[39m (pid=387516, ip=10.8.191.131, actor_id=f36814e0fce0f62047d007fb0e000000, repr=<gpu_equivalence.FrozenRank object at 0x78a9daf189b0>)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 50, in run
+    ec=omega_conf_to_dataclass(c.actor_rollout_ref.actor.fsdp_config,dataclass_type=FSDPEngineConfig)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/utils/config.py", line 60, in omega_conf_to_dataclass
+    cfg_from_dataclass = OmegaConf.structured(dataclass_type)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 125, in structured
+    return OmegaConf.create(obj, parent, flags)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 178, in create
+    return OmegaConf._create_impl(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 900, in _create_impl
+    format_and_raise(node=None, key=None, value=None, msg=str(e), cause=e)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 819, in format_and_raise
+    _raise(ex, cause)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 797, in _raise
+    raise ex.with_traceback(sys.exc_info()[2])  # set env var OC_CAUSE=1 for full trace
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 861, in _create_impl
+    return DictConfig(
+           ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/dictconfig.py", line 111, in __init__
+    format_and_raise(node=None, key=key, value=None, cause=ex, msg=str(ex))
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 819, in format_and_raise
+    _raise(ex, cause)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 797, in _raise
+    raise ex.with_traceback(sys.exc_info()[2])  # set env var OC_CAUSE=1 for full trace
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/dictconfig.py", line 94, in __init__
+    self._set_value(content, flags=flags)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/dictconfig.py", line 647, in _set_value
+    raise e
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/dictconfig.py", line 644, in _set_value
+    self._set_value_impl(value, flags)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/dictconfig.py", line 674, in _set_value_impl
+    data = get_structured_config_data(value, allow_objects=ao)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 495, in get_structured_config_data
+    return get_dataclass_data(obj, allow_objects=allow_objects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 421, in get_dataclass_data
+    format_and_raise(
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 899, in format_and_raise
+    _raise(ex, cause)
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 797, in _raise
+    raise ex.with_traceback(sys.exc_info()[2])  # set env var OC_CAUSE=1 for full trace
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/_utils.py", line 413, in get_dataclass_data
+    d[name] = _maybe_wrap(
+              ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 1105, in _maybe_wrap
+    return _node_wrap(
+           ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/omegaconf.py", line 1055, in _node_wrap
+    node = IntegerNode(value=value, key=key, parent=parent, is_optional=is_optional)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/nodes.py", line 253, in __init__
+    super().__init__(
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/nodes.py", line 29, in __init__
+    self._set_value(value)  # lgtm [py/init-calls-subclass]
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/nodes.py", line 46, in _set_value
+    self._val = self.validate_and_convert(value)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/omegaconf/nodes.py", line 66, in validate_and_convert
+    raise ValidationError(
+omegaconf.errors.ValidationError: Incompatible value 'None' for field of type 'int'
+    full_key: max_token_len_per_gpu
+    object_type=FSDPEngineConfig

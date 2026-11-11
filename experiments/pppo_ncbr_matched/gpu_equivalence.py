@@ -44,6 +44,8 @@ class FrozenRank:
         from verl.workers.utils.padding import left_right_2_no_padding, no_padding_2_padding
 
         torch.cuda.set_device(0)
+        if os.environ.get('PPPO_GATE_FP32_REDUCTION') == '1':
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
         dist.init_process_group('nccl',init_method=address,rank=rank,world_size=16,timeout=timedelta(minutes=15))
         c=OmegaConf.load(config_path)
         model=omega_conf_to_dataclass(c.actor_rollout_ref.model,dataclass_type=HFModelConfig)
@@ -184,6 +186,7 @@ class FrozenRank:
                                           update=compare_vectors(a['update'],repeat['update'])),
                     suffix_logprob_gradient_max=max(suffix_gradient_max),
                     max_memory_allocated_bytes=torch.cuda.max_memory_allocated())
+        report['bf16_reduced_precision_reduction']=torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
         report['passed']=all([report['old_logprob_max_abs']<=.05,report['current_logprob_max_abs']<=.05,
                              report['loss_relative_error']<=.02,report['grad_norm_relative_error']<=.02,
                              gradient['finite'],gradient['relative_error']<=.02,
@@ -212,6 +215,7 @@ def main():
     parser.add_argument('--config',type=Path,default=CONFIG)
     parser.add_argument('--output',type=Path,default=RUN/'acceptance/gate2')
     parser.add_argument('--trace-kernels',action='store_true',help='Diagnostic only; enable deterministic FlashAttention backward and first-layer tracing')
+    parser.add_argument('--fp32-reduction', action='store_true', help='Diagnostic only: BF16 GEMM with reduced precision reduction disabled')
     args=parser.parse_args()
     if args.output.exists(): raise SystemExit('Use a new gate evidence directory; never overwrite failures')
     args.output.mkdir(parents=True)
@@ -222,11 +226,14 @@ def main():
                        WANDB_MODE='disabled',NCCL_DEBUG='WARN')
     if args.trace_kernels:
         environment.update(PPPO_GATE_TRACE_KERNELS='1',FLASH_ATTENTION_DETERMINISTIC='1')
+    if args.fp32_reduction:
+        environment['PPPO_GATE_FP32_REDUCTION']='1'
     ray.init(address='10.8.191.127:6395',runtime_env={'env_vars':environment},log_to_driver=True)
     actors=[]
     started=time.time()
     report=dict(gate=2,status='FAIL',code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
-                acceptance_eligible=not args.trace_kernels,
+                acceptance_eligible=not (args.trace_kernels or args.fp32_reduction),
+                diagnostic_fp32_reduction=args.fp32_reduction,
                 code_fingerprint=code_fingerprint(),
                 config_sha256=sha(args.config),thresholds=dict(logprob_max_abs=.05,relative_error=.02,gradient_cosine=.999))
     try:

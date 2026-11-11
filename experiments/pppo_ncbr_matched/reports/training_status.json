@@ -1,0 +1,20 @@
+{
+  "state": "BLOCKED",
+  "formal_training": "NOT RUN",
+  "job_id": null,
+  "last_successful_step": 0,
+  "blocker": "Gate 2 BF16 cropped/full-mask equivalence FAIL; no approved passing cropped path",
+  "gpu_gate_commit": "770d4d5a5d67d3a8f713b7c73ededf8a1118b037",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "gates": {
+    "0": "PASS",
+    "1": "PASS",
+    "2": "FAIL",
+    "3": "NOT RUN",
+    "4": "NOT RUN"
+  },
+  "smoke": "NOT RUN",
+  "profiling": "NOT RUN",
+  "evaluation": "NOT RUN",
+  "worker_management": "user"
+}

@@ -1,0 +1,1357 @@
+{
+  "acceptance_eligible": false,
+  "allocated_gpu_hours": 0.5639962440066867,
+  "code_commit": "501aaf1f4cbbbad2f4ac4b8f782ed7c28e108003",
+  "code_fingerprint": "03e76a7ca7238b2de75bc634dff68b59398a2bd3b1e34b2a7b0a8895b90b3d32",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "gate": 2,
+  "ranks": [
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "first_layer_kernel_trace": {
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.input_layernorm.input": {
+          "crop_max_abs": 0.0,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.input_layernorm.output": {
+          "crop_max_abs": 0.0,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.down_proj.input": {
+          "crop_max_abs": 0.0625,
+          "elements": 25156608,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.down_proj.output": {
+          "crop_max_abs": 0.03125,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.gate_proj.input": {
+          "crop_max_abs": 0.01171875,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.gate_proj.output": {
+          "crop_max_abs": 0.015625,
+          "elements": 25156608,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.up_proj.input": {
+          "crop_max_abs": 0.01171875,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.mlp.up_proj.output": {
+          "crop_max_abs": 0.0078125,
+          "elements": 25156608,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.post_attention_layernorm.input": {
+          "crop_max_abs": 0.03125,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.post_attention_layernorm.output": {
+          "crop_max_abs": 0.01171875,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.k_proj.input": {
+          "crop_max_abs": 0.0,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.k_proj.output": {
+          "crop_max_abs": 0.00390625,
+          "elements": 2648064,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.o_proj.input": {
+          "crop_max_abs": 0.00286865234375,
+          "elements": 10592256,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.o_proj.output": {
+          "crop_max_abs": 0.015625,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.q_proj.input": {
+          "crop_max_abs": 0.0,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.q_proj.output": {
+          "crop_max_abs": 0.0009765625,
+          "elements": 10592256,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.v_proj.input": {
+          "crop_max_abs": 0.0,
+          "elements": 6620160,
+          "repeat_max_abs": 0.0
+        },
+        "_fsdp_wrapped_module.model.layers.0._fsdp_wrapped_module.self_attn.v_proj.output": {
+          "crop_max_abs": 0.001953125,
+          "elements": 2648064,
+          "repeat_max_abs": 0.0
+        }
+      },
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.4594062350580013,
+        "cosine": 0.9986664444852871,
+        "finite": true,
+        "reference_norm": 0.46612081798311183,
+        "relative_error": 0.053256000178879374
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 0,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.46612081798311183,
+          "cosine": 0.9999999999613517,
+          "finite": true,
+          "reference_norm": 0.46612081798311183,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014712052452829819,
+          "cosine": 1.000000000013539,
+          "finite": true,
+          "reference_norm": 0.014712052452829819,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014712739279955886,
+        "cosine": 0.9538812288700759,
+        "finite": true,
+        "reference_norm": 0.014712052452829819,
+        "relative_error": 0.30371343490879416
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.31974346380668045,
+        "cosine": 0.9969248715430683,
+        "finite": true,
+        "reference_norm": 0.3189670628391344,
+        "relative_error": 0.07855668136590628
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 1,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.3189670628391344,
+          "cosine": 0.9999999999863006,
+          "finite": true,
+          "reference_norm": 0.3189670628391344,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014746690571061932,
+          "cosine": 1.0000000000137945,
+          "finite": true,
+          "reference_norm": 0.014746690571061932,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014747958370614139,
+        "cosine": 0.9528933835846134,
+        "finite": true,
+        "reference_norm": 0.014746690571061932,
+        "relative_error": 0.3069549477212352
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.470656580679853,
+        "cosine": 0.9972795624188115,
+        "finite": true,
+        "reference_norm": 0.4689726467917614,
+        "relative_error": 0.07398178561039323
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 2,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.4689726467917614,
+          "cosine": 0.9999999999625274,
+          "finite": true,
+          "reference_norm": 0.4689726467917614,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014913760141254399,
+          "cosine": 1.0000000000132825,
+          "finite": true,
+          "reference_norm": 0.014913760141254399,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014913487427594447,
+        "cosine": 0.9523019435102104,
+        "finite": true,
+        "reference_norm": 0.014913760141254399,
+        "relative_error": 0.3088597884521562
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.24127544693083033,
+        "cosine": 0.9971895692101391,
+        "finite": true,
+        "reference_norm": 0.24008615534492314,
+        "relative_error": 0.07532093572604014
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 3,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.24008615534492314,
+          "cosine": 1.0000000000299816,
+          "finite": true,
+          "reference_norm": 0.24008615534492314,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014864021154027659,
+          "cosine": 1.0000000000117995,
+          "finite": true,
+          "reference_norm": 0.014864021154027659,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.01486352592081417,
+        "cosine": 0.9543172129161792,
+        "finite": true,
+        "reference_norm": 0.014864021154027659,
+        "relative_error": 0.30226235495211795
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.22569440754416364,
+        "cosine": 0.9961014306932223,
+        "finite": true,
+        "reference_norm": 0.2240232415114837,
+        "relative_error": 0.08894353334728759
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 4,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.2240232415114837,
+          "cosine": 1.0000000000198264,
+          "finite": true,
+          "reference_norm": 0.2240232415114837,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014688891389250738,
+          "cosine": 1.0000000000118452,
+          "finite": true,
+          "reference_norm": 0.014688891389250738,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014688869349529456,
+        "cosine": 0.9504326577969301,
+        "finite": true,
+        "reference_norm": 0.014688891389250738,
+        "relative_error": 0.31485637310790543
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.16996523741080416,
+        "cosine": 0.9959242283986157,
+        "finite": true,
+        "reference_norm": 0.16751903206621005,
+        "relative_error": 0.09210760573511906
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 5,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.16751903206621005,
+          "cosine": 0.9999999999828983,
+          "finite": true,
+          "reference_norm": 0.16751903206621005,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014617364512750211,
+          "cosine": 1.000000000011212,
+          "finite": true,
+          "reference_norm": 0.014617364512750211,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014617568812758145,
+        "cosine": 0.951423721319625,
+        "finite": true,
+        "reference_norm": 0.014617364512750211,
+        "relative_error": 0.3116952284423406
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.15340966209814244,
+        "cosine": 0.996164991365161,
+        "finite": true,
+        "reference_norm": 0.1514703823706907,
+        "relative_error": 0.08906253002343387
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 6,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.1514703823706907,
+          "cosine": 0.9999999999815945,
+          "finite": true,
+          "reference_norm": 0.1514703823706907,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.01445021118620018,
+          "cosine": 1.000000000011016,
+          "finite": true,
+          "reference_norm": 0.01445021118620018,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014450418939627814,
+        "cosine": 0.9522202829204366,
+        "finite": true,
+        "reference_norm": 0.01445021118620018,
+        "relative_error": 0.3091291126111123
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.13655121081874583,
+        "cosine": 0.99613962787067,
+        "finite": true,
+        "reference_norm": 0.13486735936346558,
+        "relative_error": 0.08929177369416412
+      },
+      "host": "p-kt-dgx-a100-03",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 7,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.13486735936346558,
+          "cosine": 0.9999999999975211,
+          "finite": true,
+          "reference_norm": 0.13486735936346558,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014252150280413354,
+          "cosine": 1.0000000000107274,
+          "finite": true,
+          "reference_norm": 0.014252150280413354,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014252074546009515,
+        "cosine": 0.9523388647144446,
+        "finite": true,
+        "reference_norm": 0.014252150280413354,
+        "relative_error": 0.308742229194823
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.28655028052874265,
+        "cosine": 0.996362404601812,
+        "finite": true,
+        "reference_norm": 0.2852569311483228,
+        "relative_error": 0.08560802161992863
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 8,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.2852569311483228,
+          "cosine": 1.0000000000030704,
+          "finite": true,
+          "reference_norm": 0.2852569311483228,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014654540946719044,
+          "cosine": 1.0000000000117772,
+          "finite": true,
+          "reference_norm": 0.014654540946719044,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014654598740582317,
+        "cosine": 0.9500433825160457,
+        "finite": true,
+        "reference_norm": 0.014654540946719044,
+        "relative_error": 0.31609117203690806
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.2106683306508729,
+        "cosine": 0.9964240576314867,
+        "finite": true,
+        "reference_norm": 0.20817629548916908,
+        "relative_error": 0.08591157304611194
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 9,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.20817629548916908,
+          "cosine": 1.0000000000205873,
+          "finite": true,
+          "reference_norm": 0.20817629548916908,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014718172449572487,
+          "cosine": 1.000000000010996,
+          "finite": true,
+          "reference_norm": 0.014718172449572487,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014718597355900162,
+        "cosine": 0.951615879717014,
+        "finite": true,
+        "reference_norm": 0.014718172449572487,
+        "relative_error": 0.311080431837428
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.17689015617273351,
+        "cosine": 0.9965228634017229,
+        "finite": true,
+        "reference_norm": 0.17534149055476547,
+        "relative_error": 0.08422413280331112
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 10,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.17534149055476547,
+          "cosine": 1.0000000000053062,
+          "finite": true,
+          "reference_norm": 0.17534149055476547,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014575592720973293,
+          "cosine": 1.0000000000107343,
+          "finite": true,
+          "reference_norm": 0.014575592720973293,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014576625179722939,
+        "cosine": 0.9528153365133536,
+        "finite": true,
+        "reference_norm": 0.014575592720973293,
+        "relative_error": 0.30720679784399785
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.16632376395535114,
+        "cosine": 0.9966366137012705,
+        "finite": true,
+        "reference_norm": 0.16485645331580884,
+        "relative_error": 0.08286050924155369
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 11,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.16485645331580884,
+          "cosine": 0.9999999999923872,
+          "finite": true,
+          "reference_norm": 0.16485645331580884,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014391266039459755,
+          "cosine": 1.0000000000103517,
+          "finite": true,
+          "reference_norm": 0.014391266039459755,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.01439215450310678,
+        "cosine": 0.9534646632001795,
+        "finite": true,
+        "reference_norm": 0.014391266039459755,
+        "relative_error": 0.30508428879794447
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.29468095049778353,
+        "cosine": 0.9964941125886522,
+        "finite": true,
+        "reference_norm": 0.2929659382257833,
+        "relative_error": 0.0841848585304862
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 12,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.2929659382257833,
+          "cosine": 0.9999999999923737,
+          "finite": true,
+          "reference_norm": 0.2929659382257833,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014689279023998655,
+          "cosine": 1.0000000000136318,
+          "finite": true,
+          "reference_norm": 0.014689279023998655,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014689794647250039,
+        "cosine": 0.9514305978137187,
+        "finite": true,
+        "reference_norm": 0.014689279023998655,
+        "relative_error": 0.3116764594883124
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.3222577014722378,
+        "cosine": 0.9965153533261251,
+        "finite": true,
+        "reference_norm": 0.31957155586535246,
+        "relative_error": 0.0842527459481691
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 13,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.31957155586535246,
+          "cosine": 1.0000000000046863,
+          "finite": true,
+          "reference_norm": 0.31957155586535246,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014692311860583738,
+          "cosine": 1.0000000000109444,
+          "finite": true,
+          "reference_norm": 0.014692311860583738,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014692639952527734,
+        "cosine": 0.951036459509452,
+        "finite": true,
+        "reference_norm": 0.014692311860583738,
+        "relative_error": 0.31293652438993724
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.36593044395171487,
+        "cosine": 0.9967929150423538,
+        "finite": true,
+        "reference_norm": 0.3639708654583008,
+        "relative_error": 0.08048409301666659
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 14,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.3639708654583008,
+          "cosine": 0.9999999999418421,
+          "finite": true,
+          "reference_norm": 0.3639708654583008,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014696243493566394,
+          "cosine": 1.0000000000107325,
+          "finite": true,
+          "reference_norm": 0.014696243493566394,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014696598805476432,
+        "cosine": 0.9513767947167538,
+        "finite": true,
+        "reference_norm": 0.014696243493566394,
+        "relative_error": 0.3118473381387332
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    },
+    {
+      "cropped_loss": -0.17208697751630098,
+      "current_logprob_max_abs": 0.29166603088378906,
+      "denominator_identical": true,
+      "dp_size": 16,
+      "dtype": "torch.bfloat16",
+      "grad_norm_relative_error": 0.0026504477861786124,
+      "gradient": {
+        "actual_norm": 0.35051626896002763,
+        "cosine": 0.9966482704733691,
+        "finite": true,
+        "reference_norm": 0.34897437678946264,
+        "relative_error": 0.08217419929762682
+      },
+      "host": "p-kt-dgx-a100-07",
+      "loss_relative_error": 0.00023985480869757357,
+      "master_dtype": "torch.float32",
+      "max_memory_allocated_bytes": 14480826368,
+      "old_logprob_max_abs": 0.25560569763183594,
+      "optimizer_steps": [
+        1,
+        1
+      ],
+      "original_lengths": [
+        32,
+        63,
+        127,
+        511,
+        1024,
+        2048,
+        4096,
+        8192
+      ],
+      "passed": false,
+      "prefix_lengths": [
+        4,
+        9,
+        19,
+        76,
+        153,
+        307,
+        614,
+        1228
+      ],
+      "rank": 15,
+      "reference_loss": -0.17212826330796815,
+      "same_view_repeat": {
+        "gradient": {
+          "actual_norm": 0.34897437678946264,
+          "cosine": 0.9999999999365234,
+          "finite": true,
+          "reference_norm": 0.34897437678946264,
+          "relative_error": 0.0
+        },
+        "logprob_max_abs": 0.0,
+        "update": {
+          "actual_norm": 0.014695386690852451,
+          "cosine": 1.0000000000107183,
+          "finite": true,
+          "reference_norm": 0.014695386690852451,
+          "relative_error": 0.0
+        }
+      },
+      "suffix_logprob_gradient_max": 0.0,
+      "update": {
+        "actual_norm": 0.014695825495980504,
+        "cosine": 0.9516456296236697,
+        "finite": true,
+        "reference_norm": 0.014695386690852451,
+        "relative_error": 0.31098493435258573
+      },
+      "within_view_old_current_max_abs": {
+        "cropped": 0.24834060668945312,
+        "full_mask_reference": 0.32344818115234375,
+        "full_mask_repeat": 0.32344818115234375
+      },
+      "world_size": 16
+    }
+  ],
+  "status": "FAIL",
+  "thresholds": {
+    "gradient_cosine": 0.999,
+    "logprob_max_abs": 0.05,
+    "relative_error": 0.02
+  },
+  "wall_seconds": 126.89915490150452
+}

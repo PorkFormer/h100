@@ -1,0 +1,36 @@
+{
+  "cropped_loss": -0.17208697751630098,
+  "current_logprob_max_abs": 0.29166603088378906,
+  "denominator_identical": true,
+  "dp_size": 16,
+  "dtype": "torch.bfloat16",
+  "grad_norm_relative_error": 0.002678715480920394,
+  "gradient": {
+    "actual_norm": 0.28646768357737773,
+    "cosine": 0.9963645248700822,
+    "finite": true,
+    "reference_norm": 0.2851310206034093,
+    "relative_error": 0.08559796705859966
+  },
+  "host": "p-kt-dgx-a100-07",
+  "loss_relative_error": 0.00023985480869757357,
+  "master_dtype": "torch.float32",
+  "max_memory_allocated_bytes": 14480170496,
+  "old_logprob_max_abs": 0.25560569763183594,
+  "optimizer_steps": [
+    1,
+    1
+  ],
+  "passed": false,
+  "rank": 8,
+  "reference_loss": -0.17212826330796815,
+  "suffix_logprob_gradient_max": 0.0,
+  "update": {
+    "actual_norm": 0.014654527737062797,
+    "cosine": 0.950143043714228,
+    "finite": true,
+    "reference_norm": 0.01465456968315943,
+    "relative_error": 0.31577464621095663
+  },
+  "world_size": 16
+}

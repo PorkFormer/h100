@@ -1,0 +1,31 @@
+{
+  "diagnostic_runs": {
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2": {
+      "allocated_gpu_hours": 0.6011708037058512,
+      "status": "FAIL",
+      "wall_seconds": 135.26343083381653
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt1_schema_error": {
+      "allocated_gpu_hours": 0.0856908384958903,
+      "status": "FAIL",
+      "wall_seconds": 19.280438661575317
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt2_bf16_mismatch": {
+      "allocated_gpu_hours": 0.3836844613817003,
+      "status": "FAIL",
+      "wall_seconds": 86.32900381088257
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_kernel_trace": {
+      "allocated_gpu_hours": 0.5639962440066867,
+      "status": "FAIL",
+      "wall_seconds": 126.89915490150452
+    }
+  },
+  "gpu_hours_rule": "allocated GPU count times measured job wall time / 3600; online holdout and offline evaluation reported separately",
+  "runs": {},
+  "status": "DIAGNOSTICS_ONLY",
+  "warning": "optimized-token fraction is not a GPU-hours saving",
+  "diagnostic_gpu_hours_sum": 1.6345423475901284,
+  "formal_training_gpu_hours": 0.0,
+  "offline_evaluation_gpu_hours": 0.0
+}

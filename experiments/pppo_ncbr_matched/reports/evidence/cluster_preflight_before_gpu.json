@@ -1,0 +1,82 @@
+{
+  "timestamp": 1794410996.1722445,
+  "status": "PASS",
+  "scope": "cluster membership, physical idle GPUs, selected shared files and package versions only",
+  "allocation": "existing platform allocation confirmed by user",
+  "head": "10.8.191.127:6395",
+  "worker_management": "user",
+  "errors": [],
+  "nodes": [
+    {
+      "ip": "10.8.191.131",
+      "resources": {
+        "GPU": 8.0,
+        "node:10.8.191.131": 1.0,
+        "dapo_worker": 1.0,
+        "CPU": 256.0,
+        "accelerator_type:A100": 1.0,
+        "object_store_memory": 200000000000.0,
+        "memory": 860873928704.0
+      }
+    },
+    {
+      "ip": "10.8.191.127",
+      "resources": {
+        "GPU": 8.0,
+        "node:__internal_head__": 1.0,
+        "node:10.8.191.127": 1.0,
+        "dapo_head": 1.0,
+        "object_store_memory": 1073741824.0,
+        "CPU": 240.0,
+        "memory": 1077731069952.0,
+        "accelerator_type:A100": 1.0
+      }
+    }
+  ],
+  "probes": [
+    {
+      "host": "p-kt-dgx-a100-07",
+      "versions": {
+        "torch": "2.10.0+cu129",
+        "vllm": "0.18.0",
+        "ray": "2.54.1",
+        "transformers": "5.3.0",
+        "flash-attn": "2.8.3"
+      },
+      "gpus": "0, GPU-9ce132d5-4fce-53c7-d6e2-8c5107d1e5e2, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n1, GPU-38b86582-88de-02a7-97b8-fdcbdfd1bd68, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n2, GPU-4941548d-4313-2509-4a70-86312297bf6d, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n3, GPU-db4f53b8-4b22-6eab-989a-c6bc6c927647, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n4, GPU-9a06cc29-4fd8-06ab-b93e-ba1a48b97448, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n5, GPU-c6603332-12c0-8c92-e3de-f87dc067a00b, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n6, GPU-4ca49f6a-5517-296f-47f6-b9847fd113bf, NVIDIA A100-SXM4-40GB, 0, 40960, 0\n7, GPU-32f85ddf-9eda-8b83-ae88-023dd74613fd, NVIDIA A100-SXM4-40GB, 0, 40960, 0",
+      "compute_processes": "",
+      "hashes": {
+        "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/experimental/pppo/trainer.py": "cab3f55614c9706297170d527e02ec440162d82f47c7a59f4e1774c9d1b189ad",
+        "/workspace/models/Qwen3-4B-Base/config.json": "304b2545a258d35620f1d4bf46940c0471d9baa00715ff8e77f84c2fca5057c1",
+        "/workspace/models/Qwen3-4B-Base/tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+        "/workspace/rl/data/dapo_math_17k_train.parquet": "816b8778751076fdbc882ce65045aa80bb59db1618ce36e8308903db90ae92f4"
+      },
+      "disk": "Filesystem                                    1B-blocks             Used        Available Use% Mounted on\nwww.storage.com:/mnt/file/lixianduo/rl 2340385232781312 1025258454777856 1315126778003456  44% /workspace\n/dev/md0                                  1888425144320    1054199287808     738223640576  59% /tmp\ntmpfs                                      540978155520      99549560832     441428594688  19% /dev/shm"
+    },
+    {
+      "host": "p-kt-dgx-a100-03",
+      "versions": {
+        "torch": "2.10.0+cu129",
+        "vllm": "0.18.0",
+        "ray": "2.54.1",
+        "transformers": "5.3.0",
+        "flash-attn": "2.8.3"
+      },
+      "gpus": "0, GPU-c83c33b8-97d6-b1ee-ee8c-0f085c12fabb, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n1, GPU-1ca290b2-32a1-7de6-9816-3a972b7069e2, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n2, GPU-a2b76a7d-a6d8-b2dd-ffaf-2b27e9513bf5, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n3, GPU-3f7749bc-e11f-192a-6954-6bccc2dc527e, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n4, GPU-945cde3e-6c9a-66f6-e683-d05f111c010c, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n5, GPU-a6f4da59-9b49-2c62-b449-1a338e8878a0, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n6, GPU-892efee4-1b56-88dd-36da-950e665689eb, NVIDIA A100-SXM4-40GB, 4, 40960, 0\n7, GPU-4adbafcd-6993-92e8-1339-77bf322b8bbd, NVIDIA A100-SXM4-40GB, 4, 40960, 0",
+      "compute_processes": "",
+      "hashes": {
+        "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/experimental/pppo/trainer.py": "cab3f55614c9706297170d527e02ec440162d82f47c7a59f4e1774c9d1b189ad",
+        "/workspace/models/Qwen3-4B-Base/config.json": "304b2545a258d35620f1d4bf46940c0471d9baa00715ff8e77f84c2fca5057c1",
+        "/workspace/models/Qwen3-4B-Base/tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+        "/workspace/rl/data/dapo_math_17k_train.parquet": "816b8778751076fdbc882ce65045aa80bb59db1618ce36e8308903db90ae92f4"
+      },
+      "disk": "Filesystem                                    1B-blocks             Used        Available Use% Mounted on\nwww.storage.com:/mnt/file/lixianduo/rl 2340385232781312 1025258454777856 1315126778003456  44% /workspace\n/dev/md0                                  1888425144320     334236594176    1458186334208  19% /tmp\ntmpfs                                      540973867008       2140602368     538833264640   1% /dev/shm"
+    }
+  ],
+  "not_tested": [
+    "NCCL collectives",
+    "FSDP",
+    "model weight hashes",
+    "training capacity"
+  ]
+}
