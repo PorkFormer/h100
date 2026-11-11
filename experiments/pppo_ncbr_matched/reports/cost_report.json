@@ -1,36 +1,62 @@
 {
   "diagnostic_runs": {
-    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2": {
-      "allocated_gpu_hours": 0.6011708037058512,
-      "status": "FAIL",
-      "wall_seconds": 135.26343083381653
-    },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt1_schema_error": {
-      "allocated_gpu_hours": 0.0856908384958903,
       "status": "FAIL",
-      "wall_seconds": 19.280438661575317
+      "wall_seconds": 19.280438661575317,
+      "allocated_gpu_hours": 0.0856908384958903
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt2_bf16_mismatch": {
-      "allocated_gpu_hours": 0.3836844613817003,
       "status": "FAIL",
-      "wall_seconds": 86.32900381088257
+      "wall_seconds": 86.32900381088257,
+      "allocated_gpu_hours": 0.3836844613817003
     },
-    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_kernel_trace": {
-      "allocated_gpu_hours": 0.5639962440066867,
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128": {
       "status": "FAIL",
-      "wall_seconds": 126.89915490150452
+      "wall_seconds": 39.67217183113098,
+      "allocated_gpu_hours": 0.17632076369391547
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128_autograd": {
+      "status": "FAIL",
+      "wall_seconds": 42.766108989715576,
+      "allocated_gpu_hours": 0.190071595509847
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128_clone": {
+      "status": "FAIL",
+      "wall_seconds": 168.65840482711792,
+      "allocated_gpu_hours": 0.7495929103427463
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fp32_reduction": {
       "status": "FAIL",
       "wall_seconds": 135.5732250213623,
       "allocated_gpu_hours": 0.6025476667616102
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_kernel_trace": {
+      "status": "FAIL",
+      "wall_seconds": 126.89915490150452,
+      "allocated_gpu_hours": 0.5639962440066867
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_original_frozen_batch": {
+      "status": "FAIL",
+      "wall_seconds": 135.26343083381653,
+      "allocated_gpu_hours": 0.6011708037058512
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_shared_old_native": {
+      "status": "FAIL",
+      "wall_seconds": 136.12498235702515,
+      "allocated_gpu_hours": 0.6049999215867784
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_stable_acceptance": {
+      "status": "PASS",
+      "wall_seconds": 162.45100355148315,
+      "allocated_gpu_hours": 0.722004460228814
     }
   },
   "gpu_hours_rule": "allocated GPU count times measured job wall time / 3600; online holdout and offline evaluation reported separately",
   "runs": {},
   "status": "DIAGNOSTICS_ONLY",
   "warning": "optimized-token fraction is not a GPU-hours saving",
-  "diagnostic_gpu_hours_sum": 2.2370900143517387,
+  "diagnostic_gpu_hours_sum": 4.68007966571384,
   "formal_training_gpu_hours": 0.0,
-  "offline_evaluation_gpu_hours": 0.0
+  "offline_evaluation_gpu_hours": 0.0,
+  "scope_note": "Instrumented 16-GPU diagnostic and acceptance jobs only; tiny single-GPU operator compatibility probe was not separately metered. Canonical copied receipts are not double-counted."
 }

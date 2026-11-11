@@ -1,0 +1,115 @@
+2026-11-11 16:08:39,683	INFO worker.py:1810 -- Connecting to existing Ray cluster at address: 10.8.191.127:6395...
+2026-11-11 16:08:39,741	INFO worker.py:2013 -- Connected to Ray cluster.
+/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py:2052: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+[36m(FrozenRank pid=1320335)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+[36m(FrozenRank pid=1320335)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+[36m(FrozenRank pid=1320335)[0m Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]
+[36m(FrozenRank pid=1320335)[0m Loading weights:   0%|          | 1/398 [00:01<07:02,  1.07s/it]
+[36m(FrozenRank pid=392181, ip=10.8.191.131)[0m Loading weights:  95%|█████████▍| 377/398 [00:02<00:00, 152.57it/s]
+[36m(FrozenRank pid=392181, ip=10.8.191.131)[0m [rank15]:[W1111 16:08:57.699413309 ProcessGroupNCCL.cpp:5138] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+[36m(FrozenRank pid=1320249)[0m Loading weights:  97%|█████████▋| 388/398 [00:02<00:00, 145.40it/s]Loading weights: 100%|██████████| 398/398 [00:02<00:00, 134.92it/s]
+[36m(FrozenRank pid=1320248)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`[32m [repeated 30x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)[0m
+[36m(FrozenRank pid=1320248)[0m Loading weights:   0%|          | 0/398 [00:00<?, ?it/s][32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m Loading weights:  86%|████████▋ | 344/398 [00:02<00:00, 143.40it/s][32m [repeated 147x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+[36m(FrozenRank pid=1320248)[0m   return func(*args, **kwargs)
+[36m(FrozenRank pid=1320249)[0m /workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/workers/engine/fsdp/transformer_impl.py:443: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+[36m(FrozenRank pid=1320249)[0m   FSDP.set_state_dict_type(
+[36m(FrozenRank pid=1320248)[0m Loading weights:  96%|█████████▌| 382/398 [00:02<00:00, 129.64it/s][32m [repeated 26x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m [rank0]:[W1111 16:09:00.990964201 ProcessGroupNCCL.cpp:5138] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()[32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m Loading weights:  99%|█████████▉| 396/398 [00:03<00:00, 94.47it/s] Loading weights: 100%|██████████| 398/398 [00:03<00:00, 123.35it/s][32m [repeated 5x across cluster][0m
+[36m(FrozenRank pid=392177, ip=10.8.191.131)[0m [rank11]:W1111 16:09:12.432000 392177 torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[36m(FrozenRank pid=1320248)[0m   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+[36m(FrozenRank pid=1320248)[0m     return func(*args, **kwargs)
+[36m(FrozenRank pid=1320248)[0m   File "/usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 725, in _post_backward_hook
+[36m(FrozenRank pid=1320248)[0m     _assert_in_training_states(state, [TrainingState.FORWARD_BACKWARD])
+[36m(FrozenRank pid=1320248)[0m   File "/usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/_common_utils.py", line 453, in _assert_in_training_states
+[36m(FrozenRank pid=1320248)[0m     traceback.print_stack()
+[36m(FrozenRank pid=1320251)[0m /workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/workers/engine/fsdp/transformer_impl.py:443: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .[32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320251)[0m   FSDP.set_state_dict_type([32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m [rank0]:W1111 16:09:12.775000 1320248 torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.[32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=392181, ip=10.8.191.131)[0m Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+[36m(FrozenRank pid=392181, ip=10.8.191.131)[0m Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+[36m(FrozenRank pid=392181, ip=10.8.191.131)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+[36m(FrozenRank pid=1320248)[0m Qwen3ForCausalLM contains 4.02B parameters
+[36m(FrozenRank pid=1320248)[0m Before FSDP, memory allocated (GB): 0.00, memory reserved (GB): 0.00, device memory used/total (GB): 1.09/39.49
+[36m(FrozenRank pid=1320248)[0m Monkey patch state_dict in AutoModelForCausalLMWithValueHead. [32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m Monkey patch _flash_attention_forward in transformers.integrations.flash_attention[32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch[32m [repeated 15x across cluster][0m
+[36m(FrozenRank pid=1320248)[0m After FSDP, memory allocated (GB): 0.94, memory reserved (GB): 4.57, device memory used/total (GB): 5.72/39.49
+[36m(FrozenRank pid=1320248)[0m Total steps: 300, num_warmup_steps: 0
+[36m(FrozenRank pid=1320248)[0m Asserting FSDP instance is: FullyShardedDataParallel(
+[36m(FrozenRank pid=1320248)[0m   (_fsdp_wrapped_module): Qwen3ForCausalLM(
+[36m(FrozenRank pid=1320248)[0m     (model): Qwen3Model(
+[36m(FrozenRank pid=1320248)[0m       (embed_tokens): Embedding(151936, 2560, padding_idx=151643)
+[36m(FrozenRank pid=1320248)[0m       (layers): ModuleList(
+[36m(FrozenRank pid=1320248)[0m         (0-35): 36 x FullyShardedDataParallel(
+[36m(FrozenRank pid=1320248)[0m           (_fsdp_wrapped_module): Qwen3DecoderLayer(
+[36m(FrozenRank pid=1320248)[0m             (self_attn): Qwen3Attention(
+[36m(FrozenRank pid=1320248)[0m               (q_proj): Linear(in_features=2560, out_features=4096, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (k_proj): Linear(in_features=2560, out_features=1024, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (v_proj): Linear(in_features=2560, out_features=1024, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (o_proj): Linear(in_features=4096, out_features=2560, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (q_norm): Qwen3RMSNorm((128,), eps=1e-06)
+[36m(FrozenRank pid=1320248)[0m               (k_norm): Qwen3RMSNorm((128,), eps=1e-06)
+[36m(FrozenRank pid=1320248)[0m             )
+[36m(FrozenRank pid=1320248)[0m             (mlp): Qwen3MLP(
+[36m(FrozenRank pid=1320248)[0m               (gate_proj): Linear(in_features=2560, out_features=9728, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (up_proj): Linear(in_features=2560, out_features=9728, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (down_proj): Linear(in_features=9728, out_features=2560, bias=False)
+[36m(FrozenRank pid=1320248)[0m               (act_fn): SiLUActivation()
+[36m(FrozenRank pid=1320248)[0m             )
+[36m(FrozenRank pid=1320248)[0m             (input_layernorm): Qwen3RMSNorm((2560,), eps=1e-06)
+[36m(FrozenRank pid=1320248)[0m             (post_attention_layernorm): Qwen3RMSNorm((2560,), eps=1e-06)
+[36m(FrozenRank pid=1320248)[0m           )
+[36m(FrozenRank pid=1320248)[0m         )
+[36m(FrozenRank pid=1320248)[0m       )
+[36m(FrozenRank pid=1320248)[0m       (norm): Qwen3RMSNorm((2560,), eps=1e-06)
+[36m(FrozenRank pid=1320248)[0m       (rotary_emb): Qwen3RotaryEmbedding()
+[36m(FrozenRank pid=1320248)[0m     )
+[36m(FrozenRank pid=1320248)[0m     (lm_head): Linear(in_features=2560, out_features=151936, bias=False)
+[36m(FrozenRank pid=1320248)[0m   )
+[36m(FrozenRank pid=1320248)[0m )
+[36m(FrozenRank pid=1320248)[0m ERROR: expected to be in states [<TrainingState.FORWARD_BACKWARD: 2>] but current state is TrainingState.IDLE
+Traceback (most recent call last):
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 278, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 263, in main
+    rows=ray.get([a.run.remote(i,f'tcp://10.8.191.127:{port}',str(args.config),str(args.output))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/auto_init_hook.py", line 22, in auto_init_wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/client_mode_hook.py", line 104, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 2981, in get
+    values, debugger_breakpoint = worker.get_objects(
+                                  ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 1012, in get_objects
+    raise value.as_instanceof_cause()
+ray.exceptions.RayTaskError(ValueError): [36mray::FrozenRank.run()[39m (pid=1320248, ip=10.8.191.127, actor_id=1820a946db0f9ae6841428cb15000000, repr=<gpu_equivalence.FrozenRank object at 0x7b2f5565bd10>)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/gpu_equivalence.py", line 156, in run
+    output_batch=engine.forward_backward_batch(td,loss_fn,forward_only=False)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/workers/engine/fsdp/transformer_impl.py", line 649, in forward_backward_batch
+    loss.backward()
+  File "/usr/local/lib/python3.12/dist-packages/torch/_tensor.py", line 630, in backward
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.12/dist-packages/torch/autograd/__init__.py", line 364, in backward
+    _engine_run_backward(
+  File "/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 725, in _post_backward_hook
+    _assert_in_training_states(state, [TrainingState.FORWARD_BACKWARD])
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/_common_utils.py", line 454, in _assert_in_training_states
+    raise ValueError(msg)
+ValueError: expected to be in states [<TrainingState.FORWARD_BACKWARD: 2>] but current state is TrainingState.IDLE

@@ -1,0 +1,17 @@
+{
+  "acceptance_eligible": false,
+  "allocated_gpu_hours": 0.190071595509847,
+  "code_commit": "0120e4c30f0796c6ae919e68d50793409fddc934",
+  "code_fingerprint": "156aef21579cf81edecff79989703cdfe51affd09c93dfd75ad833de7526f47b",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "diagnostic_fp32_reduction": true,
+  "error": "RayTaskError(RuntimeError)(RuntimeError('Output 0 of SqueezeBackward1 is a view and is being modified inplace. This view was created inside a custom Function (or because an input was returned as-is) and the autograd logic to handle view+inplace would override the custom backward associated with the custom Function, leading to incorrect gradients. This behavior is forbidden. You can fix this by cloning the output of the custom Function.'))",
+  "gate": 2,
+  "status": "FAIL",
+  "thresholds": {
+    "gradient_cosine": 0.999,
+    "logprob_max_abs": 0.05,
+    "relative_error": 0.02
+  },
+  "wall_seconds": 42.766108989715576
+}

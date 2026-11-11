@@ -1,0 +1,17 @@
+{
+  "acceptance_eligible": false,
+  "allocated_gpu_hours": 0.17632076369391547,
+  "code_commit": "afebf8f5a3bb4b6d5c4b443b15ec6edfeafa07c5",
+  "code_fingerprint": "6de03a051782053ab177edfb77c5fef6ae5ddbbe440cb1cd578b94708d983758",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "diagnostic_fp32_reduction": true,
+  "error": "RayTaskError(ValueError)(ValueError('expected to be in states [<TrainingState.FORWARD_BACKWARD: 2>] but current state is TrainingState.IDLE'))",
+  "gate": 2,
+  "status": "FAIL",
+  "thresholds": {
+    "gradient_cosine": 0.999,
+    "logprob_max_abs": 0.05,
+    "relative_error": 0.02
+  },
+  "wall_seconds": 39.67217183113098
+}

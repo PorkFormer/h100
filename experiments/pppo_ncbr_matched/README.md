@@ -101,7 +101,7 @@ Optimized-token fraction is never reported as a GPU-hours speedup.
 Actual completion is determined by evidence in `validation_report.md` and
 `training_status.json`, not by this README or successful CPU tests.
 
-## Executed status (2026-11-11)
+## Historical status before the numerical repair (2026-11-11)
 
 Gate 0 passed, and Gate 1 passed 205 tests. Native 16-rank BF16 Gate 2 failed:
 prefix logprob error reached 0.291666 versus the fixed 0.05 limit, with local
@@ -123,3 +123,10 @@ FlashAttention backward makes same-view repeated gradients and updates identical
 but does not make full/cropped equivalent. No precision change, threshold
 relaxation, synthetic successful training status, or full-mask formal substitution
 has been made. A validated shape-stable BF16 execution repair remains outstanding.
+
+## Current status after the numerical repair
+
+Gate 2 now passes all 16 ranks with the actual configured BF16 fixed-tile actor.
+See `NUMERICAL_EXECUTION.md` for the execution repair and user-authorized logprob
+tolerance revision, and `reports/validation_report.md` for current evidence.
+Formal training remains NOT RUN pending Gates 3 and 4. Checkpoints remain every 50 steps.

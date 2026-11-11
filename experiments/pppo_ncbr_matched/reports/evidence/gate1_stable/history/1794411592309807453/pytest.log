@@ -1,0 +1,44 @@
+........................................................................ [ 35%]
+........................................................................ [ 70%]
+.............................................................            [100%]
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+../../../../../usr/local/lib/python3.12/dist-packages/ray/util/state/util.py:55
+  /usr/local/lib/python3.12/dist-packages/ray/util/state/util.py:55: DeprecationWarning: Ray state API is no longer experimental. Please import from `ray.util.state`. instead. Importing from `ray.experimental` will be deprecated in future releases. 
+    warnings.warn(
+
+../../../../../usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:362: 14 warnings
+  /usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:362: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+../../../../../usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1480
+../../../../../usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1480
+  /usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1480: DeprecationWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+../../../../../usr/local/lib/python3.12/dist-packages/megatron/core/tensor_parallel/random.py:28
+  /usr/local/lib/python3.12/dist-packages/megatron/core/tensor_parallel/random.py:28: DeprecationWarning: Using deprecated internal API from Transformer Engine. transformer_engine.pytorch.fp8 will be removed in a future release.
+    from transformer_engine.pytorch.fp8 import FP8GlobalStateManager, fp8_autocast
+
+../../../../../usr/local/lib/python3.12/dist-packages/megatron/core/extensions/transformer_engine.py:2531
+  /usr/local/lib/python3.12/dist-packages/megatron/core/extensions/transformer_engine.py:2531: DeprecationWarning: transformer_engine.pytorch.float8_tensor is deprecated and will be removed in a future release. Float8Tensor should be imported directly through `from transformer_engine.pytorch import Float8Tensor`
+    from transformer_engine.pytorch.float8_tensor import Float8Tensor
+
+../../../../../usr/local/lib/python3.12/dist-packages/megatron/core/inference/contexts/__init__.py:9
+  /usr/local/lib/python3.12/dist-packages/megatron/core/inference/contexts/__init__.py:9: DeprecationWarning: The following imports from `dynamic_context.py` will be removed in this file in `megatron-core` 0.14. The imports here result in a cyclic import issue that causes rotary embeddings to import from Apex rather than Transformer Engine.
+    warnings.warn(
+
+../../../../../usr/local/lib/python3.12/dist-packages/megatron/core/transformer/multi_latent_attention.py:36
+  /usr/local/lib/python3.12/dist-packages/megatron/core/transformer/multi_latent_attention.py:36: DeprecationWarning: The 'megatron.core.transformer.custom_layers.transformer_engine' 
+      module is deprecated and will be removed in 0.10.0. Please use 
+      'megatron.core.extensions.transformer_engine' instead.
+    from megatron.core.transformer.custom_layers.transformer_engine import (
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+205 passed, 23 warnings in 23.75s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

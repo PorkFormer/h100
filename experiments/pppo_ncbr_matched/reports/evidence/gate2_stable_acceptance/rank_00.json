@@ -1,0 +1,81 @@
+{
+  "bf16_reduced_precision_reduction": false,
+  "cropped_loss": -0.17213447057292797,
+  "current_logprob_max_abs": 0.05391883850097656,
+  "denominator_identical": true,
+  "dp_size": 16,
+  "dtype": "torch.bfloat16",
+  "grad_norm_relative_error": 9.25831784819783e-05,
+  "gradient": {
+    "actual_norm": 0.45763949682642463,
+    "cosine": 0.9999997882213387,
+    "finite": true,
+    "reference_norm": 0.4576585993904594,
+    "relative_error": 0.000652072824092799
+  },
+  "host": "p-kt-dgx-a100-03",
+  "linear_tile": 128,
+  "loss_relative_error": 7.075831114636462e-07,
+  "master_dtype": "torch.float32",
+  "max_memory_allocated_bytes": 14482330624,
+  "old_logprob_max_abs": 0.0,
+  "optimizer_steps": [
+    1,
+    1
+  ],
+  "original_lengths": [
+    32,
+    63,
+    127,
+    511,
+    1024,
+    2048,
+    4096,
+    8192
+  ],
+  "passed": true,
+  "prefix_lengths": [
+    4,
+    9,
+    19,
+    76,
+    153,
+    307,
+    614,
+    1228
+  ],
+  "rank": 0,
+  "reference_loss": -0.17213459237245843,
+  "same_view_repeat": {
+    "gradient": {
+      "actual_norm": 0.4576585993904594,
+      "cosine": 0.9999999999584892,
+      "finite": true,
+      "reference_norm": 0.4576585993904594,
+      "relative_error": 0.0
+    },
+    "logprob_max_abs": 0.0,
+    "update": {
+      "actual_norm": 0.014717143287085118,
+      "cosine": 1.0000000000134994,
+      "finite": true,
+      "reference_norm": 0.014717143287085118,
+      "relative_error": 0.0
+    }
+  },
+  "shared_frozen_old_log_probs": true,
+  "suffix_logprob_gradient_max": 0.0,
+  "update": {
+    "actual_norm": 0.014717145620689669,
+    "cosine": 0.9999942920480674,
+    "finite": true,
+    "reference_norm": 0.014717143287085118,
+    "relative_error": 0.0033787472077185577
+  },
+  "within_view_old_current_max_abs": {
+    "cropped": 0.05391883850097656,
+    "full_mask_reference": 0.0,
+    "full_mask_repeat": 0.0
+  },
+  "world_size": 16
+}

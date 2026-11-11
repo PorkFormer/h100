@@ -1,15 +1,15 @@
 {
-  "state": "BLOCKED",
+  "state": "GATE3_PENDING",
   "formal_training": "NOT RUN",
   "job_id": null,
   "last_successful_step": 0,
-  "blocker": "Gate 2 BF16 cropped/full-mask equivalence FAIL; no approved passing cropped path",
-  "gpu_gate_commit": "770d4d5a5d67d3a8f713b7c73ededf8a1118b037",
-  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "blocker": null,
+  "gpu_gate_commit": "ecd383f64127cebc712a24004c04784105af0ff2",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
   "gates": {
     "0": "PASS",
     "1": "PASS",
-    "2": "FAIL",
+    "2": "PASS",
     "3": "NOT RUN",
     "4": "NOT RUN"
   },
@@ -17,7 +17,7 @@
   "profiling": "NOT RUN",
   "evaluation": "NOT RUN",
   "worker_management": "user",
-  "latest_diagnostic": "acceptance/gate2_fp32_reduction/result.json",
-  "latest_diagnostic_status": "FAIL",
-  "threshold_relaxation": "User permits reasonable relaxation; none applied without numerical justification"
+  "latest_diagnostic": "acceptance/gate2_stable_acceptance/result.json",
+  "latest_diagnostic_status": "PASS",
+  "threshold_relaxation": "User-authorized logprob limit 0.05 to 0.06; all other limits unchanged"
 }

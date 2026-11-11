@@ -1,0 +1,22 @@
+{
+  "code_commit": "2478c2c598f34a48c88d753ca4997d2a8334cd9f",
+  "code_fingerprint": "7281d602973b41a6152f3831d64fe3a7fff8538270dc2c654b479e8e2d9addac",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "evidence": {
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "verl/tests/experimental/pppo",
+      "verl/tests/experimental/natural_continuation_boundary_return",
+      "verl/tests/experimental/ncbr_portable"
+    ],
+    "log_sha256": "2abd2c61a08934543d27cbf248a006361c810c568b2ec85c521f3a4f2f98ba04"
+  },
+  "gate": 1,
+  "status": "PASS",
+  "timestamp": 1794413972.2305434
+}
