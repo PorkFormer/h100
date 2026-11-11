@@ -1,5 +1,5 @@
 {
-  "state": "GATE3_RUNNING",
+  "state": "GATE4_RUNNING",
   "formal_training": "NOT RUN",
   "job_id": null,
   "last_successful_step": 0,
@@ -10,11 +10,11 @@
     "0": "PASS",
     "1": "PASS",
     "2": "PASS",
-    "3": "IN PROGRESS",
-    "4": "NOT RUN"
+    "3": "PASS",
+    "4": "IN PROGRESS"
   },
-  "smoke": "RUNNING",
-  "profiling": "NOT RUN",
+  "smoke": "PASS",
+  "profiling": "RUNNING",
   "evaluation": "NOT RUN",
   "worker_management": "user",
   "latest_diagnostic": "acceptance/gate2_zero_prefix_acceptance/result.json",
@@ -37,5 +37,19 @@
   "interrupted_attempt": "interrupted/1794415797994109685",
   "monitoring_target": "formal Step 1\u20133, 48 optimizer updates, without stopping S300",
   "monitor_status_path": null,
-  "monitoring_mode": "Current Codex session, five-minute checks; standalone monitor disabled"
+  "monitoring_mode": "Current Codex session, five-minute checks; standalone monitor disabled",
+  "active_profile": {
+    "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/profile/attempts/profile_1794422035674704382",
+    "code_commit": "281943ba1d774742cc36f8c5f3de7784318d534b",
+    "config_sha256": "ce9e117e21d4ecf722e8ac05ac8a602bb6f69df16080e4e72db187a506a67e60",
+    "driver_pid": 1551315,
+    "formal_target": 300,
+    "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+    "heartbeat": 1794422296.1851194,
+    "job_id": "21000000",
+    "last_successful_step": 0,
+    "stage": "profile",
+    "started_at": 1794422035.733245,
+    "state": "RUNNING"
+  }
 }

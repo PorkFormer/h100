@@ -1,62 +1,164 @@
 {
   "diagnostic_runs": {
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2": {
+      "allocated_gpu_hours": 0.699287182490031,
+      "status": "PASS",
+      "wall_seconds": 157.33961606025696
+    },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt1_schema_error": {
+      "allocated_gpu_hours": 0.0856908384958903,
       "status": "FAIL",
-      "wall_seconds": 19.280438661575317,
-      "allocated_gpu_hours": 0.0856908384958903
+      "wall_seconds": 19.280438661575317
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_attempt2_bf16_mismatch": {
+      "allocated_gpu_hours": 0.3836844613817003,
       "status": "FAIL",
-      "wall_seconds": 86.32900381088257,
-      "allocated_gpu_hours": 0.3836844613817003
+      "wall_seconds": 86.32900381088257
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_before_zero_prefix": {
+      "allocated_gpu_hours": 0.722004460228814,
+      "status": "PASS",
+      "wall_seconds": 162.45100355148315
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128": {
+      "allocated_gpu_hours": 0.17632076369391547,
       "status": "FAIL",
-      "wall_seconds": 39.67217183113098,
-      "allocated_gpu_hours": 0.17632076369391547
+      "wall_seconds": 39.67217183113098
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128_autograd": {
+      "allocated_gpu_hours": 0.190071595509847,
       "status": "FAIL",
-      "wall_seconds": 42.766108989715576,
-      "allocated_gpu_hours": 0.190071595509847
+      "wall_seconds": 42.766108989715576
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fixed_linear128_clone": {
+      "allocated_gpu_hours": 0.7495929103427463,
       "status": "FAIL",
-      "wall_seconds": 168.65840482711792,
-      "allocated_gpu_hours": 0.7495929103427463
+      "wall_seconds": 168.65840482711792
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fp32_reduction": {
+      "allocated_gpu_hours": 0.6025476667616102,
       "status": "FAIL",
-      "wall_seconds": 135.5732250213623,
-      "allocated_gpu_hours": 0.6025476667616102
+      "wall_seconds": 135.5732250213623
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_kernel_trace": {
+      "allocated_gpu_hours": 0.5639962440066867,
       "status": "FAIL",
-      "wall_seconds": 126.89915490150452,
-      "allocated_gpu_hours": 0.5639962440066867
+      "wall_seconds": 126.89915490150452
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_original_frozen_batch": {
+      "allocated_gpu_hours": 0.6011708037058512,
       "status": "FAIL",
-      "wall_seconds": 135.26343083381653,
-      "allocated_gpu_hours": 0.6011708037058512
+      "wall_seconds": 135.26343083381653
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_shared_old_native": {
+      "allocated_gpu_hours": 0.6049999215867784,
       "status": "FAIL",
-      "wall_seconds": 136.12498235702515,
-      "allocated_gpu_hours": 0.6049999215867784
+      "wall_seconds": 136.12498235702515
     },
     "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_stable_acceptance": {
+      "allocated_gpu_hours": 0.722004460228814,
       "status": "PASS",
-      "wall_seconds": 162.45100355148315,
-      "allocated_gpu_hours": 0.722004460228814
+      "wall_seconds": 162.45100355148315
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_zero_prefix_acceptance": {
+      "allocated_gpu_hours": 0.699287182490031,
+      "status": "PASS",
+      "wall_seconds": 157.33961606025696
     }
   },
   "gpu_hours_rule": "allocated GPU count times measured job wall time / 3600; online holdout and offline evaluation reported separately",
-  "runs": {},
-  "status": "DIAGNOSTICS_ONLY",
-  "warning": "optimized-token fraction is not a GPU-hours saving",
-  "diagnostic_gpu_hours_sum": 4.68007966571384,
-  "formal_training_gpu_hours": 0.0,
-  "offline_evaluation_gpu_hours": 0.0,
-  "scope_note": "Instrumented 16-GPU diagnostic and acceptance jobs only; tiny single-GPU operator compatibility probe was not separately metered. Canonical copied receipts are not double-counted."
+  "runs": {
+    "smoke-g1": {
+      "allocated_gpu_hours": 2.147603611416287,
+      "job_wall_seconds": 483.21081256866455,
+      "online_holdout_wall_seconds": 0,
+      "stage_wall_seconds": {
+        "agent_loop/compute_score/max": 0.05088276881724596,
+        "agent_loop/compute_score/mean": 0.00659586461915751,
+        "agent_loop/compute_score/min": 0.002699177712202072,
+        "agent_loop/generate_sequences/max": 52.42045716801658,
+        "agent_loop/generate_sequences/mean": 5.373370279621061,
+        "agent_loop/generate_sequences/min": 0.06292926706373692,
+        "agent_loop/num_preempted/max": -1.0,
+        "agent_loop/num_preempted/mean": -1.0,
+        "agent_loop/num_preempted/min": -1.0,
+        "agent_loop/slowest/compute_score": 0.011671519838273525,
+        "agent_loop/slowest/generate_sequences": 52.42045716801658,
+        "agent_loop/slowest/num_preempted": -1.0,
+        "agent_loop/slowest/prompt_length": 89.0,
+        "agent_loop/slowest/response_length": 8192.0,
+        "agent_loop/slowest/tool_calls": 0.0,
+        "agent_loop/tool_calls/max": 0.0,
+        "agent_loop/tool_calls/mean": 0.0,
+        "agent_loop/tool_calls/min": 0.0,
+        "gen": 52.749284092802554,
+        "old_log_prob": 4.473417840898037,
+        "pppo_continuation_and_score": 59.84530337899923,
+        "pppo_continuation_generate": 59.21135391527787,
+        "pppo_continuation_reward": 0.2740359310992062,
+        "reward": 0.0001313299871981144,
+        "save_checkpoint": 82.85797118907794,
+        "step": 221.03276665089652,
+        "update_actor": 12.787427414674312,
+        "update_weights": 6.76802436215803
+      },
+      "successful_outer_steps": 1,
+      "timings_may_overlap": true,
+      "tokens_and_groups": {
+        "pppo/actor_input_tokens": 36523,
+        "pppo/continuation_prefill_tokens": 107647,
+        "pppo/optimized_tokens": 15643,
+        "pppo/original_tokens": 293677,
+        "pppo/tail_tokens": 324377,
+        "train/filtered_prompt_groups": 32
+      }
+    },
+    "smoke-g8": {
+      "allocated_gpu_hours": 7.115062591764662,
+      "job_wall_seconds": 1600.889083147049,
+      "online_holdout_wall_seconds": 0,
+      "stage_wall_seconds": {
+        "agent_loop/compute_score/max": 0.2584183495491743,
+        "agent_loop/compute_score/mean": 0.028412429278735846,
+        "agent_loop/compute_score/min": 0.011854283977299929,
+        "agent_loop/generate_sequences/max": 208.82837566174567,
+        "agent_loop/generate_sequences/mean": 22.17556180741667,
+        "agent_loop/generate_sequences/min": 0.3353097541257739,
+        "agent_loop/num_preempted/max": -4.0,
+        "agent_loop/num_preempted/mean": -4.0,
+        "agent_loop/num_preempted/min": -4.0,
+        "agent_loop/slowest/compute_score": 0.06120724603533745,
+        "agent_loop/slowest/generate_sequences": 208.82837566174567,
+        "agent_loop/slowest/num_preempted": -4.0,
+        "agent_loop/slowest/prompt_length": 792.0,
+        "agent_loop/slowest/response_length": 32768.0,
+        "agent_loop/slowest/tool_calls": 0.0,
+        "agent_loop/tool_calls/max": 0.0,
+        "agent_loop/tool_calls/mean": 0.0,
+        "agent_loop/tool_calls/min": 0.0,
+        "gen": 210.26251953281462,
+        "old_log_prob": 11.865588494110852,
+        "pppo_continuation_and_score": 1640.1664262381382,
+        "pppo_continuation_generate": 1625.0206201011315,
+        "pppo_continuation_reward": 7.449253325350583,
+        "reward": 0.0005218307487666607,
+        "save_checkpoint": 330.2975836643018,
+        "step": 2262.2564964992926,
+        "update_actor": 37.67411639587954,
+        "update_weights": 26.23439201992005
+      },
+      "successful_outer_steps": 4,
+      "timings_may_overlap": true,
+      "tokens_and_groups": {
+        "pppo/actor_input_tokens": 136406,
+        "pppo/continuation_prefill_tokens": 3283768,
+        "pppo/optimized_tokens": 60116,
+        "pppo/original_tokens": 1191995,
+        "pppo/tail_tokens": 10935499,
+        "train/filtered_prompt_groups": 66
+      }
+    }
+  },
+  "status": "MEASURED",
+  "warning": "optimized-token fraction is not a GPU-hours saving"
 }

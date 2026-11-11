@@ -1,0 +1,15 @@
+{
+  "code_commit": "281943ba1d774742cc36f8c5f3de7784318d534b",
+  "code_fingerprint": "af770681ab4ff63f74056a09b2079113460c6248970d7a01211e6074b0b639c9",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "evidence": {
+    "fresh_process_resume_step": 4,
+    "runs": [
+      "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1",
+      "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g8"
+    ]
+  },
+  "gate": 3,
+  "status": "PASS",
+  "timestamp": 1794422026.0313911
+}

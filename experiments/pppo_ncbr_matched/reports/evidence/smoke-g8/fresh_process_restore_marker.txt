@@ -1,0 +1,2 @@
+/tmp/rh16g/session_latest/logs/worker-d776bd0cfb01192634f2e4f0673df66b442069e6e6c81e4c1d8d56fc-20000000-1510521.out
+PPPO_RESTORED step=3 eta=15 occurrences=144

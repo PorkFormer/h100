@@ -1,0 +1,10 @@
+{
+  "config_hash": "bebcb1c3e2eaf24dd8940daaf1756f4c763f89372a8e49793f934be67cad02f4",
+  "epsilon": 1e-06,
+  "holdout_hash": "a0214577119338638f63adb4638130502d5d638928c7159c6b8837c6f9755469",
+  "module": "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/verl/experimental/pppo/trainer.py",
+  "normalization": "question_original_length",
+  "seed": 42,
+  "std_correction": 1,
+  "total_response_cap": 8192
+}

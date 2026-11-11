@@ -1,0 +1,15 @@
+{
+  "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g8/attempts/smoke-g8_1794417631057548603",
+  "code_commit": "281943ba1d774742cc36f8c5f3de7784318d534b",
+  "config_sha256": "824a5c3238658d20c279a37d9ee1ae4c22ae0f15d4ddb50aa699b678ca2e6a8d",
+  "driver_pid": 1440722,
+  "ended_at": 1794420384.4785507,
+  "formal_target": 300,
+  "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "heartbeat": 1794420372.565233,
+  "job_id": "1f000000",
+  "last_successful_step": 3,
+  "stage": "smoke-g8",
+  "started_at": 1794417631.2697883,
+  "state": "STAGE_COMPLETE"
+}
