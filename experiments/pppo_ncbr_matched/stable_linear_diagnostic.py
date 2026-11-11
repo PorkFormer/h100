@@ -48,7 +48,9 @@ class FixedTileLinear(torch.autograd.Function):
 
 
 def fixed_tile_forward(self, inputs):
-    return FixedTileLinear.apply(inputs, self.weight, self.bias, self._pppo_diagnostic_linear_tile)
+    # verl scales logits in-place; expose independent storage outside the
+    # custom autograd view so its backward cannot be bypassed.
+    return FixedTileLinear.apply(inputs, self.weight, self.bias, self._pppo_diagnostic_linear_tile).clone()
 
 
 def install_fixed_tile_linear(model, tile):
