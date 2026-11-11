@@ -1,4 +1,4 @@
-"""Real 16-rank native FSDP BF16 gate; never substitutes FP32 for acceptance."""
+"""Real 16-rank configured FSDP BF16 gate; never substitutes FP32 operands."""
 import argparse
 import copy
 import hashlib
@@ -13,6 +13,10 @@ import ray
 from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 
 from prepare import CONFIG, REPO, RUN, sha, write_json, code_fingerprint
+
+# User authorized modest relaxation on 2026-11-11. Frozen before the new
+# acceptance run; gradient/loss/update and cosine thresholds remain unchanged.
+LOGPROB_MAX_ABS = 0.06
 
 
 def compare_vectors(reference, actual):
@@ -61,6 +65,8 @@ class FrozenRank:
         if linear_tile:
             from stable_linear_diagnostic import install_fixed_tile_linear
             install_fixed_tile_linear(engine.module, linear_tile)
+        else:
+            linear_tile = ec.pppo_fixed_linear_tile
         engine.pppo_strict_update=True
         tokenizer=model.tokenizer
         prompt=tokenizer.encode('Solve the following math problem step by step. What is 17 times 23?\nAnswer:',add_special_tokens=False)
@@ -198,7 +204,7 @@ class FrozenRank:
         report['shared_frozen_old_log_probs']=True
         report['linear_tile']=linear_tile
         report['bf16_reduced_precision_reduction']=torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
-        report['passed']=all([report['old_logprob_max_abs']<=.05,report['current_logprob_max_abs']<=.05,
+        report['passed']=all([report['old_logprob_max_abs']<=LOGPROB_MAX_ABS,report['current_logprob_max_abs']<=LOGPROB_MAX_ABS,
                              report['loss_relative_error']<=.02,report['grad_norm_relative_error']<=.02,
                              gradient['finite'],gradient['relative_error']<=.02,
                              gradient['cosine'] is not None and gradient['cosine']>=.999,
@@ -250,7 +256,8 @@ def main():
                 acceptance_eligible=not (args.trace_kernels or args.fp32_reduction or args.linear_tile),
                 diagnostic_fp32_reduction=args.fp32_reduction,
                 code_fingerprint=code_fingerprint(),
-                config_sha256=sha(args.config),thresholds=dict(logprob_max_abs=.05,relative_error=.02,gradient_cosine=.999))
+                config_sha256=sha(args.config),thresholds=dict(logprob_max_abs=LOGPROB_MAX_ABS,relative_error=.02,gradient_cosine=.999),
+                original_logprob_threshold=.05,threshold_revision='User-authorized modest logprob-only relaxation, frozen before rerun')
     try:
         nodes=sorted([n for n in ray.nodes() if n['Alive']],key=lambda n:n['NodeManagerAddress'])
         if [n['NodeManagerAddress'] for n in nodes]!=['10.8.191.127','10.8.191.131'] or ray.available_resources().get('GPU')!=16:

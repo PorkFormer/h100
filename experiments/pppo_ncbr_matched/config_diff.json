@@ -1,7 +1,7 @@
 {
   "baseline_path": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/provenance/resolved_config.yaml",
   "baseline_sha256": "a6741117e5a07ab346589061b96201f8699d59cf04e3a1c23fb10f8f21ba33b2",
-  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
   "differences": [
     {
       "after": null,
@@ -11,6 +11,24 @@
       "category": "intentional_algorithm_differences",
       "field": "actor_rollout_ref.actor.clip_ratio_c",
       "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": true,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "actor_rollout_ref.actor.fsdp_config.pppo_bf16_full_reduction",
+      "reason": "Disable BF16 reduced-precision intermediate reduction; BF16 operands and FP32 master dtype unchanged"
+    },
+    {
+      "after": 128,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "actor_rollout_ref.actor.fsdp_config.pppo_fixed_linear_tile",
+      "reason": "BF16 shape-stable 128-token linear execution fixes full/cropped projection and update discrepancies; parameters and objective unchanged"
     },
     {
       "after": "pppo",
@@ -259,6 +277,15 @@
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASHINFER_WORKSPACE_BASE",
       "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
+    },
+    {
+      "after": "1",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASH_ATTENTION_DETERMINISTIC",
+      "reason": "Deterministic FlashAttention backward removes same-view gradient/update noise in BF16 gate"
     },
     {
       "after": "ens201",

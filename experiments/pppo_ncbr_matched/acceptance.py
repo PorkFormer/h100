@@ -39,6 +39,9 @@ def gate0():
         'algorithm.pppo.extra_continuations_per_prefix':8,'algorithm.pppo.eta_percent':15,
         'algorithm.pppo.seed':42,'algorithm.pppo.actor_view':'cropped',
         'algorithm.pppo.optimizer_audit.enabled':False,
+        'actor_rollout_ref.actor.fsdp_config.pppo_fixed_linear_tile':128,
+        'actor_rollout_ref.actor.fsdp_config.pppo_bf16_full_reduction':True,
+        'ray_kwargs.ray_init.runtime_env.env_vars.FLASH_ATTENTION_DETERMINISTIC':'1',
         'algorithm.filter_groups.enable':True,'algorithm.filter_groups.metric':'pppo_filter_reward',
         'algorithm.filter_groups.max_num_gen_batches':10,
     }

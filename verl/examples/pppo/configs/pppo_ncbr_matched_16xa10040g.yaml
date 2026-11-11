@@ -52,6 +52,8 @@ actor_rollout_ref:
         - re:.*mlp.gate$
         activation_observer: static_minmax
         quantization_config_path: null
+      pppo_fixed_linear_tile: 128
+      pppo_bf16_full_reduction: true
     _target_: verl.workers.config.FSDPActorConfig
     rollout_n: 8
     strategy: fsdp
@@ -1042,6 +1044,7 @@ ray_kwargs:
         NCCL_IB_DISABLE: '0'
         NCCL_SOCKET_FAMILY: AF_INET
         TORCH_NCCL_ASYNC_ERROR_HANDLING: '1'
+        FLASH_ATTENTION_DETERMINISTIC: '1'
         WANDB_PROJECT: a100_verl
         WANDB_ENTITY: cartman
         WANDB_MODE: offline

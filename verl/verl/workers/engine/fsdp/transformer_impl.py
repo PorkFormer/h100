@@ -190,6 +190,14 @@ class FSDPEngine(BaseEngine):
         # This is used to import external_lib into the huggingface systems
         self._build_model_optimizer()
 
+        if getattr(self.engine_config, "pppo_bf16_full_reduction", False):
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+        if getattr(self.engine_config, "pppo_fixed_linear_tile", 0):
+            if self.engine_config.dtype != "bfloat16":
+                raise ValueError("PPPO fixed linear execution requires BF16 mixed precision")
+            from verl.experimental.pppo.stable_linear import install_fixed_tile_linear
+            install_fixed_tile_linear(self.module, self.engine_config.pppo_fixed_linear_tile)
+
         self.checkpoint_manager = FSDPCheckpointManager(
             model=self.module,
             optimizer=self.optimizer,

@@ -258,6 +258,9 @@ class FSDPEngineConfig(EngineConfig):
     use_torch_compile: bool = True
     entropy_checkpointing: bool = False
     strategy: str = "fsdp"
+    # Opt-in BF16 numerical execution path; defaults preserve other algorithms.
+    pppo_fixed_linear_tile: int = 0
+    pppo_bf16_full_reduction: bool = False
     qat: QATEngineConfig = field(default_factory=QATEngineConfig)
 
     def __post_init__(self):
