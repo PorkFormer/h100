@@ -1,0 +1,35 @@
+{
+  "scope": "Completed current acceptance attempts only; archived diagnostics and formal excluded",
+  "attempts": [
+    {
+      "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/profile/attempts/profile_1794422035674704382/training_status.json",
+      "job_id": "21000000",
+      "state": "STAGE_COMPLETE",
+      "wall_seconds": 8224.569925069809,
+      "allocated_gpu_hours": 36.55364411142137
+    },
+    {
+      "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/attempts/smoke-g1_1794417123629514968/training_status.json",
+      "job_id": "1e000000",
+      "state": "STAGE_COMPLETE",
+      "wall_seconds": 483.21081256866455,
+      "allocated_gpu_hours": 2.147603611416287
+    },
+    {
+      "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g8/attempts/smoke-g8_1794417631057548603/training_status.json",
+      "job_id": "1f000000",
+      "state": "STAGE_COMPLETE",
+      "wall_seconds": 2753.208762407303,
+      "allocated_gpu_hours": 12.236483388476902
+    },
+    {
+      "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g8/attempts/smoke-resume_1794420409474847747/training_status.json",
+      "job_id": "20000000",
+      "state": "STAGE_COMPLETE",
+      "wall_seconds": 1600.889083147049,
+      "allocated_gpu_hours": 7.115062591764662
+    }
+  ],
+  "online_holdout_separate_wall_seconds": null,
+  "physical_gpu_peak_bytes": null
+}

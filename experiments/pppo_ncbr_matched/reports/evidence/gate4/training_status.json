@@ -1,0 +1,15 @@
+{
+  "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/profile/attempts/profile_1794422035674704382",
+  "code_commit": "281943ba1d774742cc36f8c5f3de7784318d534b",
+  "config_sha256": "ce9e117e21d4ecf722e8ac05ac8a602bb6f69df16080e4e72db187a506a67e60",
+  "driver_pid": 1551315,
+  "ended_at": 1794430260.30317,
+  "formal_target": 300,
+  "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "heartbeat": 1794430259.9429362,
+  "job_id": "21000000",
+  "last_successful_step": 1,
+  "stage": "profile",
+  "started_at": 1794422035.733245,
+  "state": "STAGE_COMPLETE"
+}
