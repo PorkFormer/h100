@@ -7,7 +7,7 @@
 | 0 | PASS | evidence/gate0_stable/result.json |
 | 1 | PASS: 208 tests | evidence/gate1_stable/pytest.log |
 | 2 | PASS: all 16 ranks | evidence/gate2_stable_acceptance/result.json |
-| 3 | NOT RUN | Next: G=1 smoke, G=8 update and fresh-process resume |
+| 3 | IN PROGRESS | G=1 Ray job 1a000000: dataset preprocessing; no completed update yet. G=8 and resume NOT RUN |
 | 4 | NOT RUN | Full-scale 768/256, N=8/G=8 profiling required |
 
 Formal training and Step 300 evaluation: **NOT RUN**. Checkpoint frequency remains 50.

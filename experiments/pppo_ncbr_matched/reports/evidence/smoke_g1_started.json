@@ -1,0 +1,14 @@
+{
+  "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/attempts/smoke-g1_1794414343996514129",
+  "code_commit": "14c9471cbabc59fedbc98d072fe54d604e9ac75f",
+  "config_sha256": "cd5eed9978f25132baac31e5b28764fcde289787f49cbd46b9d08986603c6765",
+  "driver_pid": 1351261,
+  "formal_target": 300,
+  "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "heartbeat": 1794414424.5910244,
+  "job_id": "1a000000",
+  "last_successful_step": 0,
+  "stage": "smoke-g1",
+  "started_at": 1794414344.057495,
+  "state": "RUNNING"
+}

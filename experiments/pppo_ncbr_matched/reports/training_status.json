@@ -1,5 +1,5 @@
 {
-  "state": "GATE3_PENDING",
+  "state": "GATE3_RUNNING",
   "formal_training": "NOT RUN",
   "job_id": null,
   "last_successful_step": 0,
@@ -10,14 +10,20 @@
     "0": "PASS",
     "1": "PASS",
     "2": "PASS",
-    "3": "NOT RUN",
+    "3": "IN PROGRESS",
     "4": "NOT RUN"
   },
-  "smoke": "NOT RUN",
+  "smoke": "RUNNING",
   "profiling": "NOT RUN",
   "evaluation": "NOT RUN",
   "worker_management": "user",
   "latest_diagnostic": "acceptance/gate2_stable_acceptance/result.json",
   "latest_diagnostic_status": "PASS",
-  "threshold_relaxation": "User-authorized logprob limit 0.05 to 0.06; all other limits unchanged"
+  "threshold_relaxation": "User-authorized logprob limit 0.05 to 0.06; all other limits unchanged",
+  "active_smoke": {
+    "job_id": "1a000000",
+    "stage": "smoke-g1",
+    "status_path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/training_status.json",
+    "last_successful_step": 0
+  }
 }
