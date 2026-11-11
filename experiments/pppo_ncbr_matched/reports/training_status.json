@@ -21,9 +21,12 @@
   "latest_diagnostic_status": "PASS",
   "threshold_relaxation": "User-authorized logprob limit 0.05 to 0.06; all other limits unchanged",
   "active_smoke": {
-    "job_id": "1a000000",
+    "job_id": "1b000000",
+    "last_successful_step": 0,
     "stage": "smoke-g1",
-    "status_path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/training_status.json",
-    "last_successful_step": 0
-  }
+    "status_path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/training_status.json"
+  },
+  "interrupted_attempt": "interrupted/1794415797994109685",
+  "monitoring_target": "formal Step 1\u20133, 48 optimizer updates, without stopping S300",
+  "monitor_status_path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/first3_monitor/status.json"
 }

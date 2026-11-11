@@ -172,3 +172,24 @@ change to a protected scientific condition is a blocker, not an automatic fallba
 The coordinator advances validated stages and reports failures; it does not
 silently rewrite code/config or blindly retry a failed scientific experiment.
 Engineering diagnosis and repair must precede restarting a stopped chain.
+
+
+## Formal first-three-step monitoring
+
+The user confirmed that the milestone is formal Steps 1–3, not smoke/profiling.
+`verl/examples/pppo/monitor_first3.py` checks every 60 seconds and requires real
+formal metrics for consecutive steps, 16 actual optimizer updates per step (48
+cumulative), 2048 actor rows, 256 question groups and finite loss/gradient/timing
+metrics, plus all prerequisite gate receipts and a live formal driver. It mails
+the verified milestone and does not terminate the S300 process. Monitor state
+and append-only observations live in `first3_monitor/` under the run root.
+
+The first interactive-session driver and coordinator disappeared without a
+successful outer step or logged Python exception. Their exact exit cause is not
+established. The entire attempt is preserved in `interrupted/1794415797994109685`.
+`start_detached_first3.py --run` verifies those processes are dead and no update
+metrics exist before archival/restart. It launches driver, coordinator and monitor
+with independent sessions, closed inherited descriptors and file-backed logs;
+all three were verified reparented to PID 1. This lifecycle repair changes no
+training/config fingerprint. Six monitor tests guard against counting smoke,
+missing/duplicate steps, wrong update counts, nonfinite metrics and stale drivers.

@@ -1,0 +1,34 @@
+{
+  "continuation": {
+    "command": [
+      "/usr/bin/python",
+      "-u",
+      "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/examples/pppo/continue_ncbr_matched.py",
+      "--run"
+    ],
+    "log": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/execution_logs/continuation_detached_1794415797994109685.log",
+    "pid": 1389110,
+    "process_identity": "290484914"
+  },
+  "first3_monitor": {
+    "command": [
+      "/usr/bin/python",
+      "-u",
+      "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl/examples/pppo/monitor_first3.py"
+    ],
+    "log": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/execution_logs/first3_monitor_detached_1794415797994109685.log",
+    "pid": 1389111,
+    "process_identity": "290484916"
+  },
+  "smoke_g1": {
+    "command": [
+      "/usr/bin/python",
+      "-u",
+      "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/launch.py",
+      "smoke-g1"
+    ],
+    "log": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/execution_logs/smoke_g1_detached_1794415797994109685.log",
+    "pid": 1388768,
+    "process_identity": "290484013"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "code_commit": "4ec5c9637083f94c20336be9e461bd95061902d6",
+  "code_fingerprint": "c30b0435fdcec61dcb917eb8d733dd734a4db8271e7bc0d0a9520e4c4779ca45",
+  "completed": [],
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "detected_at": 1794415798.0160308,
+  "heartbeat": 1794415427.0767565,
+  "orchestrator_sha256": "ff9e3a1949e2942ae93582d95c55c3f9983065b510a26c3b0f5b5ad9281e5f7a",
+  "pid": 1366241,
+  "reason": "Driver/coordinator process absent, no successful update; exit cause not established",
+  "recipient": "3531125084@qq.com",
+  "stage": "\u7b49\u5f85\u5df2\u542f\u52a8\u7684G=1 smoke",
+  "started_at": 1794414990.3067107,
+  "state": "INTERRUPTED"
+}
