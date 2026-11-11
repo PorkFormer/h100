@@ -90,13 +90,17 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
         audit = self.output / "continuations.jsonl"
         for start in range(0, len(requests), self.pppo.request_chunk_size):
             chunk = requests[start:start + self.pppo.request_chunk_size]
+            generation_started = time.perf_counter()
             generations = asyncio.run(generate_chunk(chunk, self.llm_server_manager.get_client(), sampling,
                                       self.pppo.max_concurrent_requests, self.pppo.request_timeout_seconds))
+            timing_raw["pppo_continuation_generate"] = timing_raw.get("pppo_continuation_generate", 0) + time.perf_counter() - generation_started
             for score_start in range(0, len(generations), self.pppo.scoring_chunk_size):
                 score_chunk = generations[score_start:score_start + self.pppo.scoring_chunk_size]
                 fresh = scoring_batch(candidate, score_chunk, self.tokenizer.pad_token_id)
+                scoring_started = time.perf_counter()
                 normalized = self._score_batch_with_existing_reward_pipeline(fresh)
                 values = correctness(normalized.extra_info, len(fresh))
+                timing_raw["pppo_continuation_reward"] = timing_raw.get("pppo_continuation_reward", 0) + time.perf_counter() - scoring_started
                 with audit.open("a") as f:
                     for generation, acc in zip(score_chunk, values, strict=True):
                         request = generation.request
@@ -278,6 +282,10 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
             metrics.update(result)
         self._commit_checkpoint()
         metrics["pppo/next_eta_percent"] = self.prefix_schedule.eta
+        if "train/generated_prompt_groups" in metrics:
+            metrics["pppo/valid_excess_groups"] = (metrics["train/generated_prompt_groups"]
+                                                  - metrics["train/filtered_prompt_groups"]
+                                                  - metrics["train/retained_prompt_groups"])
         with (self.output / "training_metrics.jsonl").open("a") as stream:
             stream.write(json.dumps({"step": self.global_steps, "metrics": metrics,
                                      "timing_seconds": timing_raw}, default=float, allow_nan=False) + "\n")

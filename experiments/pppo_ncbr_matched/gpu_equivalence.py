@@ -92,14 +92,16 @@ class FrozenRank:
             model_output['log_probs'].register_hook(check_suffix)
             return pppo_loss(c.actor_rollout_ref.actor,model_output,data)
 
-        for view in ['full_mask_reference','cropped']:
+        # Compare all forward/backward paths before any optimizer mutation. A
+        # same-view repeat separates stochastic kernels from length effects.
+        for view in ['full_mask_reference','cropped','full_mask_repeat']:
             with torch.no_grad():
                 for parameter, value in zip(parameters,initial,strict=True): parameter.copy_(value.to(parameter.device))
             engine.optimizer.state.clear()
             engine.optimizer_zero_grad()
             torch.manual_seed(42)
             torch.cuda.manual_seed_all(42)
-            batch=actor_batch(copy.deepcopy(original),view,tokenizer.pad_token_id)
+            batch=actor_batch(copy.deepcopy(original),'full_mask_reference' if view=='full_mask_repeat' else view,tokenizer.pad_token_id)
             td=left_right_2_no_padding(batch.to_tensordict()).to('cuda')
             tu.assign_non_tensor(td,temperature=1.,use_remove_padding=True,use_dynamic_bsz=False,
                                 micro_batch_size_per_gpu=2,global_batch_size=128,use_fused_kernels=False)
@@ -115,15 +117,25 @@ class FrozenRank:
                 current=no_padding_2_padding(output_batch['model_output']['log_probs'],td).detach()
                 mask=batch.batch['pppo_loss_mask'].to(current.device)
                 loss=sum(output_batch['loss'])
-                grad_norm=engine.optimizer_step()
-                update=torch.cat([(p.detach().cpu()-v).flatten().float() for p,v in zip(parameters,initial,strict=True)])
-                results[view]=dict(old=old[mask].cpu(),current=current[mask].cpu(),gradient=gradient,update=update,
-                                   loss=loss,grad_norm=grad_norm,denominator=total.clone(),
-                                   optimizer_steps=engine.pppo_optimizer_updates)
+                results[view]=dict(old=old[mask].cpu(),current=current[mask].cpu(),gradient=gradient,
+                                   gradient_shards=[None if p.grad is None else p.grad.detach().cpu().clone() for p in parameters],
+                                   loss=loss,denominator=total.clone())
             torch.cuda.synchronize()
+        for view, result in results.items():
+            with torch.no_grad():
+                for parameter,value in zip(parameters,initial,strict=True):parameter.copy_(value.to(parameter.device))
+            engine.optimizer.state.clear()
+            with engine.train_mode():
+                engine.optimizer_zero_grad()
+                for parameter,gradient in zip(parameters,result.pop('gradient_shards'),strict=True):
+                    parameter.grad=None if gradient is None else gradient.to(parameter.device)
+                result['grad_norm']=engine.optimizer_step()
+                result['optimizer_steps']=engine.pppo_optimizer_updates
+                result['update']=torch.cat([(p.detach().cpu()-v).flatten().float() for p,v in zip(parameters,initial,strict=True)])
         a,b=results['full_mask_reference'],results['cropped']
         gradient=compare_vectors(a['gradient'],b['gradient'])
         update=compare_vectors(a['update'],b['update'])
+        repeat=results['full_mask_repeat']
         report=dict(rank=rank,host=socket.gethostname(),world_size=dist.get_world_size(),dp_size=engine.get_data_parallel_size(),
                     dtype=str(engine._autocast_dtype),master_dtype=str(parameters[0].dtype),
                     old_logprob_max_abs=float((a['old']-b['old']).abs().max()),
@@ -132,8 +144,14 @@ class FrozenRank:
                     gradient=gradient,update=update,
                     grad_norm_relative_error=abs(a['grad_norm']-b['grad_norm'])/max(abs(a['grad_norm']),1e-12),
                     reference_loss=a['loss'],cropped_loss=b['loss'],
+                    original_lengths=lengths.tolist(),prefix_lengths=h.tolist(),
+                    within_view_old_current_max_abs={name:float((value['old']-value['current']).abs().max())
+                                                     for name,value in results.items()},
                     denominator_identical=bool(torch.equal(a['denominator'],b['denominator'])),
                     optimizer_steps=[a['optimizer_steps'],b['optimizer_steps']],
+                    same_view_repeat=dict(logprob_max_abs=float((a['current']-repeat['current']).abs().max()),
+                                          gradient=compare_vectors(a['gradient'],repeat['gradient']),
+                                          update=compare_vectors(a['update'],repeat['update'])),
                     suffix_logprob_gradient_max=max(suffix_gradient_max),
                     max_memory_allocated_bytes=torch.cuda.max_memory_allocated())
         report['passed']=all([report['old_logprob_max_abs']<=.05,report['current_logprob_max_abs']<=.05,

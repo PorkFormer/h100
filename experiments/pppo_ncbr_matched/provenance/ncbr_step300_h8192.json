@@ -1,0 +1,646 @@
+{
+  "arm": "NCBR Boundary Return",
+  "step": 300,
+  "horizon": 8192,
+  "source_sha256": {
+    "/workspace/rl/h100/analysis/ncbr_boundary_return_s300_seed1_20260828/generation/h8192/trajectory_scores.parquet": "ad7ed36fd54470675acf1b4067f5cd2c3e4b5ac2d81f6b997951b1a137231f1c",
+    "/workspace/rl/h100/analysis/ncbr_amc23_s300_seed1_20260909/formal/generation/h8192/trajectory_scores.parquet": "4a0a56af34d660c416e7cfa678fb1b9c16e1cb6735708a4065df24d203ad2193"
+  },
+  "checkpoint_sha256": [
+    "b09d17510fdb9aa361444dbc795b8863bc5dcc345f0bc122fe091ffa65bb9cd3"
+  ],
+  "metrics": [
+    {
+      "benchmark": "AIME2024",
+      "questions": 30,
+      "samples_per_question": 32,
+      "avg32": 0.165625,
+      "pass32": 0.4666666666666667,
+      "avg32_se": 0.05644422884429892,
+      "pass32_se": 0.09264111117062017,
+      "mean_tokens": 2245.4635416666665
+    },
+    {
+      "benchmark": "AIME2025",
+      "questions": 30,
+      "samples_per_question": 32,
+      "avg32": 0.14479166666666668,
+      "pass32": 0.4,
+      "avg32_se": 0.05165376009075631,
+      "pass32_se": 0.09097176522946841,
+      "mean_tokens": 2143.311458333333
+    },
+    {
+      "benchmark": "AMC23",
+      "questions": 40,
+      "samples_per_question": 32,
+      "avg32": 0.6984375,
+      "pass32": 0.95,
+      "avg32_se": 0.05666414050977512,
+      "pass32_se": 0.034899122022605644,
+      "mean_tokens": 1415.59921875
+    }
+  ],
+  "per_question": [
+    {
+      "prompt_id": 512,
+      "benchmark": "AIME2024",
+      "avg32": 0.34375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 513,
+      "benchmark": "AIME2024",
+      "avg32": 0.84375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 514,
+      "benchmark": "AIME2024",
+      "avg32": 0.125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 515,
+      "benchmark": "AIME2024",
+      "avg32": 0.0625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 516,
+      "benchmark": "AIME2024",
+      "avg32": 0.09375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 517,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 518,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 519,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 520,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 521,
+      "benchmark": "AIME2024",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 522,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 523,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 524,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 525,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 526,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 527,
+      "benchmark": "AIME2024",
+      "avg32": 0.8125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 528,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 529,
+      "benchmark": "AIME2024",
+      "avg32": 0.96875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 530,
+      "benchmark": "AIME2024",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 531,
+      "benchmark": "AIME2024",
+      "avg32": 0.3125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 532,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 533,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 534,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 535,
+      "benchmark": "AIME2024",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 536,
+      "benchmark": "AIME2024",
+      "avg32": 0.3125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 537,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 538,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 539,
+      "benchmark": "AIME2024",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 540,
+      "benchmark": "AIME2024",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 541,
+      "benchmark": "AIME2024",
+      "avg32": 0.96875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 542,
+      "benchmark": "AIME2025",
+      "avg32": 0.9375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 543,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 544,
+      "benchmark": "AIME2025",
+      "avg32": 0.96875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 545,
+      "benchmark": "AIME2025",
+      "avg32": 0.1875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 546,
+      "benchmark": "AIME2025",
+      "avg32": 0.0625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 547,
+      "benchmark": "AIME2025",
+      "avg32": 0.6875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 548,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 549,
+      "benchmark": "AIME2025",
+      "avg32": 0.0625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 550,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 551,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 552,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 553,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 554,
+      "benchmark": "AIME2025",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 555,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 556,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 557,
+      "benchmark": "AIME2025",
+      "avg32": 0.3125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 558,
+      "benchmark": "AIME2025",
+      "avg32": 0.65625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 559,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 560,
+      "benchmark": "AIME2025",
+      "avg32": 0.25,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 561,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 562,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 563,
+      "benchmark": "AIME2025",
+      "avg32": 0.15625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 564,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 565,
+      "benchmark": "AIME2025",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 566,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 567,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 568,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 569,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 570,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 571,
+      "benchmark": "AIME2025",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 572,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 573,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 574,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 575,
+      "benchmark": "AMC23",
+      "avg32": 0.8125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 576,
+      "benchmark": "AMC23",
+      "avg32": 0.71875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 577,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 578,
+      "benchmark": "AMC23",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 579,
+      "benchmark": "AMC23",
+      "avg32": 0.5625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 580,
+      "benchmark": "AMC23",
+      "avg32": 0.875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 581,
+      "benchmark": "AMC23",
+      "avg32": 0.9375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 582,
+      "benchmark": "AMC23",
+      "avg32": 0.625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 583,
+      "benchmark": "AMC23",
+      "avg32": 0.0,
+      "pass32": 0
+    },
+    {
+      "prompt_id": 584,
+      "benchmark": "AMC23",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 585,
+      "benchmark": "AMC23",
+      "avg32": 0.75,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 586,
+      "benchmark": "AMC23",
+      "avg32": 0.71875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 587,
+      "benchmark": "AMC23",
+      "avg32": 0.46875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 588,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 589,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 590,
+      "benchmark": "AMC23",
+      "avg32": 0.9375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 591,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 592,
+      "benchmark": "AMC23",
+      "avg32": 0.21875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 593,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 594,
+      "benchmark": "AMC23",
+      "avg32": 0.96875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 595,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 596,
+      "benchmark": "AMC23",
+      "avg32": 0.9375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 597,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 598,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 599,
+      "benchmark": "AMC23",
+      "avg32": 0.15625,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 600,
+      "benchmark": "AMC23",
+      "avg32": 0.1875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 601,
+      "benchmark": "AMC23",
+      "avg32": 0.875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 602,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 603,
+      "benchmark": "AMC23",
+      "avg32": 0.03125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 604,
+      "benchmark": "AMC23",
+      "avg32": 0.125,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 605,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 606,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 607,
+      "benchmark": "AMC23",
+      "avg32": 0.6875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 608,
+      "benchmark": "AMC23",
+      "avg32": 0.46875,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 609,
+      "benchmark": "AMC23",
+      "avg32": 0.59375,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 610,
+      "benchmark": "AMC23",
+      "avg32": 1.0,
+      "pass32": 1
+    },
+    {
+      "prompt_id": 611,
+      "benchmark": "AMC23",
+      "avg32": 0.25,
+      "pass32": 1
+    }
+  ]
+}

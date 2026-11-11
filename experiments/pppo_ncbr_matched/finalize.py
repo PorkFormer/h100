@@ -3,9 +3,10 @@ import argparse
 import json
 import math
 import subprocess
+import shutil
 import time
 
-from prepare import CONFIG, REPO, RUN, code_fingerprint, sha, write_json
+from prepare import CONFIG, HERE, REPO, RUN, code_fingerprint, sha, write_json
 from launch import completed_steps, validate_checkpoints
 
 
@@ -77,11 +78,28 @@ def reports():
             for key in ['pppo/original_tokens','pppo/tail_tokens','pppo/continuation_prefill_tokens',
                         'pppo/optimized_tokens','pppo/actor_input_tokens','train/filtered_prompt_groups']:
                 totals[key]=totals.get(key,0)+row['metrics'].get(key,0)
+        status=json.loads((root/'training_status.json').read_text())
+        elapsed=status.get('ended_at',time.time())-status['started_at']
         costs[root.name]=dict(stage_wall_seconds=stages,tokens_and_groups=totals,
+                             allocated_gpu_hours=16*elapsed/3600,job_wall_seconds=elapsed,
+                             online_holdout_wall_seconds=stages.get('testing',0),
                              successful_outer_steps=len(rows),timings_may_overlap=True)
+    diagnostics={}
+    for path in sorted((RUN/'acceptance').glob('gate2*/result.json')):
+        result=json.loads(path.read_text());diagnostics[str(path.parent)]=dict(status=result['status'],
+                   wall_seconds=result.get('wall_seconds'),allocated_gpu_hours=result.get('allocated_gpu_hours'))
     write_json(RUN/'cost_report.json',dict(status='MEASURED' if costs else 'NOT RUN',runs=costs,
+               diagnostic_runs=diagnostics,
                gpu_hours_rule='allocated GPU count times measured job wall time / 3600; online holdout and offline evaluation reported separately',
                warning='optimized-token fraction is not a GPU-hours saving'))
+    reports_dir=HERE/'reports';reports_dir.mkdir(exist_ok=True)
+    for name in ('validation_report.md','training_status.json','cost_report.json','checkpoint_manifest.json',
+                 'evaluation_report.md','comparison_with_ncbr.md'):
+        shutil.copy2(RUN/name,reports_dir/name)
+    if (RUN/'training_metrics.jsonl').exists():
+        shutil.copy2(RUN/'training_metrics.jsonl',reports_dir/'training_metrics.jsonl')
+    else:
+        (reports_dir/'training_metrics.jsonl').write_text('')
 
 
 if __name__=='__main__':
