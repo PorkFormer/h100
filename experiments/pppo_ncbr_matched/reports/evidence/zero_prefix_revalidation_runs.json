@@ -1,0 +1,54 @@
+{
+  "reason": "Revalidate zero-prefix execution repair; successful G=1 retained, G=8 intentionally interrupted before any update",
+  "runs": {
+    "smoke-g1": {
+      "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g1/attempts/smoke-g1_1794415806579692954",
+      "code_commit": "56ac5924d4d60da0fa7393751b06156ff467de24",
+      "config_sha256": "cd5eed9978f25132baac31e5b28764fcde289787f49cbd46b9d08986603c6765",
+      "driver_pid": 1388768,
+      "ended_at": 1794416311.5641916,
+      "formal_target": 300,
+      "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+      "heartbeat": 1794416307.261324,
+      "job_id": "1b000000",
+      "last_successful_step": 1,
+      "stage": "smoke-g1",
+      "started_at": 1794415806.7753575,
+      "state": "STAGE_COMPLETE"
+    },
+    "smoke-g8": {
+      "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance_runs/smoke-g8/attempts/smoke-g8_1794416329574542365",
+      "code_commit": "7dfdf73112613a074b09e7cf3e3d7e831350ed78",
+      "config_sha256": "824a5c3238658d20c279a37d9ee1ae4c22ae0f15d4ddb50aa699b678ca2e6a8d",
+      "driver_pid": 1405179,
+      "ended_at": 1794416494.3764966,
+      "error": "KeyboardInterrupt()",
+      "formal_target": 300,
+      "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+      "heartbeat": 1794416490.4621506,
+      "job_id": "1c000000",
+      "last_successful_step": 0,
+      "stage": "smoke-g8",
+      "started_at": 1794416329.7710834,
+      "state": "FAILED"
+    },
+    "automation": {
+      "child_pid": 1405179,
+      "code_commit": "56ac5924d4d60da0fa7393751b06156ff467de24",
+      "code_fingerprint": "c30b0435fdcec61dcb917eb8d733dd734a4db8271e7bc0d0a9520e4c4779ca45",
+      "completed": [
+        "existing smoke-g1"
+      ],
+      "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+      "heartbeat": 1794416487.271543,
+      "orchestrator_sha256": "ff9e3a1949e2942ae93582d95c55c3f9983065b510a26c3b0f5b5ad9281e5f7a",
+      "pid": 1389110,
+      "recipient": "3531125084@qq.com",
+      "stage": "launch.py smoke-g8",
+      "started_at": 1794415808.3413022,
+      "state": "REVALIDATING",
+      "ended_at": 1794416493.7854362,
+      "reason": "Observed whole-batch full-mask fallback for zero prefixes; stop before formal and repair execution only"
+    }
+  }
+}

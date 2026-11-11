@@ -37,3 +37,10 @@ Code commit: `ecd383f64127cebc712a24004c04784105af0ff2`.
 Config SHA256: `9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33`.
 
 All prior diagnostic failures and original analysis are in `evidence/validation_before_stable_repair.md` and their per-attempt evidence directories. No efficiency claim is made before Gate 4.
+
+
+## Zero-prefix repair revalidation (2026-11-11 17:10 UTC)
+
+Gate 0 PASS; Gate 1 210 tests PASS; Gate 2 all 16 ranks PASS on commit c811e8c7adcb47c3215c4a8e2adb68a43dba6f7e. New frozen batch original lengths include 2 and 6 (zero prefixes) and maximum 8192. No frozen config or numerical threshold changes. Max current logprob error 0.05391884; max gradient relative error 0.00063946; max AdamW update relative error 0.00473694. Zero-prefix guard tokens carry no PPO loss.
+
+Previous successful G=1 and intentionally interrupted pre-update G=8 are preserved under revalidation_archive/zero_prefix_repair. Gate 3 is being repeated with corrected cropped execution. Formal training remains NOT RUN. Standalone scripted monitoring was disabled per user correction; current Codex session checks every five minutes.
