@@ -63,6 +63,10 @@ def sft_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
 
 def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None):
     """Computes ppo loss from model output (log_prob, entropy, values, etc. ) and old_log_probs from data."""
+    if config.policy_loss.get("loss_mode", "vanilla") == "pppo":
+        from verl.experimental.pppo.objective import pppo_loss
+
+        return pppo_loss(config, model_output, data)
     runtime_dp_size = float(data["dp_size"])
     log_prob = no_padding_2_padding(model_output["log_probs"], data)
     entropy = model_output.get("entropy", None)

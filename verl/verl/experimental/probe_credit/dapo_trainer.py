@@ -636,6 +636,12 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         filter_groups = _config_get(self.config.algorithm, "filter_groups")
         return _config_get(filter_groups, "metric") if bool(_config_get(filter_groups, "enable", False)) else None
 
+    def _resume_data_epoch(self) -> int:
+        return self.global_steps // len(self.train_dataloader)
+
+    def _initialize_candidate_identity(self, candidate: DataProto, epoch: int) -> None:
+        """Optional stable identity hook; default UUID semantics are unchanged."""
+
     def fit(self):
         """Run official DAPO accumulation, Probe final retained groups, then update."""
         self._validate_probe_credit_mode()
@@ -650,7 +656,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
         self.global_steps = 0
         self._load_checkpoint()
         self._publish_rollout_policy_version(self.global_steps)
-        current_epoch = self.global_steps // len(self.train_dataloader)
+        current_epoch = self._resume_data_epoch()
         if self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
             assert val_metrics
@@ -684,6 +690,7 @@ class RayDAPOProbeCreditTrainer(RayPPOTrainer):
                 candidate.non_tensor_batch["uid"] = np.asarray(
                     [str(uuid.uuid4()) for _ in range(len(candidate))], dtype=object
                 )
+                self._initialize_candidate_identity(candidate, epoch)
                 gen_batch = self._get_gen_batch(candidate)
                 gen_batch.meta_info["global_steps"] = self.global_steps
                 rollout_n = self.config.actor_rollout_ref.rollout.n

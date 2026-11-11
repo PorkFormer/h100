@@ -246,6 +246,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
         mini_batch_size = tu.pop(data, key="mini_batch_size", default=None)
         num_mini_batch = tu.pop(data, key="num_mini_batch", default=None)
         grpo_audit = tu.pop(data, key="grpo_audit", default=False)
+        pppo_audit_dir = tu.pop(data, key="pppo_audit_dir", default=None)
+        pppo_outer_step = tu.pop(data, key="pppo_outer_step", default=None)
         epochs = tu.pop(data, key="epochs", default=1)
         seed = tu.pop(data, key="seed", default=42)
         dataloader_kwargs = tu.pop(data, key="dataloader_kwargs", default={})
@@ -301,7 +303,12 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 )
                 if grpo_audit:
                     assert len(global_token_num) == 128
+                if pppo_audit_dir:
+                    from verl.experimental.pppo.audit import snapshot, record
+                    pppo_before = snapshot(self.engine)
                 actor_output = self.train_batch(mini_batch_td)
+                if pppo_audit_dir:
+                    record(self.engine, pppo_audit_dir, pppo_outer_step, batch_idx, pppo_before, actor_output)
                 output_lst.append(actor_output)
 
             if grpo_audit:

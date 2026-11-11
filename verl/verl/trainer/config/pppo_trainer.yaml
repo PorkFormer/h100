@@ -1,0 +1,57 @@
+defaults:
+  - probe_credit_dapo_trainer
+  - _self_
+algorithm:
+  use_kl_in_reward: false
+  filter_groups:
+    enable: false
+    metric: pppo_filter_reward
+    max_num_gen_batches: 10
+  pppo:
+    enable: true
+    profile: ncbr_matched
+    originals_per_prompt: 8
+    extra_continuations_per_prefix: 8
+    response_cap: 8192
+    eta_percent: 15
+    actor_view: cropped
+    seed: 42
+    max_concurrent_requests: 128
+    request_chunk_size: 512
+    scoring_chunk_size: 256
+    request_timeout_seconds: 600
+    holdout_hash: null
+    stop_after_step: null
+    schedule:
+      type: plateau
+      patience: 3
+      min_delta: 0.0
+      cooldown_validations: 1
+actor_rollout_ref:
+  actor:
+    policy_loss:
+      loss_mode: pppo
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+    clip_ratio_c: null
+    entropy_coeff: 0.0
+    use_kl_loss: false
+  rollout:
+    n: 8
+    response_length: 8192
+    max_model_len: 9216
+    boundary_return:
+      mode: "off"
+    val_kwargs:
+      n: 1
+      temperature: 0
+      do_sample: false
+data:
+  train_batch_size: 256
+  gen_batch_size: 256
+  max_response_length: 8192
+  seed: 42
+trainer:
+  total_training_steps: 300
+  test_freq: 10
+  val_before_train: true
