@@ -16,5 +16,8 @@
   "smoke": "NOT RUN",
   "profiling": "NOT RUN",
   "evaluation": "NOT RUN",
-  "worker_management": "user"
+  "worker_management": "user",
+  "latest_diagnostic": "acceptance/gate2_fp32_reduction/result.json",
+  "latest_diagnostic_status": "FAIL",
+  "threshold_relaxation": "User permits reasonable relaxation; none applied without numerical justification"
 }

@@ -19,13 +19,18 @@
       "allocated_gpu_hours": 0.5639962440066867,
       "status": "FAIL",
       "wall_seconds": 126.89915490150452
+    },
+    "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2_fp32_reduction": {
+      "status": "FAIL",
+      "wall_seconds": 135.5732250213623,
+      "allocated_gpu_hours": 0.6025476667616102
     }
   },
   "gpu_hours_rule": "allocated GPU count times measured job wall time / 3600; online holdout and offline evaluation reported separately",
   "runs": {},
   "status": "DIAGNOSTICS_ONLY",
   "warning": "optimized-token fraction is not a GPU-hours saving",
-  "diagnostic_gpu_hours_sum": 1.6345423475901284,
+  "diagnostic_gpu_hours_sum": 2.2370900143517387,
   "formal_training_gpu_hours": 0.0,
   "offline_evaluation_gpu_hours": 0.0
 }

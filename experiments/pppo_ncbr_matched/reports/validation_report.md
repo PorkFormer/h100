@@ -40,3 +40,43 @@ Ray head was retained on 10.8.191.127:6395; worker startup belongs to the user. 
 Automatic approval review rejected online W&B disclosure. All subsequent runs used offline/disabled W&B; no online experiment upload was performed.
 
 Checkpoint restoration, vLLM policy synchronization, continuation capacity, 300-step execution and downstream evaluation remain unverified. CPU success and frozen FSDP updates do not replace these gates.
+
+
+## BF16 reduction diagnostic (2026-11-11 16:02 UTC)
+
+Real 16-rank FSDP rerun with BF16 operands, FP32 masters, deterministic FlashAttention backward and `allow_bf16_reduced_precision_reduction=False`: **FAIL**, diagnostic only, not acceptance eligible. Original thresholds unchanged. Configuration SHA is unchanged. Diagnostic source fingerprint and parent commit are in the receipt; code is committed in 57cb5b1.
+
+Per-rank ranges:
+
+```json
+{
+  "old_logprob_max_abs": [
+    0.2198925018310547,
+    0.2198925018310547
+  ],
+  "current_logprob_max_abs": [
+    0.2315502166748047,
+    0.2315502166748047
+  ],
+  "loss_relative_error": [
+    0.00019407082456519912,
+    0.00019407082456519912
+  ],
+  "grad_norm_relative_error": [
+    0.007243936572212089,
+    0.007243936572212089
+  ],
+  "gradient": [
+    0.020919077567130823,
+    0.04070539707008496
+  ],
+  "update": [
+    0.1800437167686313,
+    0.20111249402963605
+  ]
+}
+```
+
+Same-view repeated forward/gradients/updates are identical on every rank. Full/cropped Q/K/V projection differences remain before attention. Reduced-precision reduction contributes to the discrepancy but is not its sole cause. This setting is not promoted into formal training. No justified relaxed threshold has been established; the user permits reasonable relaxation, but this run does not establish equivalence. Gates 3/4, formal training and Step 300 evaluation remain NOT RUN.
+
+Wall time: 135.5732250213623 seconds; allocated diagnostic GPU-hours: 0.6025476667616102.
