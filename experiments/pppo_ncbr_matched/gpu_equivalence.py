@@ -80,6 +80,33 @@ class FrozenRank:
         initial=[p.detach().cpu().clone() for p in parameters]
         results={}
         suffix_gradient_max=[]
+        trace_enabled=os.environ.get('PPPO_GATE_TRACE_KERNELS')=='1' and rank==0
+        traces={}
+        capture={'view':None,'indices':None}
+        if trace_enabled:
+            native_forward=engine.forward_step
+            def traced_forward(micro_batch,loss_function,forward_only):
+                capture['indices']=None
+                if forward_only and capture['view'] is not None:
+                    offsets=micro_batch['input_ids'].offsets()
+                    prompt_width=micro_batch['prompts'].shape[-1]
+                    selected=micro_batch['attention_mask'][:,:prompt_width].sum(-1)+micro_batch['pppo_prefix_length']
+                    capture['indices']=torch.cat([torch.arange(int(offsets[i]),int(offsets[i]+count),device='cuda')
+                                                  for i,count in enumerate(selected)])
+                return native_forward(micro_batch,loss_function,forward_only)
+            engine.forward_step=traced_forward
+            def hook_for(name):
+                def capture_layer(module,inputs,output):
+                    indices=capture['indices']
+                    if indices is None:return
+                    for kind,tensor in [('input',inputs[0]),('output',output)]:
+                        if not isinstance(tensor,torch.Tensor):continue
+                        value=tensor.reshape(-1,tensor.shape[-1])[indices].detach().float().cpu()
+                        traces.setdefault(capture['view'],{}).setdefault(name+'.'+kind,[]).append(value)
+                return capture_layer
+            for name,module in engine.module.named_modules():
+                if '.layers.0.' in name and (isinstance(module,torch.nn.Linear) or name.endswith(('input_layernorm','post_attention_layernorm'))):
+                    module.register_forward_hook(hook_for(name))
         directory=Path(output)
         directory.mkdir(parents=True,exist_ok=True)
 
@@ -106,7 +133,10 @@ class FrozenRank:
             tu.assign_non_tensor(td,temperature=1.,use_remove_padding=True,use_dynamic_bsz=False,
                                 micro_batch_size_per_gpu=2,global_batch_size=128,use_fused_kernels=False)
             with engine.eval_mode():
+                capture['view']=view
                 inferred=engine.infer_batch(td)
+                capture['view']=None
+                capture['indices']=None
             old=no_padding_2_padding(inferred['model_output']['log_probs'],td).detach()
             td['old_log_probs']=old
             tu.assign_non_tensor(td,micro_batch_size_per_gpu=1)
@@ -162,6 +192,14 @@ class FrozenRank:
                              gradient['reference_norm']>0,update['reference_norm']>0,
                              report['suffix_logprob_gradient_max']==0.,
                              report['denominator_identical'],report['optimizer_steps']==[1,1]])
+        if trace_enabled:
+            report['first_layer_kernel_trace']={}
+            for name,chunks in traces['full_mask_reference'].items():
+                ref=torch.cat(chunks).flatten()
+                crop=torch.cat(traces['cropped'][name]).flatten()
+                repeated=torch.cat(traces['full_mask_repeat'][name]).flatten()
+                report['first_layer_kernel_trace'][name]=dict(crop_max_abs=float((ref-crop).abs().max()),
+                    repeat_max_abs=float((ref-repeated).abs().max()),elements=ref.numel())
         write_json(directory/f'rank_{rank:02d}.json',report)
         dist.destroy_process_group()
         return report
@@ -173,6 +211,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--config',type=Path,default=CONFIG)
     parser.add_argument('--output',type=Path,default=RUN/'acceptance/gate2')
+    parser.add_argument('--trace-kernels',action='store_true',help='Diagnostic only; enable deterministic FlashAttention backward and first-layer tracing')
     args=parser.parse_args()
     if args.output.exists(): raise SystemExit('Use a new gate evidence directory; never overwrite failures')
     args.output.mkdir(parents=True)
@@ -181,10 +220,13 @@ def main():
     environment=dict(c.ray_kwargs.ray_init.runtime_env.env_vars)
     environment.update(PYTHONPATH=str(REPO/'verl')+':'+str(Path(__file__).parent),
                        WANDB_MODE='disabled',NCCL_DEBUG='WARN')
+    if args.trace_kernels:
+        environment.update(PPPO_GATE_TRACE_KERNELS='1',FLASH_ATTENTION_DETERMINISTIC='1')
     ray.init(address='10.8.191.127:6395',runtime_env={'env_vars':environment},log_to_driver=True)
     actors=[]
     started=time.time()
     report=dict(gate=2,status='FAIL',code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                acceptance_eligible=not args.trace_kernels,
                 code_fingerprint=code_fingerprint(),
                 config_sha256=sha(args.config),thresholds=dict(logprob_max_abs=.05,relative_error=.02,gradient_cosine=.999))
     try:

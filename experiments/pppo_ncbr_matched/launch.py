@@ -48,6 +48,7 @@ def require_gates(last):
         path=RUN/'acceptance'/f'gate{gate}'/'result.json'
         receipt=json.loads(path.read_text())
         if (receipt['status']!='PASS' or receipt['config_sha256']!=sha(CONFIG)
+                or receipt.get('acceptance_eligible') is False
                 or receipt.get('code_fingerprint')!=code_fingerprint()):
             raise ValueError(f'Gate {gate} missing, failed or stale')
 
