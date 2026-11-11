@@ -248,6 +248,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
         grpo_audit = tu.pop(data, key="grpo_audit", default=False)
         pppo_audit_dir = tu.pop(data, key="pppo_audit_dir", default=None)
         pppo_outer_step = tu.pop(data, key="pppo_outer_step", default=None)
+        pppo_strict_update = tu.pop(data, key="pppo_strict_update", default=False)
+        self.engine.pppo_strict_update = pppo_strict_update
         epochs = tu.pop(data, key="epochs", default=1)
         seed = tu.pop(data, key="seed", default=42)
         dataloader_kwargs = tu.pop(data, key="dataloader_kwargs", default={})
@@ -330,6 +332,9 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 if grpo_audit:
                     metrics["grpo_optimizer_updates"] = [len(output_lst)]
                     metrics["grpo_minibatch_trajectories"] = [128]
+                if pppo_strict_update:
+                    metrics["pppo_optimizer_updates_total"] = [self.engine.pppo_optimizer_updates]
+                    metrics["pppo_optimizer_updates_this_outer"] = [len(output_lst)]
                 output = tu.get_tensordict(tensor_dict={}, non_tensor_dict={"metrics": metrics}).cpu()
             else:
                 output = None

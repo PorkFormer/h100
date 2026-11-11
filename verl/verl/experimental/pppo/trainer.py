@@ -160,9 +160,20 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
 
     def _compute_advantage_and_actor_update(self, batch, metrics, timing_raw):
         started = time.perf_counter()
-        batch.meta_info["pppo_audit_dir"] = str(self.output / "optimizer_audit")
+        if self.pppo.get("optimizer_audit", {}).get("enabled", False):
+            batch.meta_info["pppo_audit_dir"] = str(self.output / "optimizer_audit")
+        else:
+            batch.meta_info.pop("pppo_audit_dir", None)
+        batch.meta_info["pppo_strict_update"] = True
         batch.meta_info["pppo_outer_step"] = self.global_steps
         output = self._update_actor(batch)
+        expected_updates = (self.config.data.train_batch_size // self.config.actor_rollout_ref.actor.ppo_mini_batch_size
+                            * self.config.actor_rollout_ref.actor.ppo_epochs)
+        for key, expected in (("actor/pppo_optimizer_updates_this_outer", expected_updates),
+                              ("actor/pppo_optimizer_updates_total", expected_updates * self.global_steps)):
+            values = np.asarray(output.meta_info["metrics"].get(key, []), dtype=float)
+            if values.size == 0 or not np.all(values == expected):
+                raise RuntimeError(f"PPPO actual optimizer count mismatch: {key}={values}, expected {expected}")
         timing_raw["update_actor"] = time.perf_counter() - started
         return batch, output
 
@@ -210,9 +221,11 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
         directory = self.pending_checkpoint
         required = [directory / "data.pt", directory / "pppo_driver_rng.pt"]
         for prefix in ("model", "optim", "extra_state"):
-            shards = list((directory / "actor").glob(prefix + "_world_size_*_rank_*.pt"))
             expected = self.config.trainer.nnodes * self.config.trainer.n_gpus_per_node
-            if len(shards) != expected:
+            shards = [directory / "actor" / f"{prefix}_world_size_{expected}_rank_{rank}.pt"
+                      for rank in range(expected)]
+            actual = set((directory / "actor").glob(prefix + "_world_size_*_rank_*.pt"))
+            if actual != set(shards):
                 raise ValueError(f"incomplete {prefix} checkpoint shards")
             required.extend(shards)
         if any(not p.is_file() or p.stat().st_size == 0 for p in required):
@@ -265,6 +278,9 @@ class RayPPPOTrainer(RayDAPOProbeCreditTrainer):
             metrics.update(result)
         self._commit_checkpoint()
         metrics["pppo/next_eta_percent"] = self.prefix_schedule.eta
+        with (self.output / "training_metrics.jsonl").open("a") as stream:
+            stream.write(json.dumps({"step": self.global_steps, "metrics": metrics,
+                                     "timing_seconds": timing_raw}, default=float, allow_nan=False) + "\n")
 
     def _profile_should_stop_after_step(self):
         stop = self.pppo.stop_after_step

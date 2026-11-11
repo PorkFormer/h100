@@ -52,7 +52,7 @@ def validate_result(request, outputs):
         raise ValueError("independent n=1 request returned wrong branch count")
     output = outputs[0]
     extra = output.extra_fields or {}
-    if int(extra.get("branch_id", 0)) != 0 or extra.get("global_steps") != request.policy_version:
+    if extra.get("branch_id") != 0 or extra.get("global_steps") != request.policy_version:
         raise ValueError("PPPO branch or policy version mismatch")
     stop = str(getattr(output.stop_reason, "value", output.stop_reason)).lower()
     finish = str(extra.get("finish_reason", "")).lower()
@@ -72,8 +72,8 @@ async def generate_chunk(requests, client, sampling_params, concurrency=128, tim
 
     async def start(request):
         params = dict(sampling_params, n=1, seed=request.seed, max_tokens=request.max_tokens)
-        handle = await client.start_grouped(request.request_id, prompt_ids=list(request.prompt + request.prefix),
-                                            sampling_params=params, routing_key=f"pppo-{request.occurrence}")
+        handle = await asyncio.wait_for(client.start_grouped(request.request_id, prompt_ids=list(request.prompt + request.prefix),
+                                            sampling_params=params, routing_key=f"pppo-{request.occurrence}"), timeout)
         handles.append(handle)
         return request, handle
 
@@ -85,7 +85,7 @@ async def generate_chunk(requests, client, sampling_params, concurrency=128, tim
         return validate_result(request, outputs)
 
     async def release(request, handle):
-        await handle.release()
+        await asyncio.wait_for(handle.release(), timeout)
         released.add(id(handle))
 
     async def cleanup(error, tasks):
@@ -93,10 +93,10 @@ async def generate_chunk(requests, client, sampling_params, concurrency=128, tim
         active = [h for h in handles if id(h) not in completed]
         for operations in ([h.abort() for h in active],
                            [h.drain() for h in {str(h.server_id): h for h in handles}.values()]):
-            results = await asyncio.gather(*operations, return_exceptions=True)
+            results = await asyncio.gather(*(asyncio.wait_for(operation, timeout) for operation in operations), return_exceptions=True)
             failures.extend(x for x in results if isinstance(x, BaseException))
         if not failures:
-            results = await asyncio.gather(*(h.release() for h in handles if id(h) not in released),
+            results = await asyncio.gather(*(asyncio.wait_for(h.release(), timeout) for h in handles if id(h) not in released),
                                            return_exceptions=True)
             failures.extend(x for x in results if isinstance(x, BaseException))
         for task in [*tasks, *result_tasks]:
@@ -110,7 +110,7 @@ async def generate_chunk(requests, client, sampling_params, concurrency=128, tim
 
     results = await schedule(requests, concurrency, len(requests), start, generate, release, cleanup)
     # release ACKs above are necessary; drain also attests no outstanding backend ownership.
-    await asyncio.gather(*(h.drain() for h in {str(h.server_id): h for h in handles}.values()))
+    await asyncio.gather(*(asyncio.wait_for(h.drain(), timeout) for h in {str(h.server_id): h for h in handles}.values()))
     if {x.request.request_id for x in results} != {r.request_id for r in requests}:
         raise ValueError("incomplete PPPO result set")
     return results

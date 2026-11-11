@@ -50,6 +50,8 @@ def validate_config(c):
         raise ValueError("PPPO cannot use shaped length reward")
     if not c.algorithm.filter_groups.enable and c.data.gen_batch_size != c.data.train_batch_size:
         raise ValueError("unfiltered PPPO requires gen=train")
+    if c.algorithm.filter_groups.enable and c.algorithm.filter_groups.metric != "pppo_filter_reward":
+        raise ValueError("PPPO dynamic sampling must use accumulated correctness")
     if p.schedule.type not in ("fixed", "plateau") or p.eta_percent not in (15, 20, 25, 30, 35):
         raise ValueError("invalid PPPO schedule")
     if p.actor_view not in ("cropped", "full_mask_reference"):

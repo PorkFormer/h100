@@ -1,0 +1,5 @@
+{
+  "source": "/workspace/rl/h100/experiments/qwen3_4b_reproduction/evaluate.py",
+  "sha256": "a7d881960574d25bc7a7569025fed21f83a8c9e080050a082fef316ced2fe2ad",
+  "usage": "Reviewed frozen evaluator worker, prompt validation, checkpoint verification and scoring helpers; no imports from mutable original workspace at execution."
+}

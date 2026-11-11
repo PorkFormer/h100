@@ -1,0 +1,75 @@
+{
+  "ambiguous_question_policy": "Preserve historical training rows; exclude ambiguous identities from holdout eligibility",
+  "ambiguous_source_questions": {
+    "26a97b79c190bb7ed397741d863af4ae8fd7768a5629272ea53e511604cbcddf": [
+      "21",
+      "99"
+    ],
+    "2b4afd70eab9b394c0d777badcb456eb1f0e2aa00ca9aa3b5f97e1e2100ad6f5": [
+      "-1",
+      "230"
+    ],
+    "41390e8f7e9edf1cabefd8794d6967be6e4d3da5269fd2d759b7085ef36bac38": [
+      "108",
+      "180"
+    ],
+    "56b4b06f2244ec11a0f9bdb021b14a08085453c423864f82d91e334fe6afb915": [
+      "12",
+      "30"
+    ],
+    "6c73798f82b91988f0cb84715b152734424e1213664b22c92e11c9d72ca2023f": [
+      "-1",
+      "683"
+    ],
+    "6d809dee4edf8c0f96d66476bc0cada0d360d52245514af96006bf43de2a2717": [
+      "-1",
+      "-2"
+    ],
+    "759ec662ce01515e2e5c9700157bdd452357f0a023e056cd198512065abc9e6a": [
+      "6",
+      "64"
+    ],
+    "98a7eb52ac9be8358e371d7ab067ecddb923ae5623fa8d40f83b46f5ced63664": [
+      "-1",
+      "913"
+    ],
+    "9faa5d595b293907414608ee19d401cd4304093f56fbe957de1ca75ad79f2492": [
+      "15",
+      "25"
+    ],
+    "ab1c828e4cc41007b199c7ad6385dacc8c095dd418000206482514b76f259664": [
+      "248",
+      "36"
+    ],
+    "dceda1934720abc107d2e2dba9719ad73b9e09ca8f6899cdfeac8a48c31a98b5": [
+      "239",
+      "48"
+    ],
+    "e138fd01a605d0c5a43f796483a46b842aca506b72c83d1a01dcc278bd02caea": [
+      "-1",
+      "554"
+    ]
+  },
+  "effective_training_rows": 1763700,
+  "exact_normalized_test_overlap": 0,
+  "files": {
+    "holdout.parquet": "a0214577119338638f63adb4638130502d5d638928c7159c6b8837c6f9755469",
+    "train.parquet": "9d933a20c3722ba3609ce6762044858e9ae0aaef16e52fae7bc01cabf433ff14",
+    "train_source_rows.npy": "4973ea08d605f68ebf96547d5e0c62f3a34252a759f8b97a4b539d74ad2fcb3c"
+  },
+  "final_test_files": {
+    "/workspace/rl/data/aime-2024-verl.parquet": "ef67aff23b592844f2af5ecd290ef57fe447fd8158ac7534ff9dbac217d6730f",
+    "/workspace/rl/data/aime-2025-verl.parquet": "7dc018ef3092aa894e285158eb0de7b6b065dddc2b197244b4e57189212ed93a",
+    "/workspace/rl/h100/analysis/ncbr_offline_eval/templates/prompts.parquet": "1a990fcaa31bf8fd64b49f06cc74d434e36f90530d1210db0a3de2f9ae92788f"
+  },
+  "historical_ncbr_excluded_holdout": false,
+  "holdout_questions": 256,
+  "identity": "SHA256 whitespace-normalized role/content messages",
+  "seed": 42,
+  "source": "/workspace/rl/data/dapo_math_17k_train.parquet",
+  "source_rows": 1791700,
+  "source_sha256": "816b8778751076fdbc882ce65045aa80bb59db1618ce36e8308903db90ae92f4",
+  "training_rows": 1764500,
+  "unique_questions": 17188,
+  "version": 1
+}

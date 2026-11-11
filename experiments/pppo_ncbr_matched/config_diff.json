@@ -1,0 +1,526 @@
+{
+  "baseline_path": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/provenance/resolved_config.yaml",
+  "baseline_sha256": "a6741117e5a07ab346589061b96201f8699d59cf04e3a1c23fb10f8f21ba33b2",
+  "config_sha256": "8e1c8847d991997f255edc4dbc4259ba71354482391a534b958fc8613c227ab6",
+  "differences": [
+    {
+      "after": null,
+      "after_present": true,
+      "before": 3.0,
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "actor_rollout_ref.actor.clip_ratio_c",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "pppo",
+      "after_present": true,
+      "before": "vanilla",
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "actor_rollout_ref.actor.policy_loss.loss_mode",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "off",
+      "after_present": true,
+      "before": "replace",
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "actor_rollout_ref.rollout.boundary_return.mode",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": 8192,
+      "after_present": true,
+      "before": 2048,
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "actor_rollout_ref.rollout.response_length",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "pppo_filter_reward",
+      "after_present": true,
+      "before": "acc",
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.filter_groups.metric",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "cropped",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.actor_view",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": true,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.enable",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 15,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.eta_percent",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 8,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.extra_continuations_per_prefix",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": "a0214577119338638f63adb4638130502d5d638928c7159c6b8837c6f9755469",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "algorithm.pppo.holdout_hash",
+      "reason": "Freeze isolated validation split"
+    },
+    {
+      "after": 128,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.max_concurrent_requests",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": false,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.optimizer_audit.enabled",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 8,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.originals_per_prompt",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": "ncbr_matched",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.profile",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 512,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.request_chunk_size",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 600,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.request_timeout_seconds",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 8192,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.response_cap",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 1,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.schedule.cooldown_validations",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 0.0,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.schedule.min_delta",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 3,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.schedule.patience",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": "plateau",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.schedule.type",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 256,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.scoring_chunk_size",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 42,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.seed",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": null,
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "intentional_algorithm_differences",
+      "field": "algorithm.pppo.stop_after_step",
+      "reason": "PPPO accumulated binary reward, prefix objective, deterministic independent continuations and disclosed plateau completion"
+    },
+    {
+      "after": 8192,
+      "after_present": true,
+      "before": 2048,
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "data.max_response_length",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/train.parquet",
+      "after_present": true,
+      "before": "/workspace/rl/data/dapo_math_17k_train.parquet",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "data.train_files",
+      "reason": "Exclude every copy of holdout questions; preserve remaining repeats and order"
+    },
+    {
+      "after": [
+        "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/holdout.parquet"
+      ],
+      "after_present": true,
+      "before": [
+        "/workspace/rl/data/aime-2024-verl.parquet",
+        "/workspace/rl/data/aime-2025-verl.parquet"
+      ],
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "data.val_files",
+      "reason": "Independent 256-question holdout; never tune eta on final tests"
+    },
+    {
+      "after": "/tmp/pppo-matched-cache/flashinfer",
+      "after_present": true,
+      "before": "/tmp/ncbr-boundary-s300-cache/flashinfer",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASHINFER_WORKSPACE_BASE",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "ens201",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.GLOO_SOCKET_IFNAME",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "0",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_DISABLE",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "=mlx5_101:1,mlx5_102:1,mlx5_103:1,mlx5_104:1,mlx5_105:1,mlx5_106:1,mlx5_107:1,mlx5_108:1",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_HCA",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "AF_INET",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_FAMILY",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "=ens101,ens102,ens103,ens104,ens105,ens106,ens107,ens108",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_IFNAME",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "9acbe8c8638df2c323747432fa7f858b3bc867a3",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.OBCF_DIAGNOSTIC_GIT_COMMIT",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "1",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONDONTWRITEBYTECODE",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl",
+      "after_present": true,
+      "before": "/workspace/rl/h100-natural-continuation-boundary-return-v1/verl",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "/tmp/ncbr-boundary-s300-cache/pycache",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPYCACHEPREFIX",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "false",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.TOKENIZERS_PARALLELISM",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "/tmp/ncbr-boundary-s300-cache/torch_extensions",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_EXTENSIONS_DIR",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "1",
+      "after_present": true,
+      "before": null,
+      "before_present": false,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_NCCL_ASYNC_ERROR_HANDLING",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/wandb",
+      "after_present": true,
+      "before": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/wandb",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "pppo_ncbr_matched_16xa10040g_s300",
+      "after_present": true,
+      "before": "qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NAME",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "parent_run_id=pkhj5xf8 resume_checkpoint_step=20 git_commit=9acbe8c8638df2c323747432fa7f858b3bc867a3",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NOTES",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "ncbr_boundary_s300",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_GROUP",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "pppo_matched_16a100_s300",
+      "after_present": true,
+      "before": "gd8uvpc4",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_ID",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": null,
+      "after_present": false,
+      "before": "natural-continuation-boundary-return,resume-step-20,single-seed-s300",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_TAGS",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": "/tmp/pppo-matched-cache",
+      "after_present": true,
+      "before": "/tmp/ncbr-boundary-s300-cache/xdg",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.XDG_CACHE_HOME",
+      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+    },
+    {
+      "after": 8192,
+      "after_present": true,
+      "before": 2048,
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "reward.reward_kwargs.max_resp_len",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": false,
+      "after_present": true,
+      "before": true,
+      "before_present": true,
+      "category": "intentional_algorithm_differences",
+      "field": "reward.reward_kwargs.overlong_buffer_cfg.enable",
+      "reason": "PPPO + DAPO Dynamic Sampling: original 8K responses, accumulated binary correctness, no NCBR shaping or dual clip"
+    },
+    {
+      "after": "vllm",
+      "after_present": true,
+      "before": "???",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "reward.reward_model.rollout.name",
+      "reason": "Resolve inherited missing engine name in disabled reward-model branch; reward model remains disabled"
+    },
+    {
+      "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/checkpoints",
+      "after_present": true,
+      "before": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/checkpoints",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.default_local_dir",
+      "reason": "Fresh isolated PPPO experiment; retain original cluster topology"
+    },
+    {
+      "after": "pppo_ncbr_matched_16xa10040g_s300",
+      "after_present": true,
+      "before": "qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.experiment_name",
+      "reason": "Fresh isolated PPPO experiment; retain original cluster topology"
+    },
+    {
+      "after": false,
+      "after_present": true,
+      "before": true,
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.nondeterminism_diagnostics.enabled",
+      "reason": "Fresh isolated PPPO experiment; retain original cluster topology"
+    },
+    {
+      "after": null,
+      "after_present": true,
+      "before": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s20_v1/checkpoints/global_step_20",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.resume_from_path",
+      "reason": "Fresh isolated PPPO experiment; retain original cluster topology"
+    },
+    {
+      "after": "disable",
+      "after_present": true,
+      "before": "resume_path",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.resume_mode",
+      "reason": "Fresh isolated PPPO experiment; retain original cluster topology"
+    },
+    {
+      "after": 2,
+      "after_present": true,
+      "before": 1,
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.total_epochs",
+      "reason": "Enough data epochs for worst-case ten candidate batches per outer step; stop remains 300"
+    },
+    {
+      "after": true,
+      "after_present": true,
+      "before": false,
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "trainer.val_before_train",
+      "reason": "Step zero holdout baseline required by disclosed plateau rule"
+    }
+  ],
+  "unapproved_differences": []
+}

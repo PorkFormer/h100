@@ -691,6 +691,14 @@ class FSDPEngine(BaseEngine):
         if isinstance(grad_norm, DTensor):
             grad_norm = grad_norm.full_tensor()
 
+        if getattr(self, "pppo_strict_update", False):
+            valid = torch.isfinite(grad_norm).to(dtype=torch.int32)
+            torch.distributed.all_reduce(valid, op=torch.distributed.ReduceOp.MIN)
+            if not valid.item():
+                self.optimizer.zero_grad()
+                raise FloatingPointError("PPPO nonfinite gradient: refusing skipped optimizer update")
+            previous_step = float(next(iter(self.optimizer.state.values()), {}).get("step", 0))
+
         if scaler is not None:
             # scaler handles inf/nan skipping internally via _check_inf_per_device.
             scaler.step(self.optimizer)
@@ -702,6 +710,14 @@ class FSDPEngine(BaseEngine):
                 self.optimizer.zero_grad()
             else:
                 self.optimizer.step()
+
+        if getattr(self, "pppo_strict_update", False):
+            actual_step = float(next(iter(self.optimizer.state.values()), {}).get("step", 0))
+            valid = torch.tensor(int(actual_step == previous_step + 1), device=grad_norm.device)
+            torch.distributed.all_reduce(valid, op=torch.distributed.ReduceOp.MIN)
+            if not valid.item():
+                raise RuntimeError("PPPO optimizer did not advance exactly once on every rank")
+            self.pppo_optimizer_updates = int(actual_step)
 
         if self._qat_enabled:
             from verl.utils.qat.core import invalidate_all_scales

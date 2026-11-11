@@ -22,6 +22,8 @@ algorithm:
     request_timeout_seconds: 600
     holdout_hash: null
     stop_after_step: null
+    optimizer_audit:
+      enabled: false
     schedule:
       type: plateau
       patience: 3
