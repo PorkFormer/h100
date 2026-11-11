@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import time
 
 from omegaconf import OmegaConf
@@ -96,6 +97,10 @@ if __name__=='__main__':
     args=parser.parse_args()
     directory=RUN/'acceptance'/f'gate{args.gate}'
     directory.mkdir(parents=True,exist_ok=True)
+    if (directory/'result.json').exists():
+        history=directory/'history'/str(time.time_ns());history.mkdir(parents=True)
+        for filename in ('result.json','pytest.log'):
+            if (directory/filename).exists():shutil.copy2(directory/filename,history/filename)
     report=dict(gate=args.gate,status='FAIL',timestamp=time.time(),config_sha256=sha(CONFIG),
                 code_fingerprint=code_fingerprint(),
                 code_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip())

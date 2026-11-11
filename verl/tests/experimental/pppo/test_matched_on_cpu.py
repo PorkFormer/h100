@@ -19,6 +19,19 @@ def test_missing_branch_is_failure():
         validate_result(request,[output])
 
 
+def test_native_engine_config_factory():
+    from pathlib import Path
+    from verl.utils.config import omega_conf_to_dataclass
+    root=Path(__file__).resolve().parents[4]
+    c=OmegaConf.load(root/'verl/examples/pppo/configs/pppo_ncbr_matched_16xa10040g.yaml')
+    engine=omega_conf_to_dataclass(c.actor_rollout_ref.actor.fsdp_config)
+    optimizer=omega_conf_to_dataclass(c.actor_rollout_ref.actor.optim)
+    checkpoint=omega_conf_to_dataclass(c.actor_rollout_ref.actor.checkpoint)
+    assert engine.model_dtype=='fp32' and engine.optimizer_offload
+    assert optimizer.lr==1e-6
+    assert 'optimizer' in checkpoint.save_contents
+
+
 @pytest.mark.parametrize('enabled',[False,True])
 def test_optimizer_audit_explicit_opt_in(tmp_path,enabled):
     from verl.experimental.pppo.trainer import RayPPPOTrainer

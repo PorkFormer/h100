@@ -47,10 +47,12 @@ class FrozenRank:
         dist.init_process_group('nccl',init_method=address,rank=rank,world_size=16,timeout=timedelta(minutes=15))
         c=OmegaConf.load(config_path)
         model=omega_conf_to_dataclass(c.actor_rollout_ref.model,dataclass_type=HFModelConfig)
-        ec=omega_conf_to_dataclass(c.actor_rollout_ref.actor.fsdp_config,dataclass_type=FSDPEngineConfig)
-        oc=omega_conf_to_dataclass(c.actor_rollout_ref.actor.optim,dataclass_type=FSDPOptimizerConfig)
+        # Match the actual worker's Hydra _target_ factory, not structured schema
+        # construction (legacy engine fields permit None defaults at runtime).
+        ec=omega_conf_to_dataclass(c.actor_rollout_ref.actor.fsdp_config)
+        oc=omega_conf_to_dataclass(c.actor_rollout_ref.actor.optim)
         oc.total_training_steps=300
-        cc=omega_conf_to_dataclass(c.actor_rollout_ref.actor.checkpoint,dataclass_type=CheckpointConfig)
+        cc=omega_conf_to_dataclass(c.actor_rollout_ref.actor.checkpoint)
         engine=FSDPEngineWithLMHead(model,ec,oc,cc)
         engine.initialize()
         engine.pppo_strict_update=True
