@@ -130,3 +130,25 @@ Gate 2 now passes all 16 ranks with the actual configured BF16 fixed-tile actor.
 See `NUMERICAL_EXECUTION.md` for the execution repair and user-authorized logprob
 tolerance revision, and `reports/validation_report.md` for current evidence.
 Formal training remains NOT RUN pending Gates 3 and 4. Checkpoints remain every 50 steps.
+
+
+## Automatic continuation and authorized email updates
+
+`verl/examples/pppo/continue_ncbr_matched.py --run` attaches to the existing
+G=1 driver without duplicating it, waits for successful exit, then sequentially
+runs G=8, fresh-process resume, Gate 3 attestation, formal-scale profiling,
+Gate 4 attestation, fresh Base S300 training and Step 300 evaluation. Every
+training launcher retains its own gate/fingerprint checks. A source/config
+change, stale G=1 heartbeat or failed child stops the chain. Only one coordinator
+may hold its lock; existing automation evidence is never silently overwritten.
+
+The user explicitly authorized progress email to `3531125084@qq.com`. The
+coordinator uses the existing msmtp account and sends selected status summaries
+at stage transitions, committed formal checkpoints, hourly while running and on
+failure/completion. It sends no raw logs, model weights or credentials. Mail
+receipts distinguish SMTP acceptance from inbox delivery. Existing gates and
+G=1 are not rerun merely to install this orchestration-only wrapper.
+
+Live state/logs/mail receipts: `outputs/pppo_ncbr_matched_16xa10040g_s300/automation/`.
+Without `--run`, the wrapper checks prerequisites and prints status without
+launching training or sending mail.
