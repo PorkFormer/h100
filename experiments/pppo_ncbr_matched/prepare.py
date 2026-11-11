@@ -205,11 +205,12 @@ def prepare_config(split):
         'NCCL_SOCKET_IFNAME':'=ens101,ens102,ens103,ens104,ens105,ens106,ens107,ens108',
         'NCCL_IB_HCA':'=mlx5_101:1,mlx5_102:1,mlx5_103:1,mlx5_104:1,mlx5_105:1,mlx5_106:1,mlx5_107:1,mlx5_108:1',
         'NCCL_IB_DISABLE':'0','NCCL_SOCKET_FAMILY':'AF_INET','TORCH_NCCL_ASYNC_ERROR_HANDLING':'1',
-        'WANDB_PROJECT':'a100_verl','WANDB_ENTITY':'cartman','WANDB_MODE':'online',
+        'WANDB_PROJECT':'a100_verl','WANDB_ENTITY':'cartman','WANDB_MODE':'offline',
         'WANDB_NAME':RUN.name,'WANDB_RUN_ID':'pppo_matched_16a100_s300','WANDB_RESUME':'never',
         'WANDB_DIR':str(RUN/'wandb'),'TOKENIZERS_PARALLELISM':'false',
     }
-    set_value('ray_kwargs.ray_init.runtime_env.env_vars',environment,protocol,'Isolated code/cache/log identity, inherited verified NCBR networking')
+    set_value('ray_kwargs.ray_init.runtime_env.env_vars',environment,protocol,
+              'Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review')
     set_value('reward.reward_model.rollout.name','vllm',protocol,
               'Resolve inherited missing engine name in disabled reward-model branch; reward model remains disabled')
     OmegaConf.resolve(config)

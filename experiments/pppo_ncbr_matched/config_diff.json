@@ -1,7 +1,7 @@
 {
   "baseline_path": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/provenance/resolved_config.yaml",
   "baseline_sha256": "a6741117e5a07ab346589061b96201f8699d59cf04e3a1c23fb10f8f21ba33b2",
-  "config_sha256": "8e1c8847d991997f255edc4dbc4259ba71354482391a534b958fc8613c227ab6",
+  "config_sha256": "a481187f0e81ff2ad90a6d0e113144cc946cd39066d7b2674b3ebc400675f58e",
   "differences": [
     {
       "after": null,
@@ -258,7 +258,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASHINFER_WORKSPACE_BASE",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "ens201",
@@ -267,7 +267,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.GLOO_SOCKET_IFNAME",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "0",
@@ -276,7 +276,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_DISABLE",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "=mlx5_101:1,mlx5_102:1,mlx5_103:1,mlx5_104:1,mlx5_105:1,mlx5_106:1,mlx5_107:1,mlx5_108:1",
@@ -285,7 +285,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_HCA",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "AF_INET",
@@ -294,7 +294,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_FAMILY",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "=ens101,ens102,ens103,ens104,ens105,ens106,ens107,ens108",
@@ -303,7 +303,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_IFNAME",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -312,7 +312,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.OBCF_DIAGNOSTIC_GIT_COMMIT",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "1",
@@ -321,7 +321,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONDONTWRITEBYTECODE",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl",
@@ -330,7 +330,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -339,7 +339,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPYCACHEPREFIX",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "false",
@@ -348,7 +348,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.TOKENIZERS_PARALLELISM",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -357,7 +357,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_EXTENSIONS_DIR",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "1",
@@ -366,7 +366,7 @@
       "before_present": false,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_NCCL_ASYNC_ERROR_HANDLING",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/wandb",
@@ -375,7 +375,16 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
+    },
+    {
+      "after": "offline",
+      "after_present": true,
+      "before": "online",
+      "before_present": true,
+      "category": "environment_or_protocol_differences",
+      "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_MODE",
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "pppo_ncbr_matched_16xa10040g_s300",
@@ -384,7 +393,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NAME",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -393,7 +402,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NOTES",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -402,7 +411,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_GROUP",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "pppo_matched_16a100_s300",
@@ -411,7 +420,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_ID",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": null,
@@ -420,7 +429,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_TAGS",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": "/tmp/pppo-matched-cache",
@@ -429,7 +438,7 @@
       "before_present": true,
       "category": "environment_or_protocol_differences",
       "field": "ray_kwargs.ray_init.runtime_env.env_vars.XDG_CACHE_HOME",
-      "reason": "Isolated code/cache/log identity, inherited verified NCBR networking"
+      "reason": "Isolated code/cache/log identity and inherited NCBR networking; W&B offline because online disclosure was rejected by automatic approval review"
     },
     {
       "after": 8192,

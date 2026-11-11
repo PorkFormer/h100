@@ -14,6 +14,10 @@ No new environment or extra GPU allocation is requested. The head is
 `../../verl/examples/pppo/RAY_NCBR_MATCHED.md`. Cluster membership alone is
 not an FSDP/NCCL/algorithm acceptance result.
 
+All W&B logging is local/offline. Automatic approval review rejected online
+configuration/metric disclosure to cartman/a100_verl; nothing is uploaded.
+This operational difference is recorded in the frozen configuration audit.
+
 From this worktree, with both allocated nodes ready:
 
 ```bash

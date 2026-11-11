@@ -1044,7 +1044,7 @@ ray_kwargs:
         TORCH_NCCL_ASYNC_ERROR_HANDLING: '1'
         WANDB_PROJECT: a100_verl
         WANDB_ENTITY: cartman
-        WANDB_MODE: online
+        WANDB_MODE: offline
         WANDB_NAME: pppo_ncbr_matched_16xa10040g_s300
         WANDB_RUN_ID: pppo_matched_16a100_s300
         WANDB_RESUME: never

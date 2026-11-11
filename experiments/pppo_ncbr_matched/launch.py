@@ -73,7 +73,7 @@ def main():
     env.WANDB_DIR=str(root/'wandb')
     env.WANDB_NAME=c.trainer.experiment_name
     env.WANDB_RUN_ID='pppo_matched_16a100_s300' if args.stage=='formal' else 'pppo_matched_'+stage_name.replace('-','_')
-    if args.stage!='formal':env.WANDB_MODE='offline'
+    env.WANDB_MODE='offline'
     target=300
     if args.stage.startswith('smoke'):
         c.data.train_batch_size=16
