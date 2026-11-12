@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "milestone": "Formal first three outer steps, not S300 completion",
+  "checked_at": "2026-11-12T02:47:53.426022+00:00",
+  "job_id": "22000000",
+  "code_commit": "c424455bf7f85e71efe14af92d201d4c86613aa0",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "gates": {
+    "0": "PASS",
+    "1": "PASS",
+    "2": "PASS",
+    "3": "PASS",
+    "4": "PASS"
+  },
+  "optimizer_updates": 48,
+  "continuation_counts": {
+    "1": 49152,
+    "2": 49152,
+    "3": 49152
+  },
+  "unique_requests": 147456,
+  "complete_original_parents": 18432,
+  "run_continues": true,
+  "checkpoint_frequency": 50,
+  "formal_checkpoints": "NOT DUE",
+  "evaluation": "NOT RUN"
+}

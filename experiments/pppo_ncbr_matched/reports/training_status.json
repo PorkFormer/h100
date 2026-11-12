@@ -5,9 +5,9 @@
   "driver_pid": 1754425,
   "formal_target": 300,
   "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
-  "heartbeat": 1794430601.1604304,
+  "heartbeat": 1794451671.4842854,
   "job_id": "22000000",
-  "last_successful_step": 0,
+  "last_successful_step": 3,
   "stage": "formal",
   "started_at": 1794430280.6567247,
   "state": "RUNNING"
