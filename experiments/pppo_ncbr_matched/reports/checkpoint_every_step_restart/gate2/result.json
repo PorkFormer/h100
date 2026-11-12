@@ -1,0 +1,49 @@
+{
+  "code_commit": "f5f4b6539cef93dce2b5bffa627f6e5f6c5ac2ba",
+  "code_fingerprint": "494f2130dddde949cea6bc745221ebfabd8fcbafd65d183bc689cdc09f35d675",
+  "config_sha256": "a18c7f315e4ea9ad83a692ba64b29a5def869e60acc097796cf2edb5ea474c0b",
+  "evidence": {
+    "authorization": "User requested stopping and restarting with revised checkpoint saving for equal GPU-hour comparison",
+    "changes": [
+      {
+        "after": "pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2",
+        "before": "pppo_ncbr_matched_16xa10040g_s300",
+        "field": "trainer.experiment_name"
+      },
+      {
+        "after": 1,
+        "before": 50,
+        "field": "trainer.save_freq"
+      },
+      {
+        "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/checkpoints",
+        "before": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/checkpoints",
+        "field": "trainer.default_local_dir"
+      },
+      {
+        "after": "pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2",
+        "before": "pppo_ncbr_matched_16xa10040g_s300",
+        "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NAME"
+      },
+      {
+        "after": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/wandb",
+        "before": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/wandb",
+        "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR"
+      }
+    ],
+    "checkpoint_retention": "All steps 1..300; no automatic deletion",
+    "code_fingerprint": "494f2130dddde949cea6bc745221ebfabd8fcbafd65d183bc689cdc09f35d675",
+    "config_sha256": "a18c7f315e4ea9ad83a692ba64b29a5def869e60acc097796cf2edb5ea474c0b",
+    "core_algorithm_changed": false,
+    "new_run": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2",
+    "old_run": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300",
+    "parent_commit": "f5f4b6539cef93dce2b5bffa627f6e5f6c5ac2ba",
+    "validation": "GPU Gates 2-4 inherited, NOT rerun. Identical GPU source; save_freq=1 already used in real profile and multi-step fresh-process smoke."
+  },
+  "gate": 2,
+  "parent_receipt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/acceptance/gate2/result.json",
+  "parent_sha256": "856dc6ec703d0d72b7021db84bda95d69432c104073aeace8bccf4b3a69f231e",
+  "status": "PASS",
+  "timestamp": 1794455154.913974,
+  "validation_mode": "SCOPED_REUSE_NOT_RERUN"
+}

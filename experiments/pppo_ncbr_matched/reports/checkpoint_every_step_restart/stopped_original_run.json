@@ -1,0 +1,19 @@
+{
+  "attempt": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/attempts/formal_1794430280598048991",
+  "code_commit": "c424455bf7f85e71efe14af92d201d4c86613aa0",
+  "config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "driver_pid": 1754425,
+  "ended_at": 1794454938.722241,
+  "error": "SystemExit(1)",
+  "formal_target": 300,
+  "frozen_config_sha256": "9db0a2d40765ecab2cb630c093b5e84e754f83b89f6294b23ee70a06f471ed33",
+  "heartbeat": 1794454933.141419,
+  "job_id": "22000000",
+  "last_successful_step": 3,
+  "stage": "formal",
+  "started_at": 1794430280.6567247,
+  "state": "STOPPED_BY_USER",
+  "reason": "User authorized restart from Base with every-step checkpoints; old partial Step 4 is abandoned",
+  "stopped_at": 1794455035.3851078,
+  "allocated_gpu_hours_to_stop": 109.59140229437087
+}

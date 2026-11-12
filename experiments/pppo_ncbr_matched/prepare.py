@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 
@@ -13,13 +14,13 @@ from omegaconf import OmegaConf
 
 REPO = Path(__file__).resolve().parents[2]
 ROOT = Path('/workspace/rl/h100')
-RUN = ROOT / 'outputs/pppo_ncbr_matched_16xa10040g_s300'
+RUN = Path(os.environ.get('PPPO_MATCHED_RUN', ROOT / 'outputs/pppo_ncbr_matched_16xa10040g_s300'))
 HERE = Path(__file__).resolve().parent
 MODEL = Path('/workspace/models/Qwen3-4B-Base')
 SOURCE = Path('/workspace/rl/data/dapo_math_17k_train.parquet')
 SOURCE_SHA = '816b8778751076fdbc882ce65045aa80bb59db1618ce36e8308903db90ae92f4'
 BASELINE = ROOT / 'outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/provenance/resolved_config.yaml'
-CONFIG = REPO / 'verl/examples/pppo/configs/pppo_ncbr_matched_16xa10040g.yaml'
+CONFIG = Path(os.environ.get('PPPO_MATCHED_CONFIG', REPO / 'verl/examples/pppo/configs/pppo_ncbr_matched_16xa10040g.yaml'))
 
 
 def sha(path):
