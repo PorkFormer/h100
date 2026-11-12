@@ -1,0 +1,41 @@
+{
+  "dataset_repo": "Ottoman6324/rlvr",
+  "dataset_revision": "9d19f9b64ac9da472281617f0818a532185fe86a",
+  "datasets": {
+    "AIME2024": {
+      "file": "aime-2024-verl.parquet",
+      "sha256": "ef67aff23b592844f2af5ecd290ef57fe447fd8158ac7534ff9dbac217d6730f",
+      "count": 30,
+      "first_id": 512,
+      "semantic_sha256": "ce03f964dbf57467fba916300d2193f46d006f77f41e09929b99092ee4957ab4"
+    },
+    "AIME2025": {
+      "file": "aime-2025-verl.parquet",
+      "sha256": "7dc018ef3092aa894e285158eb0de7b6b065dddc2b197244b4e57189212ed93a",
+      "count": 30,
+      "first_id": 542,
+      "semantic_sha256": "4904f998683c4fab05c09470d32bef3868d749cb95e2c4bb402e2ea354ed47e6"
+    },
+    "AMC23": {
+      "file": "amc23.parquet",
+      "sha256": "b696e87ba47be4e879a60fd4ef1d4aa522ba78c5ae013c6aff5cc9788a397c5e",
+      "count": 40,
+      "first_id": 572,
+      "semantic_sha256": "99d7d330fbbed02db935c01f3456f05403e4dd7cb91e81e4b405b68d9b1383eb"
+    },
+    "MATH500": {
+      "file": "math-500-verl.parquet",
+      "sha256": "9d69b81f19554242e9301847a30674a066ec35bb14e8e793ca7fad87b10e0d38",
+      "count": 500,
+      "first_id": 1000,
+      "semantic_sha256": "47a0146d4b43bf9bf66579d36d31564aca980b3e770e346ca0f92fb2027bab6c"
+    }
+  },
+  "tokenizer_files": {
+    "tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+    "tokenizer_config.json": "3c04ed3ca964ea2f6b2b5faf0dc4d31aec1cb1e8b4bcf63f402d295046b422b5",
+    "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+    "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  },
+  "verifier_sha256": "4d8db99737fc392285772f4dd71dc54995ec57013f320a31d7ab027902e59d6f"
+}
