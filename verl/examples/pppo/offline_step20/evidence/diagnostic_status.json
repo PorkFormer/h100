@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "started_at": 1794600189.7070076,
+  "pid": 1740185,
+  "arm": "pppo_s20",
+  "generation_ended_at": 1794600384.7660856,
+  "responses": 256,
+  "ended_at": 1794600409.2723992,
+  "wall_seconds": 219.56539154052734,
+  "allocated_gpu_hours": 0.487923092312283,
+  "cost_scope": "8 reserved head GPUs for generation and CPU scoring; other node idle is reported separately, not counted as active evaluation workers"
+}

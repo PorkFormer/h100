@@ -1,0 +1,11 @@
+{
+  "pid": 1740185,
+  "started_at": 1794600160.325446,
+  "command": "execute.py",
+  "code_commit": "fb198ef7d192497cb049cfa88df1553d139e09f5",
+  "training_resume": false,
+  "monitoring_daemon": false,
+  "runtime_environment": {
+    "VLLM_WORKER_MULTIPROC_METHOD": "spawn"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "failed_attempts": [
+    {
+      "status": "FAIL",
+      "started_at": 1794600009.2477188,
+      "pid": 1734433,
+      "arm": "pppo_s20",
+      "error": "RuntimeError('GPU worker failed; stop this arm and preserve all artifacts')",
+      "ended_at": 1794600024.561444,
+      "wall_seconds": 15.313725233078003,
+      "allocated_gpu_hours": 0.03403050051795112,
+      "cost_scope": "8 reserved head GPUs for generation and CPU scoring; other node idle is reported separately, not counted as active evaluation workers"
+    }
+  ],
+  "failed_attempt_allocated_gpu_hours": 0.03403050051795112,
+  "note": "Additional to successful diagnostic and formal arm costs in cost_report.json; no generated responses in failed startup."
+}
