@@ -1,5 +1,6 @@
 # NCBR / DAPO experiments
 
+- [训练动态图表与离线评测完整教程](docs/TRAINING_PLOTS_AND_EVAL_ZH.md)
 - [训练复现说明](experiments/qwen3_4b_reproduction/README_ZH.md)
 - [统一离线评测：配置、启动与协议](analysis/offline_eval/README_ZH.md)
 - [离线评测验收记录](analysis/offline_eval/VALIDATION.md)
