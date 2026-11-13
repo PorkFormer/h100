@@ -1,0 +1,39 @@
+{
+  "at": 1794599759.9736602,
+  "cluster_resources": {
+    "node:10.8.191.131": 1.0,
+    "CPU": 496.0,
+    "dapo_worker": 1.0,
+    "GPU": 16.0,
+    "object_store_memory": 201073741824.0,
+    "memory": 1938604998656.0,
+    "accelerator_type:A100": 2.0,
+    "node:__internal_head__": 1.0,
+    "dapo_head": 1.0,
+    "node:10.8.191.127": 1.0
+  },
+  "available_resources": {
+    "memory": 1938604998656.0,
+    "accelerator_type:A100": 2.0,
+    "node:10.8.191.131": 1.0,
+    "GPU": 16.0,
+    "object_store_memory": 201073741824.0,
+    "dapo_worker": 1.0,
+    "CPU": 496.0,
+    "node:__internal_head__": 1.0,
+    "dapo_head": 1.0,
+    "node:10.8.191.127": 1.0
+  },
+  "nodes": [
+    {
+      "host": "p-kt-dgx-a100-07",
+      "gpus": "0, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n1, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n2, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n3, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n4, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n5, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n6, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n7, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n",
+      "compute_processes": ""
+    },
+    {
+      "host": "p-kt-dgx-a100-03",
+      "gpus": "0, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n1, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n2, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n3, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n4, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n5, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n6, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n7, NVIDIA A100-SXM4-40GB, 0 MiB, 0 %\n",
+      "compute_processes": ""
+    }
+  ]
+}

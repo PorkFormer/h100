@@ -70,6 +70,16 @@ Re-run preflight to fully hash Step20, then:
 python -u verl/examples/pppo/offline_step20/execute.py
 ```
 
+For a detached finite evaluation process with a recorded PID and persistent log:
+
+```bash
+python verl/examples/pppo/offline_step20/start_evaluation.py
+```
+
+The starter verifies the pause, all preflight PASS receipts and idle head GPUs;
+it refuses an existing launch receipt/log. This launches execution only, with no
+background training monitoring or automatic training resumption.
+
 This runs the diagnostic and five formal arms sequentially with exclusive
 locking and idle-head checks. It sends authorized milestone/failure emails using
 the existing mail transport and updated Step20 status text. It does not poll

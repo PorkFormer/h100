@@ -1,8 +1,8 @@
 {
-  "checked_at": "2026-11-13T08:43:46.148330+00:00",
+  "checked_at": "2026-11-13T19:56:54.044995+00:00",
   "preparation": "PASS",
   "baseline_checkpoint_identity": "PASS",
-  "pppo_step20_checkpoint": "WAITING",
+  "pppo_step20_checkpoint": "COMMITTED_SIZE_CHECK_PASS_HASH_PENDING",
   "gpu_diagnostic": "NOT RUN",
   "formal_evaluation": "NOT RUN",
   "tests": {
@@ -16,5 +16,10 @@
     "passed": 10,
     "real_processes_signaled": false
   },
-  "training_fingerprint_matches_gates_0_to_4": true
+  "training_fingerprint_matches_gates_0_to_4": true,
+  "training_status": "PAUSED_AT_STEP20",
+  "last_successful_step": 20,
+  "optimizer_updates": 320,
+  "holdout_accuracy": 0.35546875,
+  "resources_released": "PASS_16_GPUS_IDLE"
 }
