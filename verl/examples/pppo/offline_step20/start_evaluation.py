@@ -23,10 +23,12 @@ def main():
                                  cwd=e.REPO, stdin=subprocess.DEVNULL, stdout=log,
                                  stderr=subprocess.STDOUT, start_new_session=True,
                                  env={**os.environ, 'PYTHONPATH': str(e.REPO / 'verl'),
-                                      'PYTHONDONTWRITEBYTECODE': '1'})
+                                      'PYTHONDONTWRITEBYTECODE': '1',
+                                      'VLLM_WORKER_MULTIPROC_METHOD': 'spawn'})
     receipt = dict(pid=child.pid, started_at=time.time(), command='execute.py',
                    code_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=e.REPO, text=True).strip(),
-                   training_resume=False, monitoring_daemon=False)
+                   training_resume=False, monitoring_daemon=False,
+                   runtime_environment={'VLLM_WORKER_MULTIPROC_METHOD': 'spawn'})
     e.write(e.OUT / 'launch_receipt.json', receipt)
     print(receipt, flush=True)
 

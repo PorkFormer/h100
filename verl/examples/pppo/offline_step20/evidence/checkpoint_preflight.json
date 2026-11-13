@@ -1,7 +1,15 @@
 {
   "pppo_s20": {
-    "status": "WAITING_FOR_STEP20",
-    "step": 20
+    "status": "PASS",
+    "step": 20,
+    "checkpoint": {
+      "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/checkpoints/global_step_20/actor/huggingface",
+      "sha256": "ab9c84c0360288688565f05a1c445a775ce79ba1d20b113cb663bc4a0c3cd0b6",
+      "files": {
+        "model.safetensors": "ca80389276100cb887a6633ae91191279ab632f677887b754f042a7f1a3c001f",
+        "config.json": "3e02ad028b9a711155d49f383586535f1791839922833e1274bce27f655f550b"
+      }
+    }
   },
   "ncbr_s300": {
     "status": "PASS",

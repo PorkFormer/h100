@@ -2,8 +2,8 @@
   "checked_at": "2026-11-13T19:56:54.044995+00:00",
   "preparation": "PASS",
   "baseline_checkpoint_identity": "PASS",
-  "pppo_step20_checkpoint": "COMMITTED_SIZE_CHECK_PASS_HASH_PENDING",
-  "gpu_diagnostic": "NOT RUN",
+  "pppo_step20_checkpoint": "PASS",
+  "gpu_diagnostic": "FAIL_FORK_INITIALIZATION_RETRY_WITH_SPAWN_PENDING",
   "formal_evaluation": "NOT RUN",
   "tests": {
     "command": "PYTHONPATH=verl PYTHONDONTWRITEBYTECODE=1 python -m pytest -q verl/examples/pppo/offline_step20/test_evaluate.py",

@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "reason": "CUDA reinitialization in forked subprocess",
+  "generated_responses": 0,
+  "fix": "VLLM_WORKER_MULTIPROC_METHOD=spawn",
+  "protocol_changed": false,
+  "archived_at": 1794600127.118191
+}
