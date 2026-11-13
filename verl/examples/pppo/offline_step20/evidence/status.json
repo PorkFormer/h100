@@ -10,5 +10,11 @@
     "passed": 21
   },
   "training_core_changed": false,
-  "monitoring": "Current conversation; no training-monitor script"
+  "monitoring": "Current conversation; no training-monitor script",
+  "pause_guard_tests": {
+    "command": "PYTHONPATH=verl PYTHONDONTWRITEBYTECODE=1 python -m pytest -q verl/examples/pppo/offline_step20/test_pause.py",
+    "passed": 10,
+    "real_processes_signaled": false
+  },
+  "training_fingerprint_matches_gates_0_to_4": true
 }
