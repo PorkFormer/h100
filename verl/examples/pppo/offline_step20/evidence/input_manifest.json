@@ -1,0 +1,27 @@
+{
+  "semantic_sha256": "5a762bdd92dbd1a8cab6b66e5bfa7841767bc90b1fabb487f6ffad7e410786f2",
+  "historical100_sha256": "56dfdb7268974333f7959336cb4aed58977feaaf357894d4fbdbe50e348566cb",
+  "math500_sha256": "eef70efeea872a7e8121d7bdd5c4719ef810e33a6ac6e69b8168c06623c43a86",
+  "max_prompt_tokens": 851,
+  "questions": 600,
+  "math_source": "/workspace/rl/h100/datasets/math500/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/test.parquet",
+  "math_sha256": "60270068a9b1735a15602b13a10bce4b5995efd2724be94c58f0552cabdb560c",
+  "overlap_audit": {
+    "pppo_train": {
+      "source": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/train.parquet",
+      "matching_question_ids": {},
+      "matching_unique": 0
+    },
+    "pppo_holdout": {
+      "source": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/holdout.parquet",
+      "matching_question_ids": {},
+      "matching_unique": 0
+    },
+    "historical_train": {
+      "source": "/workspace/rl/data/dapo_math_17k_train.parquet",
+      "matching_question_ids": {},
+      "matching_unique": 0
+    }
+  },
+  "limitations": "Normalized exact raw-problem matches only. Full official test retained even if overlaps exist; disclose counts."
+}

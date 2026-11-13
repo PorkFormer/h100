@@ -1,0 +1,54 @@
+{
+  "pppo_s20": {
+    "status": "WAITING_FOR_STEP20",
+    "step": 20
+  },
+  "ncbr_s300": {
+    "status": "PASS",
+    "step": 300,
+    "checkpoint": {
+      "path": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/checkpoints/global_step_300/actor/huggingface",
+      "sha256": "16cfcab5c5c7e0e0b1bee0bb1d9e1c57cb887bb75dec9cc576a4ee9575e1b29e",
+      "files": {
+        "model.safetensors": "b09d17510fdb9aa361444dbc795b8863bc5dcc345f0bc122fe091ffa65bb9cd3",
+        "config.json": "3e02ad028b9a711155d49f383586535f1791839922833e1274bce27f655f550b"
+      }
+    }
+  },
+  "dapo2048_s300": {
+    "status": "PASS",
+    "step": 300,
+    "checkpoint": {
+      "path": "/workspace/train_rl/qwen_3_4b/dapo/runs/qwen3_4b_base_dapo_b256_g768_m16_n8_r2048_s600_v1/checkpoints/global_step_300/actor/huggingface",
+      "sha256": "3d2c3b39f0cfaaca08e54622012c8c84910f25e3957a6be5f65dda3e8795cb69",
+      "files": {
+        "model.safetensors": "a82c94b5e258bebf759c59fd5dbcbf6428a1c06a90ea423d205ef6bba759b639",
+        "config.json": "3e02ad028b9a711155d49f383586535f1791839922833e1274bce27f655f550b"
+      }
+    }
+  },
+  "dapo4096_s300": {
+    "status": "PASS",
+    "step": 300,
+    "checkpoint": {
+      "path": "/workspace/train_rl/qwen_3_4b/dapo/runs/qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1/checkpoints/global_step_300/actor/huggingface",
+      "sha256": "e1b79343dedaacccec757a2283b4aebd61572f00c5f9654702658b15d42d20dc",
+      "files": {
+        "model.safetensors": "97c5b6109cdb036f3ff66111814c2625caecd2850a75f0a53ec6e0d268f4da3d",
+        "config.json": "3e02ad028b9a711155d49f383586535f1791839922833e1274bce27f655f550b"
+      }
+    }
+  },
+  "dapo8192_s300": {
+    "status": "PASS",
+    "step": 300,
+    "checkpoint": {
+      "path": "/workspace/train_rl/qwen_3_4b/dapo/runs/qwen3_4b_base_dapo_b256_g768_m16_n8_r8192_s600_v1/checkpoints/global_step_300/actor/huggingface",
+      "sha256": "02a7025ef48b3a2f1e9261c6a892db9e96f8680c6cef14d512dcb02f6555dd1c",
+      "files": {
+        "model.safetensors": "2e326496dd349add6ddee337ce9bad20c92da3fd8ae297ecc5850609888386e7",
+        "config.json": "3e02ad028b9a711155d49f383586535f1791839922833e1274bce27f655f550b"
+      }
+    }
+  }
+}

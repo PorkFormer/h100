@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-13T08:43:46.148330+00:00",
+  "preparation": "PASS",
+  "baseline_checkpoint_identity": "PASS",
+  "pppo_step20_checkpoint": "WAITING",
+  "gpu_diagnostic": "NOT RUN",
+  "formal_evaluation": "NOT RUN",
+  "tests": {
+    "command": "PYTHONPATH=verl PYTHONDONTWRITEBYTECODE=1 python -m pytest -q verl/examples/pppo/offline_step20/test_evaluate.py",
+    "passed": 21
+  },
+  "training_core_changed": false,
+  "monitoring": "Current conversation; no training-monitor script"
+}
