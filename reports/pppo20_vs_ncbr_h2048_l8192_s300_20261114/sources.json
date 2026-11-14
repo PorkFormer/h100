@@ -1,0 +1,62 @@
+[
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/attempts/formal_1794455254112437973/resolved_config.yaml",
+    "sha256": "a18c7f315e4ea9ad83a692ba64b29a5def869e60acc097796cf2edb5ea474c0b"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_baseline_s300_cost_20260920/references/dapo_ncbr_l8192/provenance/resolved_config.yaml",
+    "sha256": "a6741117e5a07ab346589061b96201f8699d59cf04e3a1c23fb10f8f21ba33b2"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_baseline_s300_cost_20260920/references/dapo_ncbr_l8192_s20/provenance/resolved_config.yaml",
+    "sha256": "4e0eba099b82b2e3cba831a309e5de4429309842972e7ffe9f5dee4af9a8cfae"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/training_metrics.jsonl",
+    "sha256": "b0a719c0d06ecf346e67141a9d83d02ff9d2bfb24741cf46eddad10fe8d64fd4"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/schedule_events.jsonl",
+    "sha256": "5c0fafaac1677e34af018b4b17e574cff1c0b75e3c5ebf51d690e48eaf862d28"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/pause_step20_receipt.json",
+    "sha256": "79d5499854b07eca15da56a64b6d9520a2d17194213bc0366005fb2e60ee3b49"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_baseline_s300_cost_20260920/steps.csv",
+    "sha256": "43075a61aaf787c4503b369f339338059d9dbfd3e5b22cfde78d7056934bbd9d"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/qwen3_4b_ncbr_baseline_s300_cost_20260920/summary.csv",
+    "sha256": "e143a28ea97e72fb9883b9e1a5504ab911e2da79b7c41836da0c0d22add65862"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/ncbr_boundary_return_s300_seed1_20260828/gpu_cost_summary.json",
+    "sha256": "0d9a2eabff51268b1887b4e0fa51edbfd35b71807d91ca1183b9886fad37a4c9"
+  },
+  {
+    "path": "/workspace/rl/h100/analysis/ncbr_boundary_return_s300_seed1_20260828/boundary_return_mechanism_cost_steps_1_300.csv",
+    "sha256": "b8f489f6c8206a41102d39074e07a97ab0c26d78e0b4fb6f0de58f75b7265cd4"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/offline_eval_step20_h8192_math500_v1/pppo_s20/scores.json",
+    "sha256": "be018b64b34aeb64a65dddc54a4b329e7514d9e4b1a2281ec4536b4fe650bb78"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/offline_eval_step20_h8192_math500_v1/ncbr_s300/scores.json",
+    "sha256": "fd67b017527605db52053ea01894ba8e82deb7c9ee92466cb773e5895e858553"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/offline_eval_step20_h8192_math500_v1/checkpoint_preflight.json",
+    "sha256": "da8dbe70f5a3481149ccb30bae1853b4c390eeabddf36ab2290cdf5837299223"
+  },
+  {
+    "path": "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/experiments/pppo_ncbr_matched/provenance/ncbr_step300_h8192.json",
+    "sha256": "3915ed8493beb035f8fa331d965118b91862556b0ddff379614aa20c2b8bc131"
+  },
+  {
+    "path": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/split_manifest.json",
+    "sha256": "3b286beaf6c11fcad3ba90d39bea2a5a66789ed55248c21e7abcfc712b6d6fe6"
+  }
+]

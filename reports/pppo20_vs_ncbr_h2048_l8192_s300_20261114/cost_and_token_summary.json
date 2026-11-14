@@ -1,0 +1,38 @@
+{
+  "PPPO": {
+    "steps": 20,
+    "updates_measured": 320,
+    "step_gpu_hours": 636.9785528511719,
+    "online_validation_gpu_hours": 0.5583240801365011,
+    "step_plus_testing_gpu_hours": 637.5368769313085,
+    "process_gpu_hours": 641.9414558802711,
+    "trailing_process_gpu_hours": 0.1295455731285943,
+    "original_rows": 122880.0,
+    "continuation_rows": 983040.0,
+    "original_tokens": 130241952.0,
+    "continuation_decoded_tokens": 1024959243.0,
+    "continuation_prefill_tokens": 306307784.0,
+    "actor_optimized_tokens": 6272112.0,
+    "actor_actual_input_tokens": 12425859.0,
+    "actor_rows": 40960.0,
+    "candidate_groups": 15360.0,
+    "filtered_groups": 3873.0,
+    "valid_excess_groups": 6367.0
+  },
+  "NCBR": {
+    "steps": 300,
+    "updates_theoretical": 4800,
+    "updates_counter_available": false,
+    "step_gpu_hours": 610.5979522388677,
+    "online_validation_gpu_hours": 3.7790245421148003,
+    "step_plus_testing_gpu_hours": 614.3769767809824,
+    "process_gpu_hours": 628.649734220604,
+    "original_rows": 1849344.0,
+    "continuation_rows": 184375.0,
+    "original_tokens": 2205946733.0,
+    "continuation_decoded_tokens": 177607270.0,
+    "continuation_prefill_tokens": 406695201.0,
+    "actor_optimized_tokens": 774330760.0,
+    "actor_rows": 614400
+  }
+}

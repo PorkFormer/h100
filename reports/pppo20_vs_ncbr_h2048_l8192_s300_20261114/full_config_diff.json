@@ -1,0 +1,312 @@
+[
+  {
+    "field": "actor_rollout_ref.actor.clip_ratio_c",
+    "pppo": null,
+    "ncbr": 3.0
+  },
+  {
+    "field": "actor_rollout_ref.actor.fsdp_config.pppo_bf16_full_reduction",
+    "pppo": true,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "actor_rollout_ref.actor.fsdp_config.pppo_fixed_linear_tile",
+    "pppo": 128,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "actor_rollout_ref.actor.policy_loss.loss_mode",
+    "pppo": "pppo",
+    "ncbr": "vanilla"
+  },
+  {
+    "field": "actor_rollout_ref.rollout.boundary_return.mode",
+    "pppo": "off",
+    "ncbr": "replace"
+  },
+  {
+    "field": "actor_rollout_ref.rollout.response_length",
+    "pppo": 8192,
+    "ncbr": 2048
+  },
+  {
+    "field": "algorithm.filter_groups.metric",
+    "pppo": "pppo_filter_reward",
+    "ncbr": "acc"
+  },
+  {
+    "field": "algorithm.pppo.actor_view",
+    "pppo": "cropped",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.enable",
+    "pppo": true,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.eta_percent",
+    "pppo": 15,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.extra_continuations_per_prefix",
+    "pppo": 8,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.holdout_hash",
+    "pppo": "a0214577119338638f63adb4638130502d5d638928c7159c6b8837c6f9755469",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.max_concurrent_requests",
+    "pppo": 128,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.optimizer_audit.enabled",
+    "pppo": false,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.originals_per_prompt",
+    "pppo": 8,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.profile",
+    "pppo": "ncbr_matched",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.request_chunk_size",
+    "pppo": 512,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.request_timeout_seconds",
+    "pppo": 600,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.response_cap",
+    "pppo": 8192,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.schedule.cooldown_validations",
+    "pppo": 1,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.schedule.min_delta",
+    "pppo": 0.0,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.schedule.patience",
+    "pppo": 3,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.schedule.type",
+    "pppo": "plateau",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.scoring_chunk_size",
+    "pppo": 256,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "algorithm.pppo.seed",
+    "pppo": 42,
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "data.max_response_length",
+    "pppo": 8192,
+    "ncbr": 2048
+  },
+  {
+    "field": "data.train_files",
+    "pppo": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/train.parquet",
+    "ncbr": "/workspace/rl/data/dapo_math_17k_train.parquet"
+  },
+  {
+    "field": "data.val_files",
+    "pppo": [
+      "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300/data/holdout.parquet"
+    ],
+    "ncbr": [
+      "/workspace/rl/data/aime-2024-verl.parquet",
+      "/workspace/rl/data/aime-2025-verl.parquet"
+    ]
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASHINFER_WORKSPACE_BASE",
+    "pppo": "/tmp/pppo-matched-cache/flashinfer",
+    "ncbr": "/tmp/ncbr-boundary-s300-cache/flashinfer"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.FLASH_ATTENTION_DETERMINISTIC",
+    "pppo": "1",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.GLOO_SOCKET_IFNAME",
+    "pppo": "ens201",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_DISABLE",
+    "pppo": "0",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_IB_HCA",
+    "pppo": "=mlx5_101:1,mlx5_102:1,mlx5_103:1,mlx5_104:1,mlx5_105:1,mlx5_106:1,mlx5_107:1,mlx5_108:1",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_FAMILY",
+    "pppo": "AF_INET",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.NCCL_SOCKET_IFNAME",
+    "pppo": "=ens101,ens102,ens103,ens104,ens105,ens106,ens107,ens108",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.OBCF_DIAGNOSTIC_GIT_COMMIT",
+    "pppo": "<missing>",
+    "ncbr": "9acbe8c8638df2c323747432fa7f858b3bc867a3"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONDONTWRITEBYTECODE",
+    "pppo": "1",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH",
+    "pppo": "/workspace/rl/h100/.worktrees/pppo-ncbr-matched-16xa10040g/verl",
+    "ncbr": "/workspace/rl/h100-natural-continuation-boundary-return-v1/verl"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPYCACHEPREFIX",
+    "pppo": "<missing>",
+    "ncbr": "/tmp/ncbr-boundary-s300-cache/pycache"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.TOKENIZERS_PARALLELISM",
+    "pppo": "false",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_EXTENSIONS_DIR",
+    "pppo": "<missing>",
+    "ncbr": "/tmp/ncbr-boundary-s300-cache/torch_extensions"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.TORCH_NCCL_ASYNC_ERROR_HANDLING",
+    "pppo": "1",
+    "ncbr": "<missing>"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_DIR",
+    "pppo": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/wandb",
+    "ncbr": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/wandb"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_MODE",
+    "pppo": "offline",
+    "ncbr": "online"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NAME",
+    "pppo": "pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2",
+    "ncbr": "qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_NOTES",
+    "pppo": "<missing>",
+    "ncbr": "parent_run_id=pkhj5xf8 resume_checkpoint_step=20 git_commit=9acbe8c8638df2c323747432fa7f858b3bc867a3"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_GROUP",
+    "pppo": "<missing>",
+    "ncbr": "ncbr_boundary_s300"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_RUN_ID",
+    "pppo": "pppo_matched_16a100_s300",
+    "ncbr": "gd8uvpc4"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.WANDB_TAGS",
+    "pppo": "<missing>",
+    "ncbr": "natural-continuation-boundary-return,resume-step-20,single-seed-s300"
+  },
+  {
+    "field": "ray_kwargs.ray_init.runtime_env.env_vars.XDG_CACHE_HOME",
+    "pppo": "/tmp/pppo-matched-cache",
+    "ncbr": "/tmp/ncbr-boundary-s300-cache/xdg"
+  },
+  {
+    "field": "reward.reward_kwargs.max_resp_len",
+    "pppo": 8192,
+    "ncbr": 2048
+  },
+  {
+    "field": "reward.reward_kwargs.overlong_buffer_cfg.enable",
+    "pppo": false,
+    "ncbr": true
+  },
+  {
+    "field": "reward.reward_model.rollout.name",
+    "pppo": "vllm",
+    "ncbr": "???"
+  },
+  {
+    "field": "trainer.default_local_dir",
+    "pppo": "/workspace/rl/h100/outputs/pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2/checkpoints",
+    "ncbr": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1/checkpoints"
+  },
+  {
+    "field": "trainer.experiment_name",
+    "pppo": "pppo_ncbr_matched_16xa10040g_s300_ckpt1_v2",
+    "ncbr": "qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s300_v1"
+  },
+  {
+    "field": "trainer.nondeterminism_diagnostics.enabled",
+    "pppo": false,
+    "ncbr": true
+  },
+  {
+    "field": "trainer.resume_from_path",
+    "pppo": null,
+    "ncbr": "/workspace/rl/h100/outputs/qwen3_4b_base_boundary_return_b256_g768_m16_n8_h2048_l8192_s20_v1/checkpoints/global_step_20"
+  },
+  {
+    "field": "trainer.resume_mode",
+    "pppo": "disable",
+    "ncbr": "resume_path"
+  },
+  {
+    "field": "trainer.save_freq",
+    "pppo": 1,
+    "ncbr": 50
+  },
+  {
+    "field": "trainer.total_epochs",
+    "pppo": 2,
+    "ncbr": 1
+  },
+  {
+    "field": "trainer.val_before_train",
+    "pppo": true,
+    "ncbr": false
+  }
+]

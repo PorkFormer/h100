@@ -1,0 +1,10 @@
+{
+  "PPPO_steps": 20,
+  "PPPO_updates_measured": 320,
+  "NCBR_steps": 300,
+  "NCBR_updates": "4800 theoretical; historical counter unavailable",
+  "evaluations": "both requested arms PASS",
+  "source_weight_and_historical_scores": "SHA256 verified",
+  "only_NCBR_H2048_L8192": true,
+  "training_state": "PAUSED_AT_STEP20"
+}

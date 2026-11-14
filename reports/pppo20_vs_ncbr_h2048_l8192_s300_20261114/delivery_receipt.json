@@ -1,0 +1,9 @@
+{
+  "recipient": "3531125084@qq.com",
+  "message_id": "<179463361447.2505454.1754511482427896715@qq.com>",
+  "attempted_at": "2026-11-14T05:20:14.477798+00:00",
+  "attachment_sha256": "ab7c7cda1945f416952d62cf686d302c33154b2f517e46fae7f5b6f031fa446b",
+  "attachment_bytes": 546870,
+  "smtp_accepted": true,
+  "exit_code": 0
+}
