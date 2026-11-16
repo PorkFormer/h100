@@ -1,0 +1,284 @@
+{
+  "historical_run": "qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1",
+  "source_files": {
+    "resolved_config.yaml": {
+      "sha256": "32f6409df006309bda33897ccf5dcfd0be28733ce68cf23fa25242766d491d35"
+    },
+    "command.txt": {
+      "sha256": "2da3c03e290c44c33305a28795f46531383a148942744a9815e29d4a19856db4"
+    },
+    "performance_lock.env": {
+      "sha256": "9c008f17755d0474000ec543abd612f27b8ea41a5d8a9f0267c1becc05200ca3"
+    }
+  },
+  "normalization": {
+    "actor_rollout_ref.model.path": {
+      "historical": "/workspace/models/Qwen3-4B-Base",
+      "normalized_reference": "__MODEL_PATH__",
+      "reason": "Portable path placeholder"
+    },
+    "actor_rollout_ref.rollout.prometheus.served_model_name": {
+      "historical": "/workspace/models/Qwen3-4B-Base",
+      "normalized_reference": "__MODEL_PATH__",
+      "reason": "Portable path placeholder"
+    },
+    "actor_rollout_ref.rollout.trace.experiment_name": {
+      "historical": "qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1",
+      "normalized_reference": "dapo4k",
+      "reason": "Portable run identity"
+    },
+    "critic.model.path": {
+      "historical": "~/models/deepseek-llm-7b-chat",
+      "normalized_reference": "__MODEL_PATH__",
+      "reason": "Inactive critic model path replaced with portable Base placeholder; critic disabled"
+    },
+    "data.train_files": {
+      "historical": "/workspace/rl/data/dapo_math_17k_train.parquet",
+      "normalized_reference": "__TRAIN_FILE__",
+      "reason": "Portable path placeholder"
+    },
+    "data.val_files": {
+      "historical": [
+        "/workspace/rl/data/aime-2024-verl.parquet",
+        "/workspace/rl/data/aime-2025-verl.parquet"
+      ],
+      "normalized_reference": [
+        "__VAL_FILE_1__",
+        "__VAL_FILE_2__"
+      ],
+      "reason": "Portable path placeholder"
+    },
+    "global_profiler._target_": {
+      "historical": "verl.utils.profiler.ProfilerConfig",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys._target_": {
+      "historical": "verl.utils.profiler.config.NsightToolConfig",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-graph-trace": {
+      "historical": "graph",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-memory-usage": {
+      "historical": "true",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.controller_nsight_options.trace": {
+      "historical": "cuda,nvtx,cublas,ucx",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.discrete": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range": {
+      "historical": "cudaProfilerApi",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-graph-trace": {
+      "historical": "graph",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-memory-usage": {
+      "historical": "true",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.worker_nsight_options.kill": {
+      "historical": "none",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.nsys.worker_nsight_options.trace": {
+      "historical": "cuda,nvtx,cublas,ucx",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.precision_debugger._target_": {
+      "historical": "verl.utils.profiler.config.PrecisionDebuggerToolConfig",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.precision_debugger.strict": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.torch_memory.context": {
+      "historical": "all",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.torch_memory.stack_depth": {
+      "historical": 32,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.torch_memory.stacks": {
+      "historical": "all",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries": {
+      "historical": 100000,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.profile_continuous_steps": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "global_profiler.save_path": {
+      "historical": "outputs/profile",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "model_engine": {
+      "historical": "dp",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "reward.reward_kwargs.max_resp_len": {
+      "historical": null,
+      "normalized_reference": 4096,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward.reward_kwargs.overlong_buffer_cfg.enable": {
+      "historical": false,
+      "normalized_reference": true,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward.reward_kwargs.overlong_buffer_cfg.len": {
+      "historical": 0,
+      "normalized_reference": 819,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward.reward_kwargs.overlong_buffer_cfg.penalty_factor": {
+      "historical": 0.0,
+      "normalized_reference": 1.0,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_kwargs.max_resp_len": {
+      "historical": 4096,
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_kwargs.overlong_buffer_cfg.enable": {
+      "historical": true,
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_kwargs.overlong_buffer_cfg.len": {
+      "historical": 819,
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_kwargs.overlong_buffer_cfg.log": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_kwargs.overlong_buffer_cfg.penalty_factor": {
+      "historical": 1.0,
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "reward_model.reward_manager": {
+      "historical": "dapo",
+      "normalized_reference": null,
+      "reason": "Migrate historical reward_model manager/kwargs into current reward interface; preserve enabled overlong penalty length819 and max_resp_len4096"
+    },
+    "trainer.default_local_dir": {
+      "historical": "/workspace/train_rl/qwen_3_4b/dapo/runs/qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1/checkpoints",
+      "normalized_reference": "__CHECKPOINT_DIR__",
+      "reason": "Portable path placeholder"
+    },
+    "trainer.experiment_name": {
+      "historical": "qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1",
+      "normalized_reference": "dapo4k",
+      "reason": "Portable run identity"
+    },
+    "transfer_queue.backend.MooncakeStore.auto_init": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.device_name": {
+      "historical": "",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.global_segment_size": {
+      "historical": 4294967296,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.local_buffer_size": {
+      "historical": 1073741824,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.local_hostname": {
+      "historical": "localhost",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.master_server_address": {
+      "historical": "localhost:50124",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.metadata_server": {
+      "historical": "localhost:50123",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.MooncakeStore.protocol": {
+      "historical": "tcp",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.SimpleStorage.num_data_storage_units": {
+      "historical": 8,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.SimpleStorage.total_storage_size": {
+      "historical": 100000,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.backend.storage_backend": {
+      "historical": "SimpleStorage",
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.enable": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.metrics.enabled": {
+      "historical": false,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    },
+    "transfer_queue.metrics.port": {
+      "historical": 0,
+      "normalized_reference": null,
+      "reason": "Interface/default fields retained in runnable current config, omitted from normalized reference; profiling and transfer queue disabled"
+    }
+  },
+  "historical_validation": "greedy n=1; inherits rollout response_length4096",
+  "schedule": "constant lr1e-6, zero warmup; stopping at300 does not compress LR decay"
+}

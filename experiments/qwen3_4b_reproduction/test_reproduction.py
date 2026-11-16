@@ -18,7 +18,7 @@ def settings(tmp_path):
             'RUN_TAG': 'test', 'PROJECT_NAME': 'test'}
 
 
-@pytest.mark.parametrize('arm,context,interval', [('dapo', 3072, 100), ('ncbr', 9216, 50)])
+@pytest.mark.parametrize('arm,context,interval', [('dapo', 3072, 100), ('dapo4k', 5120, 100), ('ncbr', 9216, 50)])
 def test_historical_recipe_and_fresh_start(settings, arm, context, interval):
     c = run.build_config(settings, arm)
     run.validate_config(c)
@@ -35,8 +35,8 @@ def test_historical_recipe_and_fresh_start(settings, arm, context, interval):
     assert c.actor_rollout_ref.actor.fsdp_config.seed == 42
     assert c.actor_rollout_ref.rollout.boundary_return.scheduler == 'fixed_wave'
     assert c.reward.reward_kwargs.overlong_buffer_cfg.enable
-    assert c.reward.reward_kwargs.overlong_buffer_cfg.len == 410
-    assert c.reward.reward_kwargs.max_resp_len == 2048
+    assert c.reward.reward_kwargs.overlong_buffer_cfg.len == (819 if arm == 'dapo4k' else 410)
+    assert c.reward.reward_kwargs.max_resp_len == (4096 if arm == 'dapo4k' else 2048)
     assert c.actor_rollout_ref.rollout.val_kwargs.n == 1
     assert not c.actor_rollout_ref.rollout.val_kwargs.do_sample
     assert c.actor_rollout_ref.actor.optim.lr == 1e-6
@@ -44,7 +44,7 @@ def test_historical_recipe_and_fresh_start(settings, arm, context, interval):
     run.historical_diff(c, arm)
 
 
-@pytest.mark.parametrize('arm', ['dapo', 'ncbr'])
+@pytest.mark.parametrize('arm', ['dapo', 'dapo4k', 'ncbr'])
 def test_smoke_retains_full_recipe(settings, arm):
     c = run.build_config(settings, arm, smoke=True)
     run.validate_config(c)
@@ -119,7 +119,7 @@ def smoke_metrics(tmp_path, arm='dapo', loss=0.1):
     (tmp_path / 'checkpoints/latest_checkpointed_iteration.txt').write_text('2')
 
 
-@pytest.mark.parametrize('arm', ['dapo', 'ncbr'])
+@pytest.mark.parametrize('arm', ['dapo', 'dapo4k', 'ncbr'])
 def test_completion_requires_steps_validation_and_checkpoints(tmp_path, monkeypatch, arm):
     smoke_metrics(tmp_path, arm)
     calls = []
@@ -186,3 +186,76 @@ def test_reference_assets_have_historical_repeats():
 def test_source_and_recipe_integrity():
     run.verify_source()
     run.verify_recipe()
+
+
+def test_dapo4k_lengths_schedule_and_checkpoint_state(settings):
+    c = run.build_config(settings, 'dapo4k')
+    assert c.trainer.nnodes == 1 and c.trainer.n_gpus_per_node == 8
+    assert c.data.max_prompt_length == 1024
+    assert c.data.max_response_length == c.actor_rollout_ref.rollout.response_length == 4096
+    assert c.actor_rollout_ref.rollout.max_model_len == 5120
+    assert c.actor_rollout_ref.rollout.boundary_return.mode == 'off'
+    assert c.actor_rollout_ref.actor.optim.lr_scheduler_type == 'constant'
+    assert c.actor_rollout_ref.actor.optim.lr_warmup_steps == 0
+    assert c.actor_rollout_ref.actor.checkpoint.save_contents == ['model', 'optimizer', 'extra', 'hf_model']
+    assert c.actor_rollout_ref.actor.checkpoint.load_contents == ['model', 'optimizer', 'extra']
+    assert c.actor_rollout_ref.rollout.tensor_model_parallel_size == 2
+    assert c.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu == 1
+    assert c.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu == 2
+    assert c.actor_rollout_ref.actor.fsdp_config.optimizer_offload
+    assert not c.actor_rollout_ref.actor.fsdp_config.param_offload
+    assert 'dapo4k_s300_' in c.trainer.default_local_dir
+    smoke = run.build_config(settings, 'dapo4k', smoke=True)
+    assert smoke.data.max_response_length == 4096
+    assert smoke.reward.reward_kwargs.overlong_buffer_cfg.len == 819
+
+
+@pytest.mark.parametrize('path,value', [
+    ('reward.reward_kwargs.overlong_buffer_cfg.len', 410),
+    ('reward.reward_kwargs.max_resp_len', 2048),
+    ('data.max_response_length', 2048),
+    ('actor_rollout_ref.rollout.response_length', 2048),
+    ('actor_rollout_ref.rollout.max_model_len', 3072)])
+def test_dapo4k_rejects_2k_drift(settings, path, value):
+    from omegaconf import OmegaConf
+    c = run.build_config(settings, 'dapo4k')
+    OmegaConf.update(c, path, value)
+    with pytest.raises(ValueError, match='Unexpected historical change'):
+        run.historical_diff(c, 'dapo4k')
+
+
+def test_dapo4k_formal_checkpoint_interval(tmp_path, monkeypatch):
+    records = [{'step': step, 'data': {'training/global_step': step, 'actor/pg_loss': .1,
+                'actor/grad_norm': 1.}} for step in range(1, 301)]
+    records += [{'step': step, 'data': {'val-core/math_dapo/acc/mean@1': .2}} for step in range(0, 301, 10)]
+    (tmp_path / 'metrics.jsonl').write_text('\n'.join(json.dumps(r) for r in records))
+    (tmp_path / 'checkpoints').mkdir()
+    (tmp_path / 'checkpoints/latest_checkpointed_iteration.txt').write_text('300')
+    calls = []
+    def verify(out, step, size):
+        calls.append((step, size))
+        return {'step': step}
+    monkeypatch.setattr(run, 'verify_checkpoint', verify)
+    assert run.verify_run(tmp_path, 'dapo4k', 300, 8, False)['state'] == 'complete'
+    assert calls == [(100, 8), (200, 8), (300, 8)]
+
+
+def test_all_remains_original_two_arms(settings, monkeypatch, capsys):
+    monkeypatch.setattr(run, 'settings', lambda: settings)
+    run.main(['config', 'all'])
+    output = capsys.readouterr().out
+    assert 'PASS config: dapo,' in output and 'PASS config: ncbr,' in output
+    assert 'PASS config: dapo4k,' not in output
+
+
+def test_dapo4k_disk_budget_is_three_checkpoints(settings, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+    settings['OUTPUT_ROOT'] = str(tmp_path)
+    settings['CACHE_ROOT'] = str(tmp_path)
+    monkeypatch.setattr(run.shutil, 'disk_usage', lambda path: SimpleNamespace(free=250_000_000_000))
+    monkeypatch.setattr(psutil, 'virtual_memory', lambda: SimpleNamespace(available=512 * (1 << 30)))
+    run.check_resources(settings, ['dapo4k'], False)
+    monkeypatch.setattr(run.shutil, 'disk_usage', lambda path: SimpleNamespace(free=249_999_999_999))
+    with pytest.raises(ValueError, match='Insufficient disk'):
+        run.check_resources(settings, ['dapo4k'], False)

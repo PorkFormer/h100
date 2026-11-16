@@ -277,7 +277,7 @@ def check_resources(s, arms, smoke):
         cache = cache.parent
     require(cache.is_dir() and os.access(cache, os.W_OK | os.X_OK),
             f'Cache parent is not a writable directory: {cache}')
-    checkpoints = len(arms) if smoke else sum(3 if a == 'dapo' else 6 for a in arms)
+    checkpoints = len(arms) if smoke else sum(6 if a == 'ncbr' else 3 for a in arms)
     required = checkpoints * 70_000_000_000 + 40_000_000_000
     free = shutil.disk_usage(existing).free
     require(free >= required, f'Insufficient disk: need approximately {required / 1e9:.0f} GB free, found {free / 1e9:.0f} GB')
@@ -333,7 +333,7 @@ def verify_run(out, arm, steps, world_size, smoke):
     require(expected_val <= validation_steps, f'Missing validation steps: {expected_val - validation_steps}')
     request_count = sum(float(v.get('boundary_return/continuation_request_count', 0)) for v in training.values())
     require(request_count > 0 if arm == 'ncbr' else request_count == 0, f'Unexpected continuation count: {request_count}')
-    interval = steps if smoke else (100 if arm == 'dapo' else 50)
+    interval = steps if smoke else (50 if arm == 'ncbr' else 100)
     checkpoints = [verify_checkpoint(out, step, world_size) for step in range(interval, steps + 1, interval)]
     require(int((out / 'checkpoints/latest_checkpointed_iteration.txt').read_text()) == steps, 'Final checkpoint pointer mismatch')
     return {'state': 'complete', 'steps': steps, 'validation_steps': sorted(validation_steps),
@@ -417,7 +417,7 @@ def main(argv=None):
     if args.command == '_child':
         child(args.arm)
         return
-    require(args.arm in ('all', 'dapo', 'ncbr'), 'Choose dapo, ncbr or all')
+    require(args.arm in ('all', 'dapo', 'dapo4k', 'ncbr'), 'Choose dapo, dapo4k, ncbr or all (dapo + ncbr)')
     verify_recipe()
     if args.command == 'environment':
         print(json.dumps(environment(), indent=2))

@@ -1,5 +1,7 @@
 # Qwen3-4B：DAPO 2K 与 NCBR H=2K、L=8K 独立复现
 
+新增 **DAPO 4K、300步、单节点8×A100 80GB** 入口：见 [DAPO4K_ZH.md](DAPO4K_ZH.md)，使用 `bash run_dapo4k.sh` 或 `bash run.sh train dapo4k`。原 `dapo` / `all` 行为保持原样。
+
 本包在 **单机 8×80GB NVIDIA GPU** 上，从同一份 **Qwen3-4B-Base** 分别训练 DAPO 和 NCBR，各 **300 个 trainer step**。两组独立初始化、独立输出；`train all` 顺序执行，DAPO 失败时不会继续 NCBR。默认本地 JSONL＋离线 W&B，无需登录。
 
 源码来自完整工作区 `b1835ea0fb388eb6e4d29a58ab18b408cae7b34d`，不是上游默认 verl，也不是精简 submission 包。包内 `verl/` 包含训练所需完整运行时代码及相关测试。包不含数据、模型、历史 checkpoint、凭据或其他实验输出。

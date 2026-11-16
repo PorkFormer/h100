@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "validated_at_utc": "2026-11-16T04:18:47.421460+00:00",
+  "cpu_tests_passed": 277,
+  "launcher_tests_passed": 41,
+  "goldens": {
+    "golden.json": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795",
+    "boundary_golden.json": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
+  },
+  "source": {
+    "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d",
+    "files_verified": 738
+  },
+  "target": "single node 8x A100 80GB",
+  "historical_run": "qwen3_4b_base_dapo_b256_g768_m16_n8_r4096_s600_v1",
+  "training_steps": 300,
+  "response_length": 4096,
+  "max_model_len": 5120,
+  "overlong_buffer_len": 819,
+  "checkpoint_steps": [
+    100,
+    200,
+    300
+  ],
+  "gpu_smoke_executed": false,
+  "gpu_training_executed": false,
+  "container_tested": false,
+  "fresh_dependency_install_executed": false,
+  "unrelated_offline_edits_excluded": true
+}
