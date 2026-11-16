@@ -1,0 +1,114 @@
+{
+  "date": "2026-11-12",
+  "base_commit": "54241f62586a73c94c1528d832be5bead9ba2c61",
+  "cpu_tests_passed": 47,
+  "cpu_jobs": [
+    3881105,
+    3881231,
+    3881238
+  ],
+  "gpu_generation_executed": false,
+  "prepared_prompts": 600,
+  "historical_rows": 35200,
+  "replays": [
+    {
+      "case": "r3dapo_2048",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 2048,
+      "raw_sha256": "07d592df148096d681ce7aaf3ef59d92d889c2b7db83e983874349bf640c8387",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "r3dapo_8192",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 8192,
+      "raw_sha256": "337e62f4c3d3255e723df9641f7275bfc58828f10481b0f9bbfd21a5a1cd185d",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "r3ncbr_2048",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 2048,
+      "raw_sha256": "39edc80a6c9e7a169c530ca9503f6ea0595ebf8b129b8abd9218af4819a82512",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "r3ncbr_8192",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 8192,
+      "raw_sha256": "7fa2e6448298f3fe5e14dcbf58f0b49a95d379b9941539d22aec1e9115c51244",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "dapo4b_8192",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 8192,
+      "raw_sha256": "7eeacbbea786ea1b604318e204de63006e0b8e8109029b1034bfe2bbf762f3e7",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "ncbr4b_16384",
+      "passed": true,
+      "rows": 3200,
+      "datasets": [
+        "AIME2024",
+        "AIME2025",
+        "AMC23"
+      ],
+      "horizon": 16384,
+      "raw_sha256": "5ab4515fecc0337325605ea72c698a5fe43bfad821872ed8481ae3f1f0fd59c0",
+      "stored_reward_mismatches": 0
+    },
+    {
+      "case": "ncbr4b_math500",
+      "passed": true,
+      "rows": 16000,
+      "datasets": [
+        "MATH500"
+      ],
+      "horizon": 8192,
+      "raw_sha256": "094e2d48bb0283ae0ac16e5d42c334c9c8fe8882e4aa8ef2208f3fa89025e1bb",
+      "stored_reward_mismatches": 0
+    }
+  ],
+  "public_score_flow": {
+    "passed": true,
+    "prepared_prompts": 600,
+    "scored_rows": 3200,
+    "self_comparison_zero": true,
+    "rescore_passed": true,
+    "stale_success_revoked": true,
+    "gpu_generation_executed": false
+  },
+  "source_bundle_help_verified": true
+}

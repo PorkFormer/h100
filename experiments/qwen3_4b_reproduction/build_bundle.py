@@ -26,7 +26,7 @@ def main():
         bundle.mkdir()
         for path in sorted(ROOT.rglob('*')):
             relative = path.relative_to(ROOT)
-            if any(p in ('.venv', '__pycache__', '.pytest_cache', 'verl') for p in relative.parts):
+            if any(p in ('.venv', '__pycache__', '.pytest_cache', 'verl', 'offline_eval') for p in relative.parts):
                 continue
             if not path.is_file() or path.suffix in ('.gz', '.zip', '.pyc'):
                 continue
@@ -38,6 +38,10 @@ def main():
             target = bundle / 'verl' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / name, target)
+        core = ROOT / 'offline_eval' if (ROOT / 'offline_eval').is_dir() else ROOT.parents[1] / 'analysis/offline_eval'
+        shutil.copytree(core, bundle / 'offline_eval', ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache'))
+        launcher = ROOT / 'offline_evaluate.sh' if (ROOT / 'offline_evaluate.sh').exists() else ROOT.parents[1] / 'evaluate.sh'
+        shutil.copy2(launcher, bundle / 'offline_evaluate.sh')
         checksums = []
         for path in sorted(bundle.rglob('*')):
             if path.is_file():
