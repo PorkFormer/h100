@@ -29,9 +29,21 @@
 先按 [新机器手动下载与路径配置](PATHS_AND_DOWNLOAD_ZH.md) 下载更新后的源码包并核验SHA256，手动取得原始模型及三份预处理Parquet。包不包含模型和数据，不自动下载。
 
 - Base模型：https://huggingface.co/Qwen/Qwen3-4B-Base ，固定revision `906bfd4b4dc7f14ee4320094d8b41684abff8539`。
-- 原始文件：`dapo_math_17k_train.parquet`、`aime-2024-verl.parquet`、`aime-2025-verl.parquet`；具体哈希见下载指南。原始预处理数据未提供已核实公开URL，需自行取得，不能换同名其他版本。
+- 原始文件：`dapo_math_17k_train.parquet`、`aime-2024-verl.parquet`、`aime-2025-verl.parquet`；具体哈希见下载指南。训练集仍需自行取得原始文件，不能换同名其他版本。合并后的评测协议已提供AIME两份验证数据的固定公开版本，见下方手动下载命令。
 - 容器：`docker.1ms.run/verlai/verl:vllm018.dev1`。完整挂载、驱动要求和安装步骤见 [ENVIRONMENT.md](ENVIRONMENT.md)。镜像标签不是环境一致性的证明。
 - 需要8张空闲A100 80GB，主机建议512GiB内存（检查至少128GiB可用）、共享内存64GiB、输出盘至少250GB可用；模型、数据、编译缓存另预留空间。两步冒烟额外保留独立checkpoint，其磁盘预算约110GB；做完冒烟后，正式启动仍要求250GB可用。
+
+AIME验证文件可在新机器手动下载到选择的数据目录（之后仍由训练预检核验原始SHA256）：
+
+```bash
+DATA_DIR="/mnt/nvme/qwen3-repro/data"  # 改为新机器实际目录
+mkdir -p "$DATA_DIR"
+for FILE in aime-2024-verl.parquet aime-2025-verl.parquet; do
+  curl --fail --location --retry 3 \
+    "https://huggingface.co/datasets/Ottoman6324/rlvr/resolve/9d19f9b64ac9da472281617f0818a532185fe86a/$FILE" \
+    --output "$DATA_DIR/$FILE"
+done
+```
 
 下面是容器挂载示例，先手动修改宿主机目录。源码目录应直接包含 `run.sh` 和包内 `verl/`：
 

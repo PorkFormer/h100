@@ -1,7 +1,7 @@
 {
   "status": "PASS",
-  "validated_at_utc": "2026-11-16T04:18:47.421460+00:00",
-  "cpu_tests_passed": 277,
+  "validated_at_utc": "2026-11-16T04:22:34.452481+00:00",
+  "cpu_tests_passed": 306,
   "launcher_tests_passed": 41,
   "goldens": {
     "golden.json": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795",
@@ -26,5 +26,8 @@
   "gpu_training_executed": false,
   "container_tested": false,
   "fresh_dependency_install_executed": false,
-  "unrelated_offline_edits_excluded": true
+  "unrelated_offline_edits_excluded": true,
+  "regression_runner_tests_passed": 260,
+  "shared_offline_core_tests_passed": 46,
+  "integrated_remote_commit": "c875d34"
 }

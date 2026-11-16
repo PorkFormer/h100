@@ -8,22 +8,24 @@
     "boundary_golden.json": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
   },
   "status": "PASS",
-  "tests_passed": 277,
-  "validated_at_utc": "2026-11-16T04:18:47.421460+00:00",
-  "validation_location": "clean staged release from HEAD plus DAPO4K task files; excludes unrelated worktree edits",
+  "tests_passed": 260,
+  "validated_at_utc": "2026-11-16T04:22:34.452481+00:00",
+  "validation_location": "isolated merged worktree, includes GitHub c875d34 and DAPO4K; excludes uncommitted local edits",
   "launcher_final_contract_tests_passed": 41,
   "output_path_file_rejection": "PASS",
   "gpu_training_executed": false,
   "fresh_dependency_install_executed": false,
   "launcher_files_sha256": {
-    "build_bundle.py": "729a3b10018216db2d119e13a70e95fab8e71529d0504ec4ac4d67b76b9ee37d",
+    "build_bundle.py": "0a406f2d531c7e45e8d0f0e716d09ab977bc116810b526e6c65277904fddc951",
     "test_reproduction.py": "00f798e9fda49043c905e73575a4c10845d544a3376130f08507db9e4a1475c3",
     "verify_cpu.py": "e3b25154dfe5a2842fb7f0ee2fce937d86d619503e2c6394a8f9b369c1c1d3ee",
     "run.py": "4eb667eadc285a8277bef440330c00af7483d88f0d16b7a57897153d53946143",
-    "evaluate.py": "7b6c027f13deeab7d045835e15ba29e35bfab737e032bf0b9527dd31d2ed84dd",
+    "evaluate.py": "81f80b29a00c7eaf58ae76cd7b15be89ae333112f75dd4098729ea94c4be0978",
     "evaluate.sh": "2ce7c27fe614532a6fa41bb79adbd63cf2970beb45f62aef40301cc7e54841fb",
-    "test_offline_eval.py": "d0fef32c7312e34265df679ddbc14e4ff41a95e3fea025b4d94e1e41fcdc01df",
+    "test_offline_eval.py": "0d7fe6066911655170027d0cf469618601951f27dd4e0d64f1839bb5980e6b85",
     "run_dapo4k.sh": "a1d6944c072ee0b40c814fa741d46081730adb447ae6ef88e2264191ae8ab1ec"
   },
-  "offline_eval_tests_passed": 18
+  "offline_eval_tests_passed": 1,
+  "shared_offline_core_tests_passed": 46,
+  "total_cpu_tests_passed": 306
 }
