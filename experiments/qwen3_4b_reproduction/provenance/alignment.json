@@ -527,5 +527,148 @@
       "ray_kwargs.timeline_json_file": null,
       "ncbr.enable": null
     }
+  },
+  "ncbr_lp8k": {
+    "changed_historical_fields": {
+      "data.train_files": {
+        "historical": "__TRAIN_FILE__",
+        "current": "/data/dapo_math_17k_train.parquet",
+        "reason": "asset location"
+      },
+      "data.val_files": {
+        "historical": [
+          "__VAL_FILE_1__",
+          "__VAL_FILE_2__"
+        ],
+        "current": [
+          "/data/aime-2024-verl.parquet",
+          "/data/aime-2025-verl.parquet"
+        ],
+        "reason": "asset location"
+      },
+      "actor_rollout_ref.rollout.trace.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.trace.experiment_name": {
+        "historical": "ncbr_lp8k",
+        "current": "ncbr_lp8k_s300_ncbr_lp8k_v1",
+        "reason": "run identity"
+      },
+      "actor_rollout_ref.rollout.prometheus.served_model_name": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "actor_rollout_ref.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      },
+      "trainer.project_name": {
+        "historical": "a100_verl",
+        "current": "qwen3_4b_reproduction",
+        "reason": "run identity"
+      },
+      "trainer.experiment_name": {
+        "historical": "ncbr_lp8k",
+        "current": "ncbr_lp8k_s300_ncbr_lp8k_v1",
+        "reason": "run identity"
+      },
+      "trainer.logger": {
+        "historical": [
+          "console",
+          "wandb"
+        ],
+        "current": [
+          "console",
+          "file",
+          "wandb"
+        ],
+        "reason": "local JSONL + offline W&B"
+      },
+      "trainer.nnodes": {
+        "historical": 2,
+        "current": 1,
+        "reason": "single-node topology"
+      },
+      "trainer.resume_mode": {
+        "historical": "resume_path",
+        "current": "disable",
+        "reason": "fresh Base initialization"
+      },
+      "trainer.resume_from_path": {
+        "historical": "__HISTORICAL_STEP20__",
+        "current": null,
+        "reason": "fresh Base initialization"
+      },
+      "trainer.val_before_train": {
+        "historical": false,
+        "current": true,
+        "reason": "fresh run initial validation"
+      },
+      "trainer.default_local_dir": {
+        "historical": "__CHECKPOINT_DIR__",
+        "current": "/data/runs/ncbr_lp8k_s300_ncbr_lp8k_v1/checkpoints",
+        "reason": "output location"
+      },
+      "critic.model.path": {
+        "historical": "__MODEL_PATH__",
+        "current": "/data/models/Qwen3-4B-Base",
+        "reason": "model/tokenizer location (including inactive subsystem placeholders)"
+      }
+    },
+    "current_interface_additions": {
+      "model_engine": "dp",
+      "actor_rollout_ref.rollout.boundary_return.enable": null,
+      "actor_rollout_ref.rollout.boundary_return.scheduler": "fixed_wave",
+      "global_profiler._target_": "verl.utils.profiler.ProfilerConfig",
+      "global_profiler.tool": null,
+      "global_profiler.steps": null,
+      "global_profiler.profile_continuous_steps": false,
+      "global_profiler.save_path": "outputs/profile",
+      "global_profiler.global_tool_config.nsys._target_": "verl.utils.profiler.config.NsightToolConfig",
+      "global_profiler.global_tool_config.nsys.discrete": false,
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.controller_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.trace": "cuda,nvtx,cublas,ucx",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-memory-usage": "true",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.cuda-graph-trace": "graph",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range": "cudaProfilerApi",
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.capture-range-end": null,
+      "global_profiler.global_tool_config.nsys.worker_nsight_options.kill": "none",
+      "global_profiler.global_tool_config.torch_memory.trace_alloc_max_entries": 100000,
+      "global_profiler.global_tool_config.torch_memory.stack_depth": 32,
+      "global_profiler.global_tool_config.torch_memory.context": "all",
+      "global_profiler.global_tool_config.torch_memory.stacks": "all",
+      "global_profiler.global_tool_config.precision_debugger._target_": "verl.utils.profiler.config.PrecisionDebuggerToolConfig",
+      "global_profiler.global_tool_config.precision_debugger.config_path": null,
+      "global_profiler.global_tool_config.precision_debugger.steps": null,
+      "global_profiler.global_tool_config.precision_debugger.stages": null,
+      "global_profiler.global_tool_config.precision_debugger.strict": false,
+      "transfer_queue.enable": false,
+      "transfer_queue.metrics.enabled": false,
+      "transfer_queue.metrics.port": 0,
+      "transfer_queue.backend.storage_backend": "SimpleStorage",
+      "transfer_queue.backend.SimpleStorage.total_storage_size": 100000,
+      "transfer_queue.backend.SimpleStorage.num_data_storage_units": 8,
+      "transfer_queue.backend.MooncakeStore.auto_init": false,
+      "transfer_queue.backend.MooncakeStore.metadata_server": "localhost:50123",
+      "transfer_queue.backend.MooncakeStore.master_server_address": "localhost:50124",
+      "transfer_queue.backend.MooncakeStore.local_hostname": "localhost",
+      "transfer_queue.backend.MooncakeStore.protocol": "tcp",
+      "transfer_queue.backend.MooncakeStore.global_segment_size": 4294967296,
+      "transfer_queue.backend.MooncakeStore.local_buffer_size": 1073741824,
+      "transfer_queue.backend.MooncakeStore.device_name": "",
+      "ray_kwargs.ray_init.address": "local",
+      "ray_kwargs.ray_init.num_cpus": 32,
+      "ray_kwargs.ray_init.num_gpus": 8,
+      "ray_kwargs.ray_init.include_dashboard": false,
+      "ray_kwargs.ray_init.object_store_memory": 17179869184,
+      "ray_kwargs.timeline_json_file": null,
+      "ncbr.enable": null
+    }
   }
 }

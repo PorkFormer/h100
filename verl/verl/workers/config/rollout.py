@@ -119,6 +119,7 @@ class BoundaryReturnConfig(BaseConfig):
     correctness_key: str = "acc"
     correctness_threshold: float = 0.5
     task_score_key: str = "score"
+    length_penalty_mode: str = "prefix"
     max_concurrent_requests: int = 128
     request_batch_size: int = 512
     scheduler: str = "fixed_wave"
@@ -130,6 +131,10 @@ class BoundaryReturnConfig(BaseConfig):
 
     def validate(self) -> None:
         prefix = "boundary_return"
+        if self.length_penalty_mode not in {"prefix", "full_response"}:
+            raise ValueError("boundary_return.length_penalty_mode must be prefix or full_response")
+        if self.length_penalty_mode == "full_response" and self.mode == "off":
+            raise ValueError("full_response length penalty requires active NCBR")
         if self.enable is not None and not isinstance(self.enable, bool):
             raise ValueError("boundary_return.enable must be null or boolean")
         if self.enable is True and self.mode not in {"shadow", "replace"}:

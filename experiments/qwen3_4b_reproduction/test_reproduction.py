@@ -259,3 +259,43 @@ def test_dapo4k_disk_budget_is_three_checkpoints(settings, tmp_path, monkeypatch
     monkeypatch.setattr(run.shutil, 'disk_usage', lambda path: SimpleNamespace(free=249_999_999_999))
     with pytest.raises(ValueError, match='Insufficient disk'):
         run.check_resources(settings, ['dapo4k'], False)
+
+
+def test_ncbr_lp8k_only_changes_length_penalty(settings):
+    from omegaconf import OmegaConf
+    old=run.flatten(OmegaConf.to_container(run.build_config(settings,'ncbr'),resolve=True))
+    cfg=run.build_config(settings,'ncbr_lp8k');run.validate_config(cfg)
+    new=run.flatten(OmegaConf.to_container(cfg,resolve=True))
+    changed={k for k in old.keys()|new.keys() if old.get(k)!=new.get(k)}
+    assert changed == {'reward.reward_kwargs.max_resp_len','reward.reward_kwargs.overlong_buffer_cfg.len',
+        'actor_rollout_ref.rollout.boundary_return.length_penalty_mode','trainer.experiment_name',
+        'actor_rollout_ref.rollout.trace.experiment_name','trainer.default_local_dir'}
+    assert cfg.reward.reward_kwargs.max_resp_len==8192
+    assert cfg.reward.reward_kwargs.overlong_buffer_cfg.len==1638
+    assert cfg.actor_rollout_ref.rollout.boundary_return.length_penalty_mode=='full_response'
+    assert cfg.data.max_response_length==2048 and cfg.actor_rollout_ref.rollout.boundary_return.long_response_length==8192
+    assert cfg.trainer.total_training_steps==300 and cfg.trainer.save_freq==50
+    smoke=run.build_config(settings,'ncbr_lp8k',smoke=True)
+    assert smoke.trainer.total_training_steps==2 and smoke.reward.reward_kwargs.overlong_buffer_cfg.len==1638
+
+
+@pytest.mark.parametrize('path,value', [('reward.reward_kwargs.max_resp_len',2048),
+    ('reward.reward_kwargs.overlong_buffer_cfg.len',0),('reward.reward_kwargs.overlong_buffer_cfg.enable',False),
+    ('reward.reward_manager.name','naive'),('actor_rollout_ref.rollout.boundary_return.length_penalty_mode','bad')])
+def test_ncbr_lp8k_invalid_penalty_fails_preflight(settings,path,value):
+    from omegaconf import OmegaConf
+    cfg=run.build_config(settings,'ncbr_lp8k');OmegaConf.update(cfg,path,value)
+    with pytest.raises((ValueError,AssertionError)): run.validate_config(cfg)
+
+
+def test_ncbr_lp8k_expected_save_interval(tmp_path,monkeypatch):
+    records=[{'step':s,'data':{'training/global_step':s,'actor/pg_loss':.1,'actor/grad_norm':1.,
+                            'boundary_return/continuation_request_count':1}} for s in range(1,301)]
+    records += [{'step':s,'data':{'val-core/math/acc/mean@1':.2}} for s in range(0,301,10)]
+    (tmp_path/'metrics.jsonl').write_text('\n'.join(json.dumps(r) for r in records))
+    (tmp_path/'checkpoints').mkdir();(tmp_path/'checkpoints/latest_checkpointed_iteration.txt').write_text('300')
+    steps=[]
+    def verify(out,step,size): steps.append(step);return {'step':step}
+    monkeypatch.setattr(run,'verify_checkpoint',verify)
+    run.verify_run(tmp_path,'ncbr_lp8k',300,8,False)
+    assert steps==[50,100,150,200,250,300]

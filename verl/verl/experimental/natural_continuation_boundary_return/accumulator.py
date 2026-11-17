@@ -178,4 +178,15 @@ class BoundaryReturnStepAccumulator:
         for name, mask in transition_masks.items():
             metrics[f"boundary_return/transition_{name}_count"] = float(mask.sum())
             metrics[f"boundary_return/transition_{name}_rate"] = float(mask.sum() / valid_count) if valid_count else 0.0
+        penalty_names = ("short_length_penalty_mean", "full_length_penalty_mean",
+                         "length_penalty_delta_mean", "full_length_penalty_fraction")
+        for name in penalty_names:
+            key = f"boundary_return/{name}"
+            present = [batch for batch in self._batches if key in batch.metrics]
+            if present:
+                if len(present) != len(self._batches):
+                    raise ValueError("mixed NCBR length penalty modes in one step")
+                count = sum(len(batch.hit_response_cap) for batch in present)
+                metrics[key] = (sum(batch.metrics[key] * len(batch.hit_response_cap)
+                                    for batch in present) / count) if count else 0.0
         return metrics

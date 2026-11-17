@@ -53,6 +53,11 @@ def validate_boundary_return_preflight(config: Any, *, use_critic: bool | None =
     if _config_get(reward_manager, "source") != "register":
         raise ValueError("boundary_return requires the registered DAPO reward manager or standard naive GRPO/GSPO")
     manager_name = _config_get(reward_manager, "name")
+    if boundary.length_penalty_mode == "full_response":
+        from .length_penalty import parameters
+        if manager_name != "dapo":
+            raise ValueError("full_response length penalty supports only DAPO reward manager")
+        parameters(_config_get(reward, "reward_kwargs"), boundary.long_response_length)
     if manager_name != "dapo":
         actor = _config_get(_config_get(config, "actor_rollout_ref"), "actor")
         loss = _config_get(_config_get(actor, "policy_loss"), "loss_mode")

@@ -68,6 +68,7 @@ class NCBRHook:
         continuation_client: Any, score_long: Callable, eos_token_id: int | None,
         short_response_length: int, max_model_len: int, timing_raw: dict | None = None,
         long_reward_complete: Callable | None = None,
+        length_penalty_kwargs: Any = None,
     ) -> NCBROutcome:
         if getattr(config, "enable", None) is True:
             config.validate()
@@ -106,8 +107,11 @@ class NCBRHook:
                     extra_info={config.correctness_key: np.asarray([], dtype=np.float64),
                                 config.task_score_key: np.asarray([], dtype=np.float64)},
                 )
+            adapter_kwargs = {}
+            if getattr(config, "length_penalty_mode", "prefix") == "full_response":
+                adapter_kwargs["length_penalty_kwargs"] = length_penalty_kwargs
             result = self._adapt(work, capture=capture, long_reward_output=long_reward, config=config,
-                                 include_group_statistics=False)
+                                 include_group_statistics=False, **adapter_kwargs)
             effective = work.batch["token_level_scores"]
             if (effective.shape, effective.dtype, effective.device) != (
                 raw_scores.shape, raw_scores.dtype, raw_scores.device

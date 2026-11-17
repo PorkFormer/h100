@@ -1,31 +1,33 @@
 {
   "source": {
-    "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d",
-    "files_verified": 738
+    "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d+ncbr-full-response-length-penalty-v1",
+    "files_verified": 740
   },
   "goldens": {
     "golden.json": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795",
     "boundary_golden.json": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
   },
   "status": "PASS",
-  "tests_passed": 260,
-  "validated_at_utc": "2026-11-16T04:22:34.452481+00:00",
-  "validation_location": "isolated merged worktree, includes GitHub c875d34 and DAPO4K; excludes uncommitted local edits",
-  "launcher_final_contract_tests_passed": 41,
+  "tests_passed": 291,
+  "validated_at_utc": "2026-11-17T07:23:22.403287+00:00",
+  "validation_location": "isolated ncbr_lp8k worktree; CUDA_VISIBLE_DEVICES empty; CPU only",
+  "launcher_final_contract_tests_passed": 48,
   "output_path_file_rejection": "PASS",
   "gpu_training_executed": false,
   "fresh_dependency_install_executed": false,
   "launcher_files_sha256": {
     "build_bundle.py": "0a406f2d531c7e45e8d0f0e716d09ab977bc116810b526e6c65277904fddc951",
-    "test_reproduction.py": "00f798e9fda49043c905e73575a4c10845d544a3376130f08507db9e4a1475c3",
+    "test_reproduction.py": "f0c775c2250b9ddc30d2f211cdbd70de0416140755c4abfceaf6563bf9fad53c",
     "verify_cpu.py": "e3b25154dfe5a2842fb7f0ee2fce937d86d619503e2c6394a8f9b369c1c1d3ee",
-    "run.py": "4eb667eadc285a8277bef440330c00af7483d88f0d16b7a57897153d53946143",
+    "run.py": "c51ef903accee09aea2159df2e1baaa2cf0f21d001d9f59948213e1c917c3d94",
     "evaluate.py": "81f80b29a00c7eaf58ae76cd7b15be89ae333112f75dd4098729ea94c4be0978",
     "evaluate.sh": "2ce7c27fe614532a6fa41bb79adbd63cf2970beb45f62aef40301cc7e54841fb",
     "test_offline_eval.py": "0d7fe6066911655170027d0cf469618601951f27dd4e0d64f1839bb5980e6b85",
-    "run_dapo4k.sh": "a1d6944c072ee0b40c814fa741d46081730adb447ae6ef88e2264191ae8ab1ec"
+    "run_dapo4k.sh": "a1d6944c072ee0b40c814fa741d46081730adb447ae6ef88e2264191ae8ab1ec",
+    "run_ncbr_lp8k.sh": "62d50960b43552f1336c1f2b63ddf2f26b3cb5948d8db196e3a9b8e6b7f9e78a"
   },
   "offline_eval_tests_passed": 1,
   "shared_offline_core_tests_passed": 46,
-  "total_cpu_tests_passed": 306
+  "total_cpu_tests_passed": 337,
+  "gpu_tests_executed": false
 }

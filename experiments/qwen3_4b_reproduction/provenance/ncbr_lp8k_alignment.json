@@ -1,0 +1,32 @@
+{
+  "baseline_experiment": "ncbr",
+  "new_experiment": "ncbr_lp8k",
+  "penalty_reference_run": "qwen3_4b_base_dapo_b256_g768_m16_n8_r8192_s600_v1",
+  "historical_files_sha256": {
+    "resolved_config.yaml": "9cd3a62ab84ddbb30740527f26d2d3771569f0e9367cb415de624e004b76e55d",
+    "command.txt": "e4abebecafc4375c1851e634fdec351861f84a0d573f6a6e72a1cdf414cfe05a"
+  },
+  "changes": {
+    "actor_rollout_ref.rollout.trace.experiment_name": {
+      "old": "ncbr",
+      "new": "ncbr_lp8k"
+    },
+    "reward.reward_kwargs.max_resp_len": {
+      "old": 2048,
+      "new": 8192
+    },
+    "reward.reward_kwargs.overlong_buffer_cfg.len": {
+      "old": 410,
+      "new": 1638
+    },
+    "trainer.experiment_name": {
+      "old": "ncbr",
+      "new": "ncbr_lp8k"
+    },
+    "actor_rollout_ref.rollout.boundary_return.length_penalty_mode": {
+      "old": null,
+      "new": "full_response"
+    }
+  },
+  "semantics": "cap rows add long task minus short task plus P(full)-P(short) at prefix terminal; other shaping preserved"
+}

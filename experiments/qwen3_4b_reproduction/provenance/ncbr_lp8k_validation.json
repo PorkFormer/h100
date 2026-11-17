@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "validated_at_utc": "2026-11-17T07:23:22.403287+00:00",
+  "cpu_regression_tests_passed": 291,
+  "shared_offline_core_tests_passed": 46,
+  "total_cpu_tests_passed": 337,
+  "new_reward_semantics_tests_passed": 24,
+  "launcher_tests_passed": 48,
+  "goldens": {
+    "golden.json": "25a305b523f3d8bfbc391804d0411244ade022dc0543270dd89f818237995795",
+    "boundary_golden.json": "cd0442ac7f3010d9caca38f01037fe603b60121898232470d4f3c61e6cc58066"
+  },
+  "source": {
+    "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d+ncbr-full-response-length-penalty-v1",
+    "files_verified": 740
+  },
+  "gpu_tests_executed": false,
+  "gpu_preflight_executed": false,
+  "gpu_smoke_executed": false,
+  "gpu_training_executed": false,
+  "container_tested": false,
+  "cuda_visible_devices": "",
+  "penalty": {
+    "mode": "full_response",
+    "max_resp_len": 8192,
+    "buffer": 1638,
+    "penalty_factor": 1.0
+  },
+  "target": "1 node x 8 A100 80GB; H2048 L8192; 300 steps"
+}

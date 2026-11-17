@@ -100,6 +100,8 @@ def apply_standard_boundary(trainer, batch, raw_scores, extras, boundary, timing
     rollout = trainer.config.actor_rollout_ref.rollout
     return NCBRHook().apply(
         batch, raw_scores, raw_verifier_extras=extras, config=boundary,
+        **({"length_penalty_kwargs": trainer.config.reward.reward_kwargs}
+           if boundary.length_penalty_mode == "full_response" else {}),
         policy_version=trainer._ncbr_policy_version,
         sampling_params=build_rollout_sampling_params(rollout),
         continuation_client=trainer.llm_server_manager.get_client(), score_long=score_long,

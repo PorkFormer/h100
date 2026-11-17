@@ -222,6 +222,7 @@ def apply_boundary_return(
     long_reward_output: BoundaryRewardOutput,
     config: Any,
     include_group_statistics: bool = True,
+    length_penalty_kwargs: Any = None,
 ) -> BoundaryReturnBatchResult:
     """Compute shadow diagnostics or exact task-return replacement at the prefix terminal token."""
     if config.mode not in {"shadow", "replace"}:
@@ -276,6 +277,32 @@ def apply_boundary_return(
     boundary_task[hit_cap] = long_task[hit_cap]
     task_delta = boundary_task - short.task_score
 
+    full_length_penalty = getattr(config, "length_penalty_mode", "prefix") == "full_response"
+    penalty_delta = np.zeros(row_count, dtype=np.float64)
+    if full_length_penalty:
+        from .length_penalty import penalty
+        if not torch.isfinite(candidate.batch["token_level_scores"]).all():
+            raise ValueError("full_response requires finite input rewards")
+        mask = candidate.batch.get("response_mask")
+        if mask is None or mask.shape != candidate.batch["token_level_scores"].shape:
+            raise ValueError("full_response requires aligned response_mask")
+        if not torch.all((mask == 0) | (mask == 1)):
+            raise ValueError("full_response requires a binary response_mask")
+        short_lengths = mask.sum(-1).detach().cpu().numpy().astype(np.int64)
+        full_lengths = short_lengths.copy()
+        for generation in capture.generations:
+            parent = int(generation.parent_index)
+            if len(generation.prefix_token_ids) != short_lengths[parent]:
+                raise ValueError("continuation prefix length differs from actor mask")
+            actual = candidate.batch["responses"][parent][mask[parent].bool()].detach().cpu().tolist()
+            if actual != list(generation.prefix_token_ids):
+                raise ValueError("continuation prefix tokens differ from actor prefix")
+            full_lengths[parent] = len(generation.prefix_token_ids) + len(generation.tail_token_ids)
+        short_penalty = penalty(short_lengths, length_penalty_kwargs, config.long_response_length)
+        full_penalty = penalty(full_lengths, length_penalty_kwargs, config.long_response_length)
+        penalty_delta = full_penalty - short_penalty
+    total_delta = task_delta + penalty_delta if full_length_penalty else task_delta
+
     prefix_drift_max = 0.0
     if config.mode == "replace":
         scores = candidate.batch["token_level_scores"]
@@ -299,12 +326,16 @@ def apply_boundary_return(
             bad_row = int(cap_rows[torch.nonzero(last_positions < 0, as_tuple=False)[0, 0]].item())
             raise ValueError(f"cap-hit row {bad_row} has an empty response prefix mask")
         delta_tensor = torch.as_tensor(
-            task_delta[np.flatnonzero(hit_cap)], dtype=corrected.dtype, device=corrected.device
+            total_delta[np.flatnonzero(hit_cap)], dtype=corrected.dtype, device=corrected.device
         )
         corrected[cap_rows, last_positions] += delta_tensor
+        if full_length_penalty and not torch.isfinite(corrected).all():
+            raise ValueError("full_response produced nonfinite rewards")
         boundary_task_tensor = torch.as_tensor(boundary_task, dtype=scores.dtype, device=scores.device)
         residual_before = scores.detach().sum(-1) - short_task_tensor
         residual_after = corrected.detach().sum(-1) - boundary_task_tensor
+        if full_length_penalty:
+            residual_after -= torch.as_tensor(penalty_delta, dtype=scores.dtype, device=scores.device)
         prefix_drift_max = float((residual_after - residual_before).abs().max().item())
         if prefix_drift_max > BOUNDARY_NUMERIC_TOLERANCE:
             raise ValueError(f"boundary_return prefix shaping residual drifted by {prefix_drift_max}")
@@ -413,6 +444,13 @@ def apply_boundary_return(
         sum(interval.name == "boundary_long_reward_chunk" for interval in all_intervals)
     )
     metrics.update(_transition_metrics(short.correctness, long_acc, hit_cap, threshold))
+    if full_length_penalty:
+        metrics.update({
+            "boundary_return/short_length_penalty_mean": float(short_penalty.mean()) if row_count else 0.0,
+            "boundary_return/full_length_penalty_mean": float(full_penalty.mean()) if row_count else 0.0,
+            "boundary_return/length_penalty_delta_mean": float(penalty_delta.mean()) if row_count else 0.0,
+            "boundary_return/full_length_penalty_fraction": float((full_penalty < 0).mean()) if row_count else 0.0,
+        })
     uids = candidate.non_tensor_batch.get("uid")
     if uids is None or len(uids) != row_count:
         raise ValueError("boundary_return requires row-aligned uid for diagnostics")
@@ -422,7 +460,7 @@ def apply_boundary_return(
         # balancing operations preserve row alignment automatically.
         eligible = valid_long
         applied = eligible.copy()
-        changed = eligible & (np.abs(task_delta) > BOUNDARY_NUMERIC_TOLERANCE)
+        changed = eligible & (np.abs(total_delta) > BOUNDARY_NUMERIC_TOLERANCE)
         label_values = {
             "boundary_hit_cap": hit_cap,
             "boundary_eligible": eligible,
@@ -435,6 +473,12 @@ def apply_boundary_return(
         if include_group_statistics:
             from .group_statistics import group_unlocked_mask
             label_values["boundary_group_unlocked"] = group_unlocked_mask(uids, short.correctness, boundary_acc)
+        if full_length_penalty:
+            for key, values in (("boundary_short_length_penalty", short_penalty),
+                                ("boundary_full_length_penalty", full_penalty),
+                                ("boundary_length_penalty_delta", penalty_delta)):
+                candidate.batch[key] = torch.as_tensor(values, dtype=torch.float32,
+                                                       device=candidate.batch["responses"].device)
         device = candidate.batch["responses"].device
         for key, values in label_values.items():
             dtype = torch.float32 if key == "boundary_task_delta" else torch.bool

@@ -551,6 +551,8 @@ class RayDAPOBoundaryReturnTrainer(RayDAPOProbeCreditTrainer):
                                          (boundary.correctness_key, boundary.task_score_key, "error", "timeout")
                                          if key in candidate.non_tensor_batch},
                     config=boundary, policy_version=policy_version,
+                    **({"length_penalty_kwargs": self.config.reward.reward_kwargs}
+                       if boundary.length_penalty_mode == "full_response" else {}),
                     sampling_params=build_rollout_sampling_params(rollout),
                     continuation_client=self.llm_server_manager.get_client(),
                     score_long=self._score_long_generations_in_chunks,

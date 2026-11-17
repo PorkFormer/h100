@@ -1,5 +1,5 @@
 {
-  "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d",
+  "commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d+ncbr-full-response-length-penalty-v1",
   "files": {
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "Notice.txt": "f40ed94400d2b9636afb1f8019ab817255b19892d426c40eebe0c60d4850a1c9",
@@ -315,24 +315,24 @@
     "verl/experimental/fully_async_policy/shell/grpo_30b_a3b_base_math_megatron_96_32_mis.sh": "580e988b630804d6081cb2bfa9a4777ecb4e0fa625fee83e5cc219f0574d808d",
     "verl/experimental/fully_async_policy/shell/grpo_8b_base_math_megatron_4_4_trtllm.sh": "95374a3b3d6576781aa167b99c38d735b7633b11baacbff44c387431720b9a6e",
     "verl/experimental/fully_async_policy/shell/grpo_qwen35_35b_megatron_async.sh": "ff4fe05142dce6057ba55185430084e8b23688efb9fc979bf95a7f6fbd9ec4be",
-    "verl/experimental/fully_async_policy/shell/grpo_qwen3_235b_megatron_npu.sh‎": "656f4f2e590e204890a87297492ac8eb1a17aba2c4f55c4e96ebfa5ed2af307d",
+    "verl/experimental/fully_async_policy/shell/grpo_qwen3_235b_megatron_npu.sh\u200e": "656f4f2e590e204890a87297492ac8eb1a17aba2c4f55c4e96ebfa5ed2af307d",
     "verl/experimental/fully_async_policy/shell/runtime_env.yaml": "19e48f7c02d2d074434bed70417018939ae912df12746a93058b63945b4ffd7c",
     "verl/experimental/fully_async_policy/unittest/__init__.py": "9c3d3d9d4fe67fa9476bab44af946182b6aa1322aae82ad7c3aa784c1f393c8c",
     "verl/experimental/fully_async_policy/unittest/simple_streaming_demo.py": "49ad92771a02a1b1eb457444df86f4d148d37a70c7a67866a07242f3ced85877",
     "verl/experimental/natural_continuation_boundary_return/__init__.py": "4f2be08f4daca172388221dc79bee9259bd8b3847a7fc1e8be06a1fd8e4b00db",
-    "verl/experimental/natural_continuation_boundary_return/accumulator.py": "374866c756cca01eec0e45a06a8a979e54ab5c0db57d937227ede77755e3c180",
+    "verl/experimental/natural_continuation_boundary_return/accumulator.py": "61bd44b566f448b73b4aabafc9f926f21599f98aa98d7916a78ff9156aca4e84",
     "verl/experimental/natural_continuation_boundary_return/config.py": "c73ecfa85660eba6a0b7b1197ce6f5e4ff2e63c733a26abaaf6e2195bf603291",
-    "verl/experimental/natural_continuation_boundary_return/dapo_trainer.py": "c7a17cd476681b0f621568bd09613c4b99873c7cf8e617d6839dea1af3453b4d",
+    "verl/experimental/natural_continuation_boundary_return/dapo_trainer.py": "c5171ed185bc41c6f9f45433a30d56c9251ef31964112ce5dbea61f2dc094cfe",
     "verl/experimental/natural_continuation_boundary_return/group_statistics.py": "769b56a11b093d89aec726dcc3d1e98db984e3f8186d91da69840761385d05c7",
-    "verl/experimental/natural_continuation_boundary_return/hook.py": "6391197dba67d6db314b780a5954a3432438b31863b30ebc1211565d7b3e82c9",
+    "verl/experimental/natural_continuation_boundary_return/hook.py": "06c9af3cc3f4fe0644e0ff1c321b12a79c72495f4c2a6b99b2ccf8d6315e05c6",
     "verl/experimental/natural_continuation_boundary_return/main_dapo_boundary_return.py": "5f81a60fd6a3cc7ba7060ab9275b83dd0b20e5907edf27e6b4527039922e12fe",
     "verl/experimental/natural_continuation_boundary_return/profiling.py": "7a432f6508783a1422d5e38ed03c4940dbfeb2a6f3229a9406534ef4b51194ba",
-    "verl/experimental/natural_continuation_boundary_return/reward_adapter.py": "e55f0f34683ef5c1a39d742c1297aa86989cb791b458e394d85b61234395150c",
+    "verl/experimental/natural_continuation_boundary_return/reward_adapter.py": "8cea5e5feac12a45eae2229cb502e7739b2444ddfea90d303f18b561b90b1421",
     "verl/experimental/natural_continuation_boundary_return/runtime.py": "6ebfe07dfb384350d316f3acea9dd6a73592d98325c642ed90b30c05ee651df9",
     "verl/experimental/natural_continuation_boundary_return/scheduler.py": "cd573f3e633f4cafd7115450f4fe1c0c7d4068ccf624b20a3e383e852230d07b",
     "verl/experimental/natural_continuation_boundary_return/scoring.py": "72e07f98828caa84dd9e212b013950b171e3bda7ae861aa4451175bf626d23d7",
-    "verl/experimental/natural_continuation_boundary_return/standard.py": "da530b65947ea82d66a882d187635bfbc89ac953fba96bd47fd4e737dbe102de",
-    "verl/experimental/natural_continuation_boundary_return/validation.py": "cec199a8888141d2919b0ae02bc06bd4f1ba87c1d214cc8f3db676e506edd611",
+    "verl/experimental/natural_continuation_boundary_return/standard.py": "391bbea8cfaefba5a6ddc474bf2dfb53e2e508ddfebb757fbd3658d2739d2a30",
+    "verl/experimental/natural_continuation_boundary_return/validation.py": "7489505496ebaaa6c69bc3bd7b3e33a196a90f46ddf8a0d0592698a14332ff6a",
     "verl/experimental/nondeterminism_diagnostics.py": "2d5f6b84001c80a0a77b952cf0985488246b4ea819dc417b2ef03456c019dffc",
     "verl/experimental/on_policy_budgeted_capability_floor/__init__.py": "86d579fe0e13b699777b20a1d0a0acb6e0ce6c2ac917d715c3e1619c38335e8e",
     "verl/experimental/on_policy_budgeted_capability_floor/artifact_batch.py": "d3c0d6128e65f2574c75659949524b709a19b8065ec8d95fdde0988233428302",
@@ -680,7 +680,7 @@
     "verl/workers/config/model.py": "4b382b0c06edf133c332822b61c5cf57f973f244d0f602f3f4e161956e6a775c",
     "verl/workers/config/optimizer.py": "d64c68e87b031e7d841d36a1d7ea1f6ee607c73e8d6b6b26511cd0b3497326ff",
     "verl/workers/config/reward.py": "0f6b8873dd9dee5344d266a781af9b50228683237627658eb432c36866d98ac3",
-    "verl/workers/config/rollout.py": "e3129a7a2aa6ffa76e4c14e0673ecead805f480d9f3aaaa8913796e303674669",
+    "verl/workers/config/rollout.py": "7252b10b305ebf5f35845c50053f3e39cbf4ded3de2034abea988a308a8d4e93",
     "verl/workers/engine/__init__.py": "5625e72f431948b5f640d33089b37c7709ceb0528482478c3e94f05b67628eca",
     "verl/workers/engine/automodel/__init__.py": "c255f19ac5482da8446c3ebcefe59150d657c6eebb1da504b2a49404b9c98bf5",
     "verl/workers/engine/automodel/transformer_impl.py": "1527d4194327bd0a59c23bc0a3aa0fb920af73aedd5de19b4fe1fde2da6bbe3e",
@@ -738,6 +738,47 @@
     "verl/workers/rollout/vllm_rollout/vllm_rollout.py": "6f2255d672e9343b3619626052efeeb9ea05ded1c4a940a76051760f2c835c23",
     "verl/workers/utils/__init__.py": "ced14be479d27e864cf3557c37d8abe00d2204ba6c030620bf48ea85e25a5921",
     "verl/workers/utils/losses.py": "b1dcb50695c28b819e13c30175bc06165141fc92df6f1607c21775d837887fcb",
-    "verl/workers/utils/padding.py": "f3cc823e6ef2099075406f6fe1244498f15a775f0fac90010c0babf1c82cbe7b"
+    "verl/workers/utils/padding.py": "f3cc823e6ef2099075406f6fe1244498f15a775f0fac90010c0babf1c82cbe7b",
+    "verl/experimental/natural_continuation_boundary_return/length_penalty.py": "9c6b3cdae1c3be4698574fe31c5f2c236937ba894c6e49cb3e4513208c620473",
+    "tests/experimental/natural_continuation_boundary_return/test_full_length_penalty_on_cpu.py": "8a53339c476530288da23203e06ab781648e5d0ce5a54449f3c76b04eb10bcf9"
+  },
+  "baseline_commit": "b1835ea0fb388eb6e4d29a58ab18b408cae7b34d",
+  "runtime_changes": {
+    "verl/experimental/natural_continuation_boundary_return/accumulator.py": {
+      "baseline_sha256": "374866c756cca01eec0e45a06a8a979e54ab5c0db57d937227ede77755e3c180",
+      "sha256": "61bd44b566f448b73b4aabafc9f926f21599f98aa98d7916a78ff9156aca4e84"
+    },
+    "verl/experimental/natural_continuation_boundary_return/dapo_trainer.py": {
+      "baseline_sha256": "c7a17cd476681b0f621568bd09613c4b99873c7cf8e617d6839dea1af3453b4d",
+      "sha256": "c5171ed185bc41c6f9f45433a30d56c9251ef31964112ce5dbea61f2dc094cfe"
+    },
+    "verl/experimental/natural_continuation_boundary_return/hook.py": {
+      "baseline_sha256": "6391197dba67d6db314b780a5954a3432438b31863b30ebc1211565d7b3e82c9",
+      "sha256": "06c9af3cc3f4fe0644e0ff1c321b12a79c72495f4c2a6b99b2ccf8d6315e05c6"
+    },
+    "verl/experimental/natural_continuation_boundary_return/reward_adapter.py": {
+      "baseline_sha256": "e55f0f34683ef5c1a39d742c1297aa86989cb791b458e394d85b61234395150c",
+      "sha256": "8cea5e5feac12a45eae2229cb502e7739b2444ddfea90d303f18b561b90b1421"
+    },
+    "verl/experimental/natural_continuation_boundary_return/standard.py": {
+      "baseline_sha256": "da530b65947ea82d66a882d187635bfbc89ac953fba96bd47fd4e737dbe102de",
+      "sha256": "391bbea8cfaefba5a6ddc474bf2dfb53e2e508ddfebb757fbd3658d2739d2a30"
+    },
+    "verl/experimental/natural_continuation_boundary_return/validation.py": {
+      "baseline_sha256": "cec199a8888141d2919b0ae02bc06bd4f1ba87c1d214cc8f3db676e506edd611",
+      "sha256": "7489505496ebaaa6c69bc3bd7b3e33a196a90f46ddf8a0d0592698a14332ff6a"
+    },
+    "verl/workers/config/rollout.py": {
+      "baseline_sha256": "e3129a7a2aa6ffa76e4c14e0673ecead805f480d9f3aaaa8913796e303674669",
+      "sha256": "7252b10b305ebf5f35845c50053f3e39cbf4ded3de2034abea988a308a8d4e93"
+    },
+    "verl/experimental/natural_continuation_boundary_return/length_penalty.py": {
+      "baseline_sha256": null,
+      "sha256": "9c6b3cdae1c3be4698574fe31c5f2c236937ba894c6e49cb3e4513208c620473"
+    },
+    "tests/experimental/natural_continuation_boundary_return/test_full_length_penalty_on_cpu.py": {
+      "baseline_sha256": null,
+      "sha256": "8a53339c476530288da23203e06ab781648e5d0ce5a54449f3c76b04eb10bcf9"
+    }
   }
 }
